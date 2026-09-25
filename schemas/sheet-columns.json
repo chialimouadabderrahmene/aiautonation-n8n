@@ -1,0 +1,18 @@
+{
+  "Leads": ["lead_id", "phone", "email", "name", "user_type", "user_segment", "country", "foodstuff_specialty", "source", "interest_level", "intent_level", "status", "opt_in", "opt_in_source", "opt_in_at", "opt_out_at", "signup_date", "first_contact", "last_message", "last_wa", "wa_day", "last_nurture", "nurture_day", "last_reengage", "reengage_step", "referral_code", "feedback_requested_date", "feedback_received_date", "last_feedback_rating", "last_wa_error", "notes"],
+  "Waitlist": ["email", "whatsapp", "name", "position", "referral_code", "referrals_count", "user_type", "signup_date", "consent"],
+  "Referrals": ["referral_id", "referrer_email", "referred_email", "referral_code", "timestamp", "points_credited", "status"],
+  "Content Calendar": ["day_number", "phase", "pillar", "suggested_platform", "topic_brief", "suggested_hook", "cta", "target_audience"],
+  "Content Drafts": ["draft_id", "day_number", "platform", "hook", "caption", "hashtags", "video_script", "status", "approval_date", "published_date", "publish_time", "row_number", "published", "created_date"],
+  "Feedback": ["feedback_id", "email", "user_role", "rating", "primary_value", "pain_point", "comments", "would_recommend", "submitted_date", "action_taken", "rating_category"],
+  "Analytics": ["report_date", "week_start", "total_leads", "new_leads", "conversion_rate", "content_published", "avg_feedback_rating", "waitlist_size", "total_referrals", "wow_growth"],
+  "Intelligence": ["type", "content", "score", "source", "created"],
+  "PainPoints": ["pain", "category", "intensity", "persona", "keywords", "upvotes", "source", "created"],
+  "ContentQueue": ["format", "content", "status", "source", "created"],
+  "SocialProof": ["event", "vendor", "content", "status", "created"],
+  "Social Posts": ["date", "platform", "content_type", "hook", "caption", "hashtags", "video_script", "status", "autopilot_status", "scheduled_at", "published_at", "flag_reason"],
+  "Automation Logs": ["timestamp", "workflow", "action", "platform", "status", "details"],
+  "WhatsApp Conversations": ["timestamp", "phone", "direction", "message_text", "reply_sent", "conversation_step", "user_type", "intent_level", "message_id"],
+  "PublishedContent": ["hook", "format", "platform", "comments", "saves", "shares", "published_date"],
+  "Agent Reports": ["report_date", "total_leads", "vendors", "buyers", "posts", "engagement", "recommendations"]
+}

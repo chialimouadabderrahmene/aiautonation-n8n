@@ -1,5 +1,6 @@
 {
-  "name": "Social Post Scheduler",
+  "name": "Eki - 10 Social Post Scheduler",
+  "id": "ekiwf10",
   "nodes": [
     {
       "parameters": {
@@ -12,82 +13,63 @@
           ]
         }
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001001",
-      "name": "Every 2 Hours Trigger",
+      "id": "466e126a-2505-48e1-a985-0ab69cf3475f",
+      "name": "Every 2 Hours 10-20",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 300]
+      "position": [
+        100,
+        200
+      ]
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Content Drafts"
+          "value": "Content Drafts",
+          "mode": "name"
         },
-        "filtersUI": {
-          "values": [
-            {
-              "lookupColumn": "status",
-              "lookupValue": "Approved"
-            }
-          ]
-        }
+        "options": {}
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001002",
-      "name": "Read Approved Posts",
+      "id": "1ab38bd9-ab61-43ba-a77f-601e20702e53",
+      "name": "Read Content Drafts",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [260, 300],
+      "position": [
+        360,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "has-posts",
-              "leftValue": "={{ $json.caption || $json.content }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "isNotEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst flag = (v) => ['true', 'yes', '1'].includes(norm(v).toLowerCase());\nconst stopped = () => flag($env.AUTOPILOT_STOP);\nconst autopilotOn = () => flag($env.AUTOPILOT_SOCIAL_POSTING);\nconst bufferProfile = (platform) => norm($env['BUFFER_PROFILE_ID_' + String(platform).toUpperCase()]);\n// Oldest Approved, unpublished draft. API posting ONLY when AUTOPILOT_SOCIAL_POSTING=true and AUTOPILOT_STOP is not set.\nif (stopped()) return [];\nconst rows = $input.all().map((i) => i.json).filter((r) => norm(r.draft_id));\nconst pending = rows.filter((r) => norm(r.status).toLowerCase() === 'approved' && !flag(r.published));\nif (!pending.length) return [];\npending.sort((a, b) => (Date.parse(a.approval_date) || Date.parse(a.created_date) || 0) - (Date.parse(b.approval_date) || Date.parse(b.created_date) || 0));\nconst p = pending[0];\nconst raw = norm(p.platform).toLowerCase();\nconst platform = raw.includes('twitter') || raw === 'x' || raw.startsWith('x/') ? 'twitter' : raw.includes('instagram') ? 'instagram' : raw.includes('facebook') ? 'facebook' : raw.includes('linkedin') ? 'linkedin' : raw.includes('tiktok') ? 'tiktok' : 'other';\nconst text = (norm(p.caption) + (norm(p.hashtags) ? '\\n\\n' + norm(p.hashtags) : '')).trim();\nlet route = 'manual';\nif (autopilotOn()) {\n  if (platform === 'twitter' && norm($env.TWITTER_POSTING_ENABLED).toLowerCase() === 'true') route = 'twitter';\n  else if (['instagram', 'facebook', 'linkedin'].includes(platform) && norm($env.BUFFER_API_KEY) && bufferProfile(platform)) route = 'buffer';\n}\nconst alert = 'Ready to post on ' + platform.toUpperCase() + '\\n\\nCaption:\\n' + norm(p.caption) + '\\n\\nHashtags: ' + (norm(p.hashtags) || 'none') + (norm(p.video_script) ? '\\n\\nVideo script:\\n' + norm(p.video_script) : '') + '\\n\\nRemaining approved posts: ' + (pending.length - 1) + '\\nPost manually, then mark the draft as Published in the sheet.';\nreturn [{ json: { draft_id: norm(p.draft_id), platform, route, text, tweet_text: text.slice(0, 280), buffer_profile: bufferProfile(platform), alert } }];"
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001003",
-      "name": "IF - Posts Available",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [520, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Select the next post to publish (oldest approved first)\nconst items = $input.all();\n\n// Filter out already published posts\nconst unpublished = items.filter(item => {\n  const published = (item.json.published || '').toString().toLowerCase();\n  return published !== 'true' && published !== 'yes' && published !== '1';\n});\n\nif (unpublished.length === 0) {\n  return [{ json: { empty: true, message: 'All approved posts have been published' } }];\n}\n\n// Sort by date (oldest first)\nunpublished.sort((a, b) => {\n  const dateA = new Date(a.json.created_date || a.json.date || 0);\n  const dateB = new Date(b.json.created_date || b.json.date || 0);\n  return dateA - dateB;\n});\n\nconst nextPost = unpublished[0].json;\nconst platform = (nextPost.platform || 'manual').toLowerCase();\n\n// Determine best posting time based on platform\nlet suggestedTime = '';\nconst hour = new Date().getHours();\nif (platform === 'twitter' || platform === 'x') suggestedTime = 'Now (Twitter peak: 9-11 AM, 1-3 PM)';\nelse if (platform === 'instagram') suggestedTime = 'Now (Instagram peak: 11 AM - 1 PM, 7-9 PM)';\nelse if (platform === 'linkedin') suggestedTime = 'Now (LinkedIn peak: 7-8 AM, 12 PM, 5-6 PM)';\nelse if (platform === 'facebook') suggestedTime = 'Now (Facebook peak: 1-4 PM)';\nelse if (platform === 'tiktok') suggestedTime = 'Now (TikTok peak: 7-9 AM, 12-3 PM, 7-11 PM)';\nelse suggestedTime = 'Now';\n\nreturn [{\n  json: {\n    ...nextPost,\n    platform: platform,\n    caption: nextPost.caption || nextPost.content || '',\n    hashtags: nextPost.hashtags || '',\n    video_script: nextPost.video_script || '',\n    image_url: nextPost.image_url || '',\n    suggested_time: suggestedTime,\n    row_number: nextPost.row_number || nextPost.ROW_NUMBER || '',\n    remaining_posts: unpublished.length - 1\n  }\n}];"
-      },
-      "id": "e5f6a7b8-5001-4001-8001-000000001004",
+      "id": "5f49f991-5fb3-41ab-a2ab-78dbd549c13f",
       "name": "Select Next Post",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [780, 200]
+      "position": [
+        620,
+        200
+      ]
     },
     {
       "parameters": {
@@ -96,357 +78,667 @@
             {
               "conditions": {
                 "options": {
-                  "caseSensitive": false,
-                  "leftValue": ""
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.platform }}",
+                    "id": "703b56fa-3176-4640-ad8e-c9232fb2c828",
+                    "leftValue": "={{ $json.route }}",
                     "rightValue": "twitter",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "Twitter/X"
+              "outputKey": "twitter"
             },
             {
               "conditions": {
                 "options": {
-                  "caseSensitive": false,
-                  "leftValue": ""
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.platform }}",
-                    "rightValue": "x",
+                    "id": "c275ebbe-df76-4216-a724-2864efe83c81",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "buffer",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "Twitter/X Alt"
+              "outputKey": "buffer"
             },
             {
               "conditions": {
                 "options": {
-                  "caseSensitive": false,
-                  "leftValue": ""
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.platform }}",
-                    "rightValue": "instagram",
+                    "id": "248e94e0-579f-4b23-ae85-6856b972cbc4",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "manual",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "Buffer"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false,
-                  "leftValue": ""
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.platform }}",
-                    "rightValue": "facebook",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "Buffer FB"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false,
-                  "leftValue": ""
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.platform }}",
-                    "rightValue": "linkedin",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "Buffer LI"
-            }
-          ],
-          "fallbackOutput": "extra"
-        },
-        "options": {
-          "fallbackOutput": "extra"
-        }
-      },
-      "id": "e5f6a7b8-5001-4001-8001-000000001005",
-      "name": "Switch - Platform",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [1040, 200]
-    },
-    {
-      "parameters": {
-        "url": "https://api.twitter.com/2/tweets",
-        "method": "POST",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ text: $json.caption + ($json.hashtags ? '\\n\\n' + $json.hashtags : '') }) }}",
-        "options": {}
-      },
-      "id": "e5f6a7b8-5001-4001-8001-000000001006",
-      "name": "Post to Twitter/X",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1320, 0],
-      "credentials": {
-        "oAuth2Api": {
-          "id": "10",
-          "name": "Twitter/X OAuth2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "url": "https://api.bufferapp.com/1/updates/create.json",
-        "method": "POST",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "text",
-              "value": "={{ $json.caption + ($json.hashtags ? '\\n\\n' + $json.hashtags : '') }}"
-            },
-            {
-              "name": "profile_ids[]",
-              "value": "YOUR_BUFFER_PROFILE_ID"
-            },
-            {
-              "name": "now",
-              "value": "true"
+              "outputKey": "manual"
             }
           ]
         },
         "options": {}
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001007",
+      "id": "aed8d6c6-2ac6-4310-aa04-632d7539002a",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twitter.com/2/tweets",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.tweet_text }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api"
+      },
+      "id": "3c8fc52c-1ff0-49de-a14a-697353ebe541",
+      "name": "Post to Twitter X",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        200
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "eki-cred-twitter",
+          "name": "Eki Twitter X OAuth2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.bufferapp.com/1/updates/create.json",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.BUFFER_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text, profile_ids: [$json.buffer_profile], now: true }) }}"
+      },
+      "id": "b392a4e0-6bd3-49ed-a2f9-29f0c269d6cb",
       "name": "Post via Buffer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 200],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "11",
-          "name": "Buffer API Token"
-        }
-      }
+      "position": [
+        1140,
+        370
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "chatId": "YOUR_TELEGRAM_CHAT_ID",
-        "text": "📤 *Ready to Post on {{ $json.platform }}!*\n\n📝 *Caption:*\n{{ $json.caption }}\n\n🏷 *Hashtags:*\n{{ $json.hashtags || 'None specified' }}\n\n{{ $json.video_script ? '🎬 *Video Script:*\\n' + $json.video_script + '\\n\\n' : '' }}⏰ *Best Posting Time:* {{ $json.suggested_time }}\n\n📊 *Remaining approved posts:* {{ $json.remaining_posts }}",
-        "additionalFields": {
-          "parse_mode": "Markdown"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst src = $('Select Next Post').first().json;\nconst r = $input.first().json || {};\nconst ok = !r.error && ((src.route === 'twitter' && !!(r.data && r.data.id)) || (src.route === 'buffer' && r.success === true));\nreturn [{ json: { ok, draft_id: src.draft_id, error: ok ? '' : String((r.error && (r.error.message || r.error)) || 'provider_reported_failure').slice(0, 200) } }];"
+      },
+      "id": "8aebc4f3-a63c-43db-a32a-8679527f8f59",
+      "name": "Check Post Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "86ebda41-503a-42e2-acb5-c614e6c94f6c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2f34ec7-1937-46da-a25d-2dc57fbd092a",
+      "name": "Posted OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Content Drafts",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "draft_id": "={{ $('Select Next Post').first().json.draft_id }}",
+            "status": "Published",
+            "published": "TRUE",
+            "published_date": "={{ $now.toFormat(\"yyyy-MM-dd\") }}",
+            "publish_time": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "draft_id"
+          ],
+          "schema": [
+            {
+              "id": "draft_id",
+              "displayName": "draft_id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "day_number",
+              "displayName": "day_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hook",
+              "displayName": "hook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hashtags",
+              "displayName": "hashtags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "video_script",
+              "displayName": "video_script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "approval_date",
+              "displayName": "approval_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "publish_time",
+              "displayName": "publish_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published",
+              "displayName": "published",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_date",
+              "displayName": "created_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
         }
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001008",
-      "name": "Telegram - Manual Post Alert",
+      "id": "62ad1924-81bd-4443-a018-92ddb5b24207",
+      "name": "Mark Published",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($('Select Next Post').first().json.alert).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "19c40a1c-1056-4a13-a70d-98b2c559f3c4",
+      "name": "Manual Post Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1320, 420],
+      "position": [
+        1140,
+        710
+      ],
       "credentials": {
         "telegramApi": {
-          "id": "3",
-          "name": "Telegram Bot API"
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "update",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Content Drafts"
+          "value": "Content Drafts",
+          "mode": "name"
         },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "caption": "={{ $json.caption }}",
-            "status": "Published",
-            "published": "true",
-            "publish_date": "={{ new Date().toISOString().split('T')[0] }}",
-            "publish_time": "={{ new Date().toISOString() }}"
-          }
+            "draft_id": "={{ $('Select Next Post').first().json.draft_id }}",
+            "status": "Notification Sent"
+          },
+          "matchingColumns": [
+            "draft_id"
+          ],
+          "schema": [
+            {
+              "id": "draft_id",
+              "displayName": "draft_id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "day_number",
+              "displayName": "day_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hook",
+              "displayName": "hook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hashtags",
+              "displayName": "hashtags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "video_script",
+              "displayName": "video_script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "approval_date",
+              "displayName": "approval_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "publish_time",
+              "displayName": "publish_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published",
+              "displayName": "published",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_date",
+              "displayName": "created_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         },
         "options": {
-          "cellFormat": "USER_ENTERED"
+          "cellFormat": "RAW"
         }
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001009",
-      "name": "Update - Published (API)",
+      "id": "f3a7839b-430a-474e-a7ca-89c262fad43e",
+      "name": "Mark Notification Sent",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1600, 100],
+      "position": [
+        1400,
+        710
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
-        },
-        "sheetName": {
-          "__rl": true,
-          "mode": "list",
-          "value": "Content Drafts"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "caption": "={{ $json.caption }}",
-            "status": "Notification Sent",
-            "notification_sent_date": "={{ new Date().toISOString().split('T')[0] }}"
-          }
-        },
-        "options": {
-          "cellFormat": "USER_ENTERED"
-        }
+        "content": "### Social scheduler\nDefault (`AUTOPILOT_SOCIAL_POSTING=false`): every approved draft is sent to Telegram for MANUAL posting and marked `Notification Sent`.\nAPI posting only when `AUTOPILOT_SOCIAL_POSTING=true`, `AUTOPILOT_STOP` is not true and provider settings exist (Buffer: `BUFFER_API_KEY` + `BUFFER_PROFILE_ID_<PLATFORM>`; X: `TWITTER_POSTING_ENABLED=true` + credential). A failed API post falls back to the manual alert.\nEXTERNAL DEPENDENCY: Buffer / X API access; request shapes are not verified against the live providers.",
+        "width": 480,
+        "height": 230
       },
-      "id": "e5f6a7b8-5001-4001-8001-000000001010",
-      "name": "Update - Notification Sent",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [1600, 420],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
-        }
-      }
+      "id": "330478f9-9bfe-4dda-a6b7-bd91b512af9f",
+      "name": "Behaviour",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
     },
     {
       "parameters": {},
-      "id": "e5f6a7b8-5001-4001-8001-000000001011",
-      "name": "No Posts - NoOp",
-      "type": "n8n-nodes-base.noOp",
+      "id": "6acfd098-161d-4b3f-a5e3-fe8cdd444e70",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [780, 440]
-    },
-    {
-      "parameters": {
-        "content": "## 🔧 Social Post Scheduler Setup\n\n### Schedule\nRuns **every 2 hours from 10:00-20:00** (Europe/Rome).\nCron: `0 10,12,14,16,18,20 * * *`\n\n### Platform Routing\n| Platform | Action | Setup Required |\n|----------|--------|----------------|\n| Twitter/X | Direct API post | Twitter Developer API keys |\n| Instagram | Via Buffer API | Buffer account + profile |\n| Facebook | Via Buffer API | Buffer account + profile |\n| LinkedIn | Via Buffer API | Buffer account + profile |\n| TikTok | Manual (Telegram alert) | Telegram Bot |\n| Reddit | Manual (Telegram alert) | Telegram Bot |\n| Other | Manual (Telegram alert) | Telegram Bot |\n\n### Twitter/X API Setup\n1. Apply for Twitter Developer Account\n2. Create an app at developer.twitter.com\n3. Get OAuth 2.0 credentials\n4. Add as n8n OAuth2 credential named \"Twitter/X OAuth2\"\n\n### Buffer API Setup\n1. Create Buffer account (buffer.com)\n2. Connect your social profiles\n3. Get Access Token from Buffer Developer settings\n4. Add as n8n HTTP Header Auth: `Authorization: Bearer YOUR_TOKEN`\n5. Replace `YOUR_BUFFER_PROFILE_ID`\n\n### Google Sheet — \"Content Drafts\" columns:\n- `caption` or `content` — post text\n- `hashtags` — post hashtags\n- `platform` — target platform (twitter, instagram, etc.)\n- `video_script` — optional video script\n- `image_url` — optional image URL\n- `status` — Approved, Published, Notification Sent\n- `published` — true/false\n- `publish_date` — auto-set on publish\n- `created_date` or `date` — for ordering\n\n### Manual Posting Flow\nFor TikTok, Reddit, and other platforms:\n1. Content is sent to Telegram with all details\n2. Post manually on the platform\n3. Status is updated to \"Notification Sent\"\n4. Mark as \"Published\" manually in the sheet after posting",
-        "width": 460,
-        "height": 740
-      },
-      "id": "e5f6a7b8-5001-4001-8001-000000001012",
-      "name": "Sticky Note",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [-320, 0]
+      "position": [
+        100,
+        370
+      ]
     }
   ],
   "connections": {
-    "Every 2 Hours Trigger": {
-      "main": [
-        [
-          {
-            "node": "Read Approved Posts",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Approved Posts": {
-      "main": [
-        [
-          {
-            "node": "IF - Posts Available",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF - Posts Available": {
-      "main": [
-        [
-          {
-            "node": "Select Next Post",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "No Posts - NoOp",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Select Next Post": {
       "main": [
         [
           {
-            "node": "Switch - Platform",
+            "node": "Route",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Switch - Platform": {
+    "Route": {
       "main": [
         [
           {
-            "node": "Post to Twitter/X",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Post to Twitter/X",
+            "node": "Post to Twitter X",
             "type": "main",
             "index": 0
           }
@@ -460,32 +752,18 @@
         ],
         [
           {
-            "node": "Post via Buffer",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Post via Buffer",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Telegram - Manual Post Alert",
+            "node": "Manual Post Alert",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Post to Twitter/X": {
+    "Post to Twitter X": {
       "main": [
         [
           {
-            "node": "Update - Published (API)",
+            "node": "Check Post Result",
             "type": "main",
             "index": 0
           }
@@ -496,18 +774,80 @@
       "main": [
         [
           {
-            "node": "Update - Published (API)",
+            "node": "Check Post Result",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Telegram - Manual Post Alert": {
+    "Check Post Result": {
       "main": [
         [
           {
-            "node": "Update - Notification Sent",
+            "node": "Posted OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Posted OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Published",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual Post Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Post Alert": {
+      "main": [
+        [
+          {
+            "node": "Mark Notification Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 2 Hours 10-20": {
+      "main": [
+        [
+          {
+            "node": "Read Content Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Content Drafts": {
+      "main": [
+        [
+          {
+            "node": "Select Next Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Read Content Drafts",
             "type": "main",
             "index": 0
           }
@@ -518,20 +858,10 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Europe/Rome"
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "tags": [
-    {
-      "name": "social-media"
-    },
-    {
-      "name": "content"
-    },
-    {
-      "name": "scheduler"
-    }
-  ],
-  "meta": {
-    "instanceId": "app-launch-automation"
-  }
+  "pinData": {},
+  "tags": []
 }

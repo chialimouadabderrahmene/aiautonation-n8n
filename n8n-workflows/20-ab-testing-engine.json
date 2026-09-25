@@ -1,136 +1,294 @@
 {
   "name": "Eki - 20 A/B Testing Engine",
+  "id": "ekiwf20",
   "nodes": [
     {
-      "id": "05ed9300-74e1-4b23-9d51-9fe6a60c4226",
-      "name": "Every 72h",
-      "type": "n8n-nodes-base.cronTrigger",
-      "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ],
       "parameters": {
         "rule": {
-          "hour": 9,
-          "minute": 0
-        }
-      }
-    },
-    {
-      "id": "079c8706-9980-4277-9343-a9550f6f87c3",
-      "name": "Get Performance",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 2,
-      "position": [
-        300,
-        0
-      ],
-      "parameters": {
-        "operation": "getRows",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "PublishedContent"
-      },
-      "credentials": {
-        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
-      }
-    },
-    {
-      "id": "b10bdd56-0a20-4614-ab7b-9c9f043308b1",
-      "name": "Analyze Winners",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        600,
-        0
-      ],
-      "parameters": {
-        "jsCode": "const posts = $json;\nconst scored = posts.map(p => ({\n  ...p,\n  engagement_score: (parseInt(p.comments||0)*3 + parseInt(p.saves||0)*2 + parseInt(p.shares||0)*4)\n}));\nscored.sort((a,b) => b.engagement_score - a.engagement_score);\nconst winners = scored.slice(0,3);\nconst losers = scored.slice(-3);\nreturn [\n  {json:{type:'winners', data:winners}},\n  {json:{type:'losers', data:losers}},\n  {json:{type:'insights', summary:`Top hooks: ${winners.map(w=>w.hook).join(', ')}. Top formats: ${winners.map(w=>w.format).join(', ')}`}}\n];"
-      }
-    },
-    {
-      "id": "fdc68f1c-f37e-44aa-81e0-08f0b07ebbe4",
-      "name": "GPT-4 Insights",
-      "type": "n8n-nodes-base.openAi",
-      "typeVersion": 2,
-      "position": [
-        900,
-        0
-      ],
-      "parameters": {
-        "model": "gpt-4o-mini",
-        "messages": {
-          "values": [
+          "interval": [
             {
-              "role": "user",
-              "content": "=Analyze these winners vs losers from Eki's content. Extract patterns: what hooks, emotions, formats, CTAs drive engagement. Return JSON: {top_hooks[], top_formats[], top_emotions[], recommendations[]}. Data: {{JSON.stringify($json)}}"
+              "field": "hours",
+              "hoursInterval": 72
             }
           ]
         }
       },
-      "credentials": {
-        "openAiApi": "openAiApi"
-      }
+      "id": "fbc59702-ff05-4398-ab83-e8b795073345",
+      "name": "Every 72 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        200
+      ]
     },
     {
-      "id": "bc185b34-4eff-48d3-81ef-7bb23bce8845",
-      "name": "Update Hook Library",
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "PublishedContent",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "da90d4b0-8de4-473e-a190-388b641377d8",
+      "name": "Read Published Content",
       "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        360,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst posts = $input.all().map((i) => i.json).filter((p) => norm(p.hook) || norm(p.format));\nif (posts.length < 6) return [];\nconst n = (v) => parseInt(v, 10) || 0;\nconst scored = posts.map((p) => ({ ...p, engagement_score: n(p.comments) * 3 + n(p.saves) * 2 + n(p.shares) * 4 }));\nscored.sort((a, b) => b.engagement_score - a.engagement_score);\nconst winners = scored.slice(0, 3); const losers = scored.slice(-3);\nconst brief = (arr) => arr.map((p) => '- hook: ' + norm(p.hook).slice(0, 160) + ' | format: ' + norm(p.format) + ' | platform: ' + norm(p.platform) + ' | score: ' + p.engagement_score).join('\\n');\nconst system = 'You analyse social content performance for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Return ONLY JSON.';\nconst user = 'Analyze these winners vs losers. Extract patterns: what hooks, emotions, formats, CTAs drive engagement. Return JSON: {\"top_hooks\":[],\"top_formats\":[],\"top_emotions\":[],\"recommendations\":[]} (arrays of short strings).\\n\\nWINNERS:\\n' + brief(winners) + '\\n\\nLOSERS:\\n' + brief(losers);\nreturn [{ json: { ai_request: aiRequest(system, user, 0.3), winners: winners.map((p) => norm(p.hook)) } }];"
+      },
+      "id": "1aea2c90-3f73-40a9-a48b-6e3992e985fb",
+      "name": "Analyze Winners",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        0
-      ],
+        620,
+        200
+      ]
+    },
+    {
       "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.AI_API_BASE_URL || 'https://api.groq.com/openai/v1')).replace(/\\/+$/, '') + '/chat/completions' }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}"
+      },
+      "id": "4e731891-88b1-4577-aeb0-fe7129cca198",
+      "name": "AI Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst d = parseAi($input.first().json);\nconst now = nowIso();\nconst rows = [];\nconst add = (type, arr) => (Array.isArray(arr) ? arr : []).slice(0, 10).forEach((c) => { const s = norm(c); if (s) rows.push({ json: { type, content: s, score: '0', source: 'ab_test', created: now } }); });\nadd('hook_pattern', d.top_hooks); add('format_pattern', d.top_formats); add('emotion_pattern', d.top_emotions); add('recommendation', d.recommendations);\nreturn rows;"
+      },
+      "id": "7ed2f933-dd6f-45f1-a016-720f50cb274d",
+      "name": "Build Insight Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
         "operation": "append",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "Intelligence",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Intelligence",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "type": "hook_pattern",
-            "source": "ab_test",
-            "pattern": "",
-            "score": "",
-            "date": ""
-          }
+            "type": "={{ $json.type }}",
+            "content": "={{ $json.content }}",
+            "score": "={{ $json.score }}",
+            "source": "={{ $json.source }}",
+            "created": "={{ $json.created }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "type",
+              "displayName": "type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created",
+              "displayName": "created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
         }
       },
+      "id": "1594cdeb-3f24-4723-a4d5-ac50db3f7941",
+      "name": "Update Hook Library",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1400,
+        200
+      ],
       "credentials": {
-        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
-      }
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
-      "id": "b30b93cf-0173-46ee-8e00-11496176d1da",
-      "name": "Weekly Briefing",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 2,
-      "position": [
-        1500,
-        0
-      ],
       "parameters": {
-        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
-        "text": "=\ud83d\udcca A/B Test Results (72h)\nWinners: {{$node[\"Analyze Winners\"].json[0].data.map(w=>w.hook).join(', ')}}\n\nRecommendations: {{$node[\"GPT-4 Insights\"].json.output.recommendations.join('; ')}}"
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String('A/B test insights (72h)\\nWinning hooks: ' + $('Analyze Winners').first().json.winners.join(' | ') + '\\n\\nInsight rows saved: ' + $('Build Insight Rows').all().length).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
+      "id": "54ea9693-6210-470d-a13a-7205bc1689d8",
+      "name": "Telegram Briefing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1660,
+        200
+      ],
       "credentials": {
-        "telegramApi": "telegramApi"
-      }
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "### PublishedContent\nNothing in this repo writes the `PublishedContent` tab. Fill it (hook, format, platform, comments, saves, shares) from your analytics export. With fewer than 6 rows the workflow skips.",
+        "width": 400,
+        "height": 130
+      },
+      "id": "79840745-713b-4b6b-a33b-d13969a098a6",
+      "name": "Data dependency",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "07c7be93-54a5-4ab8-a298-afeeb332233b",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        370
+      ]
     }
   ],
   "connections": {
-    "Every 72h": {
+    "Every 72 Hours": {
       "main": [
         [
           {
-            "node": "Get Performance",
+            "node": "Read Published Content",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Get Performance": {
+    "Read Published Content": {
       "main": [
         [
           {
@@ -145,14 +303,25 @@
       "main": [
         [
           {
-            "node": "GPT-4 Insights",
+            "node": "AI Insights",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GPT-4 Insights": {
+    "AI Insights": {
+      "main": [
+        [
+          {
+            "node": "Build Insight Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Insight Rows": {
       "main": [
         [
           {
@@ -160,10 +329,25 @@
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Update Hook Library": {
+      "main": [
         [
           {
-            "node": "Weekly Briefing",
+            "node": "Telegram Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Read Published Content",
             "type": "main",
             "index": 0
           }
@@ -171,11 +355,13 @@
       ]
     }
   },
+  "active": false,
   "settings": {
-    "timezone": "Africa/Lagos"
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
   "pinData": {},
-  "versionId": "b4afa95f-543a-4285-8326-89cf2447a6a7",
-  "active": false,
   "tags": []
 }

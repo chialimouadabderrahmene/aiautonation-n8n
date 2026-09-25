@@ -1,86 +1,332 @@
 {
   "name": "Eki - 18 Content Multiplication Engine",
+  "id": "ekiwf18",
   "nodes": [
     {
-      "id": "e736197c-ace9-4e6b-a5e1-4e57df5ad74e",
-      "name": "On Approval",
-      "type": "n8n-nodes-base.webhookTrigger",
-      "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ],
       "parameters": {
+        "httpMethod": "POST",
         "path": "content-multiply",
-        "options": {}
-      }
-    },
-    {
-      "id": "40957ce2-db83-4c20-8634-0116050ab867",
-      "name": "GPT-4 Multiply",
-      "type": "n8n-nodes-base.openAi",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "765f40eb-6f6f-4d11-ac2b-90ff9d99e324",
+      "name": "Content Idea Webhook",
+      "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        300,
-        0
+        100,
+        200
       ],
-      "parameters": {
-        "model": "gpt-4o-mini",
-        "messages": {
-          "values": [
-            {
-              "role": "user",
-              "content": "=Take this content idea and expand into ALL formats for Eki (African foodstuff marketplace). Return JSON with: reel_script (60s), tiktok_adaptation (45s), carousel (5 slides), story_sequence (3 frames), fb_post, 3 hook_variations, 3 caption_variations (50/150/300 words). Core idea: {{$json.idea}}"
-            }
-          ]
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "eki-cred-webhook-secret",
+          "name": "Eki Webhook Shared Secret"
         }
       },
-      "credentials": {
-        "openAiApi": "openAiApi"
-      }
+      "webhookId": "2c8e158b-8ed0-43d8-afef-d46bc646f093"
     },
     {
-      "id": "b1192490-dd6a-47d6-9e7a-f7ab0db594b3",
-      "name": "Queue to Sheets",
-      "type": "n8n-nodes-base.googleSheets",
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst b = $input.first().json.body || {};\nconst idea = norm(b.idea || b.topic);\nif (!idea) return [{ json: { valid: false, errors: ['idea is required'] } }];\nconst system = 'You are a content strategist for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Do not invent statistics, testimonials, prices or guarantees. Return ONLY JSON.';\nconst user = 'Take this content idea and expand it into ALL formats. Return JSON with: reel_script (60s, string), tiktok_adaptation (45s, string), carousel (array of 5 slide strings), story_sequence (array of 3 frame strings), fb_post (string), hook_variations (array of 3 strings), caption_variations (array of 3 strings of ~50/150/300 words). Core idea: ' + idea.slice(0, 1000);\nreturn [{ json: { valid: true, ai_request: aiRequest(system, user, 0.8) } }];"
+      },
+      "id": "42a28dc7-fbcd-463e-a986-b56a1f49e152",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        600,
-        0
-      ],
+        360,
+        200
+      ]
+    },
+    {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0e93e2bd-cdfe-4d70-ae50-aaaabb64dc97",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cea7e2cd-2531-4d6b-a6b7-3c7c82184f99",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", errors: $json.errors } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "2000ef60-ff12-4622-a414-acad0e172602",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.AI_API_BASE_URL || 'https://api.groq.com/openai/v1')).replace(/\\/+$/, '') + '/chat/completions' }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}"
+      },
+      "id": "4c5c5b43-a925-4ec4-acca-adfffbb3f6b5",
+      "name": "AI Multiply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst d = parseAi($input.first().json);\nconst now = nowIso();\nconst rows = [];\nconst add = (format, v) => { const s = Array.isArray(v) ? v.map((x, i) => (i + 1) + '. ' + norm(x)).join('\\n') : norm(v); if (s) rows.push({ json: { format, content: s, status: 'pending', source: 'multiplication', created: now } }); };\nadd('reel_script', d.reel_script); add('tiktok_adaptation', d.tiktok_adaptation); add('carousel', d.carousel); add('story_sequence', d.story_sequence); add('fb_post', d.fb_post);\n(Array.isArray(d.hook_variations) ? d.hook_variations : []).forEach((h, i) => add('hook_variation_' + (i + 1), h));\n(Array.isArray(d.caption_variations) ? d.caption_variations : []).forEach((c, i) => add('caption_variation_' + (i + 1), c));\nif (!rows.length) throw new Error('AI returned no usable content');\nreturn rows;"
+      },
+      "id": "fa42f946-86e4-4ebd-aa34-cb553ea4862a",
+      "name": "Build Queue Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
         "operation": "append",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "ContentQueue",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ContentQueue",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "format": "",
-            "content": "",
-            "status": "pending",
-            "source": "multiplication",
-            "created": ""
-          }
+            "format": "={{ $json.format }}",
+            "content": "={{ $json.content }}",
+            "status": "={{ $json.status }}",
+            "source": "={{ $json.source }}",
+            "created": "={{ $json.created }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "format",
+              "displayName": "format",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created",
+              "displayName": "created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
         }
       },
+      "id": "b73152bd-1b9c-4605-acba-aa9272957cac",
+      "name": "Queue to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1400,
+        200
+      ],
       "credentials": {
-        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
-      }
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'queued', items: $('Build Queue Rows').all().length } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "60369e71-d3ce-4e04-a09f-0b2cf2b9ca1f",
+      "name": "Respond Queued",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Payload\n`POST /webhook/content-multiply` + header `X-Eki-Webhook-Secret` with `{ \"idea\": \"...\" }`.\nQueued items land in `ContentQueue` with status `pending` for human review. Not triggered automatically by workflow 02 (call it from your admin tooling or manually).",
+        "width": 400,
+        "height": 140
+      },
+      "id": "3d0b7849-7d53-445a-acff-f48dcd73e884",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
     }
   ],
   "connections": {
-    "On Approval": {
+    "Content Idea Webhook": {
       "main": [
         [
           {
-            "node": "GPT-4 Multiply",
+            "node": "Build AI Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GPT-4 Multiply": {
+    "Build AI Request": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "AI Multiply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Multiply": {
+      "main": [
+        [
+          {
+            "node": "Build Queue Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Queue Rows": {
       "main": [
         [
           {
@@ -90,13 +336,26 @@
           }
         ]
       ]
+    },
+    "Queue to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Respond Queued",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": false,
   "settings": {
-    "timezone": "Africa/Lagos"
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
   "pinData": {},
-  "versionId": "36553c37-8e5d-4980-b5a7-334e240a2ac2",
-  "active": false,
   "tags": []
 }

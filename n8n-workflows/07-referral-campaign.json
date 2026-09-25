@@ -1,253 +1,766 @@
 {
   "name": "Eki - 07 Referral Campaign Tracker",
+  "id": "ekiwf07",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "track-referral",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
-      "id": "e674c321-4f1b-419b-a010-b6f7924c2563",
-      "name": "Referral Hook Trigger",
+      "id": "57336ed2-06a1-4162-aa36-cf8845dd12c7",
+      "name": "Referral Hook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         100,
-        300
+        370
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "eki-cred-webhook-secret",
+          "name": "Eki Webhook Shared Secret"
+        }
+      },
+      "webhookId": "8a8c15ae-6438-4d10-a9b1-492b7ea1fd5b"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst b = $input.first().json.body || {};\nconst code = norm(b.referral_code || b.ref).toUpperCase();\nconst newEmail = norm(b.new_user_email || b.new_email).toLowerCase();\nconst newName = norm(b.new_user_name || b.new_name) || 'A friend';\nconst errors = [];\nif (!code) errors.push('referral_code (or ref) is required');\nif (!newEmail || !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(newEmail)) errors.push('new_user_email must be a valid email');\nif (errors.length) return [{ json: { valid: false, errors } }];\nreturn [{ json: { valid: true, referral: { code, new_email: newEmail, new_name: newName } } }];"
+      },
+      "id": "5158b3b3-b4f4-4444-aee4-f07a972dcde3",
+      "name": "Validate Referral",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        370
       ]
     },
     {
       "parameters": {
-        "operation": "read",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Waitlist!A:G",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a7bb51f6-cc76-455f-a968-a1cf34b705dd",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
         "options": {}
       },
-      "id": "c6be98bb-fcf2-4df4-8d41-e0e2ac6b67a4",
-      "name": "Read Waitlist Referrers",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
+      "id": "e55b1faf-2015-436f-a93c-672ce06de3da",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
-        320,
-        300
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
-        }
-      }
+        620,
+        370
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const waitlist = $input.all();\nconst payload = $('Referral Hook Trigger').first().json.body;\nconst refCode = payload.referral_code.toUpperCase().trim();\nconst referrer = waitlist.find(row => row.json.referral_code && row.json.referral_code.toUpperCase().trim() === refCode);\n\nif (!referrer) {\n  return { found: false, new_email: payload.new_email, new_name: payload.new_name };\n}\n\nconst newCount = parseInt(referrer.json.referrals_count || 0) + 1;\nlet milestoneUnlocked = 'none';\nif (newCount === 3) milestoneUnlocked = 'VIP Access';\nif (newCount === 5) milestoneUnlocked = 'Free Escrow';\n\nreturn {\n  found: true,\n  referrer_email: referrer.json.email,\n  referrer_name: referrer.json.name,\n  new_referrals_count: newCount,\n  milestone_unlocked: milestoneUnlocked,\n  new_email: payload.new_email,\n  new_name: payload.new_name\n};"
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", errors: $json.errors } }}",
+        "options": {
+          "responseCode": 400
+        }
       },
-      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfc",
+      "id": "adfcb948-b90c-402d-a25e-84c02365dcf2",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        710
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Referrals",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "575763f4-b562-42f5-ab58-78bc4e350b2d",
+      "name": "Read Referrals",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        370
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Waitlist",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "referral_code",
+              "lookupValue": "={{ $('Validate Referral').first().json.referral.code }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2c085c9f-66be-4a86-a23a-871ad150709c",
+      "name": "Read Referrer",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1140,
+        370
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst ref = $('Validate Referral').first().json.referral;\nconst referrals = $('Read Referrals').all().map((i) => i.json);\nconst referrer = $input.all().map((i) => i.json).find((r) => norm(r.referral_code).toUpperCase() === ref.code);\nif (!referrer) return [{ json: { result: 'unmatched', response: { status: 'completed', message: 'Referral code not found; nothing credited.' } } }];\nif (referrals.some((r) => norm(r.referred_email).toLowerCase() === ref.new_email)) return [{ json: { result: 'duplicate', response: { status: 'duplicate', message: 'This referral was already recorded.' } } }];\nconst newCount = (parseInt(referrer.referrals_count, 10) || 0) + 1;\nlet milestone = 'none';\nif (newCount === 3) milestone = 'VIP Access';\nif (newCount === 5) milestone = 'Free Escrow';\nconst appUrl = appLink();\nconst esc = (s) => String(s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nlet subject = ''; let html = '';\nconst referrerName = esc(referrer.name || 'there');\nif (milestone !== 'none') {\n  subject = 'You unlocked a milestone reward on Eki';\n  html = '<h3>Congratulations ' + referrerName + ',</h3><p>Your friend <strong>' + esc(ref.new_name) + '</strong> just registered on Eki using your link.</p><p>That makes ' + newCount + ' referrals - you unlocked <strong>' + esc(milestone) + '</strong>.</p>' + (appUrl ? '<p>Open Eki: ' + esc(appUrl) + '</p>' : '') + '<p>The Eki Team</p>';\n} else {\n  subject = 'Thank you for referring a friend to Eki';\n  html = '<p>Hi ' + referrerName + ',</p><p>Your friend <strong>' + esc(ref.new_name) + '</strong> just joined Eki using your referral code.</p><p>You now have ' + newCount + ' referral(s) in total.</p><p>The Eki Team</p>';\n}\nconst now = nowIso();\nconst canEmail = !!norm(referrer.email) && !!norm($env.RESEND_API_KEY) && !!norm($env.RESEND_FROM_EMAIL);\nreturn [{ json: {\n  result: 'ok', new_count: String(newCount), milestone, referrer_code: ref.code, referrer_email: norm(referrer.email).toLowerCase(),\n  referral_row: { referral_id: 'R-' + Date.now(), referrer_email: norm(referrer.email).toLowerCase(), referred_email: ref.new_email, referral_code: ref.code, timestamp: now, points_credited: '1', status: 'Credited' },\n  send_email: canEmail, email_to: norm(referrer.email).toLowerCase(), email_subject: subject, email_html: html,\n  response: { status: 'success', referrals_count: newCount, milestone_unlocked: milestone, message: 'Referral tracked.' },\n} }];"
+      },
+      "id": "bea29fc6-6fd5-42e2-ae68-2147188170fe",
       "name": "Match Referrer",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        540,
-        300
+        1400,
+        370
       ]
     },
     {
       "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.found }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "a0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfd",
-      "name": "Referrer Found?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [
-        760,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "responseCode": 200,
-        "responseBody": "{\n  \"status\": \"completed\",\n  \"message\": \"Referral code unmatched, processed lead standard.\"\n}",
-        "options": {}
-      },
-      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcf1",
-      "name": "Respond Unmatched",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [
-        980,
-        150
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Waitlist!A:G",
-        "matchColumns": [
-          "email"
-        ],
-        "columnsToUpdate": [
-          "referrals_count"
-        ],
-        "fieldsUi": {
+        "rules": {
           "values": [
             {
-              "column": "referrals_count",
-              "value": "={{ $json.new_referrals_count }}"
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "6cda775d-a3ec-40fb-a646-d0ddd33b37f8",
+                    "leftValue": "={{ $json.result }}",
+                    "rightValue": "ok",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ok"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "903e2f56-5aad-4ca2-a46d-49aa56b8c1a5",
+                    "leftValue": "={{ $json.result }}",
+                    "rightValue": "unmatched",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unmatched"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "eb413855-2a85-4559-ad7d-39e459a24575",
+                    "leftValue": "={{ $json.result }}",
+                    "rightValue": "duplicate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "duplicate"
             }
           ]
         },
         "options": {}
       },
-      "id": "2be5b0cd-562a-4df4-8d41-c741e0a290b7",
-      "name": "Increment Count in Sheet",
+      "id": "6ffff32f-8c19-4c0a-a39a-3983a92a30da",
+      "name": "Route Result",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1660,
+        370
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "0a656cb3-66a6-47bf-a99b-ac7c53307a62",
+      "name": "Respond Unmatched",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        710
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "47ae0217-d1e5-4db8-adc4-17a96fddde9f",
+      "name": "Respond Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Waitlist",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "referral_code": "={{ $json.referrer_code }}",
+            "referrals_count": "={{ $json.new_count }}"
+          },
+          "matchingColumns": [
+            "referral_code"
+          ],
+          "schema": [
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "whatsapp",
+              "displayName": "whatsapp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "position",
+              "displayName": "position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referrals_count",
+              "displayName": "referrals_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_type",
+              "displayName": "user_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "signup_date",
+              "displayName": "signup_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "consent",
+              "displayName": "consent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "c13fd042-2129-4d3d-aad4-31ec0d2a4fda",
+      "name": "Increment Count",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        980,
-        450
+        1920,
+        200
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Referrals",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "referral_id": "={{ $('Match Referrer').first().json.referral_row.referral_id }}",
+            "referrer_email": "={{ $('Match Referrer').first().json.referral_row.referrer_email }}",
+            "referred_email": "={{ $('Match Referrer').first().json.referral_row.referred_email }}",
+            "referral_code": "={{ $('Match Referrer').first().json.referral_row.referral_code }}",
+            "timestamp": "={{ $('Match Referrer').first().json.referral_row.timestamp }}",
+            "points_credited": "={{ $('Match Referrer').first().json.referral_row.points_credited }}",
+            "status": "={{ $('Match Referrer').first().json.referral_row.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "referral_id",
+              "displayName": "referral_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referrer_email",
+              "displayName": "referrer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referred_email",
+              "displayName": "referred_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "points_credited",
+              "displayName": "points_credited",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "37329bc8-70c9-4cd7-afe6-62d4cdb21ec0",
+      "name": "Record Referral",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2180,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Match Referrer').first().json.response }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "73b55073-6b7a-4ed8-a24b-d563827f473f",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2440,
+        200
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.milestone_unlocked }}",
-              "operation": "notEqual",
-              "value2": "none"
+              "id": "f21a05aa-6c06-4f75-acb0-c2ea6648db72",
+              "leftValue": "={{ $('Match Referrer').first().json.send_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
-        }
-      },
-      "id": "b0e2ac6b-67a3-41bb-a5a5-c6be98bbfcf8",
-      "name": "Milestone Reached?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [
-        1200,
-        450
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.whatsapp.com/emails",
-        "sendHeaders": true,
-        "headersUi": {
-          "parameter": [
-            {
-              "name": "Authorization",
-              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
+          ],
+          "combinator": "and"
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.referrer_email }}\"], \"subject\": \"🎉 You unlocked a milestone reward on Eki!\", \"html\": \"<h3>Congratulations {{ $json.referrer_name }},</h3><p>Your friend <strong>{{ $json.new_name }}</strong> just registered on Eki using your link.</p><p>That makes {{ $json.new_referrals_count }} referrals! You have unlocked your <strong>{{ $json.milestone_unlocked }} Reward</strong>.</p><p>Check your dashboard for details: <strong>https://eki-marketplace.com/dashboard/rewards</strong></p><p>Keep sharing and keep trading safely!</p><p>Cheers,<br>The Eki Team</p>\"}"
-      },
-      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbd005",
-      "name": "Send WhatsApp Reward",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1420,
-        350
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.whatsapp.com/emails",
-        "sendHeaders": true,
-        "headersUi": {
-          "parameter": [
-            {
-              "name": "Authorization",
-              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.referrer_email }}\"], \"subject\": \"Thank you for referring a partner to Eki! 🌍\", \"html\": \"<p>Hey {{ $json.referrer_name }},</p><p>Your friend <strong>{{ $json.new_name }}</strong> just joined the Eki waitlist using your referral code.</p><p>You are now at {{ $json.new_referrals_count }} referrals total. Refer 5 friends to unlock 30 days of commission-free escrow trades!</p><p>Cheers,<br>The Eki Team</p>\"}"
-      },
-      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbd006",
-      "name": "Send Thank You Email",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1420,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "responseCode": 200,
-        "responseBody": "{\n  \"status\": \"success\",\n  \"message\": \"Referral tracked, points incremented and notifier dispatched.\"\n}",
         "options": {}
       },
-      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcff",
-      "name": "Respond Track Success",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
+      "id": "c58b10b0-cb70-49df-abf2-68dcca6b8db6",
+      "name": "Send Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
-        1700,
-        450
+        2700,
+        200
       ]
     },
     {
       "parameters": {
-        "content": "### Setup Instructions\n1. Replace `EKI_SPREADSHEET_ID_PLACEHOLDER` with Google Sheet ID.\n2. Replace `WHATSAPP_ACCESS_TOKEN_PLACEHOLDER` with WhatsApp API key.\n3. Triggered by Lead Capture Webhook to attribute invites to referrers.",
-        "height": 130,
-        "width": 280
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "email_to",
+              "value": "={{ $('Match Referrer').first().json.email_to }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "email_subject",
+              "value": "={{ $('Match Referrer').first().json.email_subject }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "email_html",
+              "value": "={{ $('Match Referrer').first().json.email_html }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
       },
-      "id": "bbafe1cc-2781-4bdf-87f5-a8cdb615b1eb",
-      "name": "Sticky Note Setup",
-      "type": "n8n-nodes-base.noOp",
+      "id": "de22520e-3aab-4d9a-a75c-435c0a8f3f6b",
+      "name": "Email Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2960,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM_EMAIL, to: [$json.email_to], subject: $json.email_subject, html: $json.email_html }) }}"
+      },
+      "id": "a0fded5d-6b73-4e3f-aa12-aae6d8295168",
+      "name": "Send Referrer Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3220,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "content": "### Payload\n`POST /webhook/track-referral` with header `X-Eki-Webhook-Secret`.\n`{ \"referral_code\": \"WL-EKI-CHI-ABCD\", \"new_user_email\": \"..\", \"new_user_name\": \"..\" }` (`ref`, `new_email`, `new_name` also accepted).\nDuplicate `new_user_email` for the same code is ignored (idempotent retries). Milestones: 3 = VIP Access, 5 = Free Escrow (reward fulfilment is manual - not automated by this repo).",
+        "width": 480,
+        "height": 190
+      },
+      "id": "648dbafa-da8e-4e8f-a64e-e5bb7713e0c0",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         100,
-        100
+        30
       ]
     }
   ],
   "connections": {
-    "Referral Hook Trigger": {
+    "Referral Hook": {
       "main": [
         [
           {
-            "node": "Read Waitlist Referrers",
+            "node": "Validate Referral",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Waitlist Referrers": {
+    "Validate Referral": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Read Referrals",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Referrals": {
+      "main": [
+        [
+          {
+            "node": "Read Referrer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Referrer": {
       "main": [
         [
           {
@@ -262,15 +775,22 @@
       "main": [
         [
           {
-            "node": "Referrer Found?",
+            "node": "Route Result",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Referrer Found?": {
+    "Route Result": {
       "main": [
+        [
+          {
+            "node": "Increment Count",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Respond Unmatched",
@@ -280,58 +800,62 @@
         ],
         [
           {
-            "node": "Increment Count in Sheet",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Increment Count in Sheet": {
-      "main": [
-        [
-          {
-            "node": "Milestone Reached?",
+            "node": "Respond Duplicate",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Milestone Reached?": {
+    "Increment Count": {
       "main": [
         [
           {
-            "node": "Send WhatsApp Reward",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Thank You Email",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Send WhatsApp Reward": {
-      "main": [
-        [
-          {
-            "node": "Respond Track Success",
+            "node": "Record Referral",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send Thank You Email": {
+    "Record Referral": {
       "main": [
         [
           {
-            "node": "Respond Track Success",
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Success": {
+      "main": [
+        [
+          {
+            "node": "Send Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email?": {
+      "main": [
+        [
+          {
+            "node": "Email Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Fields": {
+      "main": [
+        [
+          {
+            "node": "Send Referrer Email",
             "type": "main",
             "index": 0
           }
@@ -342,9 +866,10 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Africa/Lagos"
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "meta": {
-    "instanceId": "eki-launch-automation"
-  }
+  "pinData": {},
+  "tags": []
 }

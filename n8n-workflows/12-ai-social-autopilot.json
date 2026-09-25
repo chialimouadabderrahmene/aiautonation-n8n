@@ -1,5 +1,6 @@
 {
-  "name": "12 - AI Social Autopilot",
+  "name": "Eki - 12 AI Social Autopilot",
+  "id": "ekiwf12",
   "nodes": [
     {
       "parameters": {
@@ -12,98 +13,126 @@
           ]
         }
       },
-      "id": "cron-trigger",
-      "name": "Daily 9AM Trigger",
+      "id": "a216c844-ac0d-466a-a8e5-a253490ffffa",
+      "name": "Daily 09:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [220, 300]
+      "position": [
+        100,
+        200
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Check emergency stop\nif (($env.AUTOPILOT_STOP || '').toLowerCase() === 'true') {\n  return [{ json: { stopped: true } }];\n}\nreturn [{ json: { stopped: false } }];"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst flag = (v) => ['true', 'yes', '1'].includes(norm(v).toLowerCase());\nconst stopped = () => flag($env.AUTOPILOT_STOP);\nconst autopilotOn = () => flag($env.AUTOPILOT_SOCIAL_POSTING);\nconst bufferProfile = (platform) => norm($env['BUFFER_PROFILE_ID_' + String(platform).toUpperCase()]);\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nif (stopped()) return [{ json: { stopped: true } }];\nconst today = new Date().toISOString().slice(0, 10);\nconst system = 'You are the Eki social media strategist. Brand: Eki is a digital marketplace connecting African foodstuff vendors with buyers worldwide (garri, palm oil, spices, dried fish, and more). Tone: warm, community-driven, trustworthy, approachable. Generate unique content for each platform. Do not invent statistics, testimonials, prices, delivery promises or guarantees. Return ONLY valid JSON.';\nconst user = 'Generate social media content for ' + today + '. Return JSON with this exact structure:\\n{\\n  \"tiktok\": { \"hook\": \"attention-grabbing first line\", \"video_script\": \"30-60 sec script with scenes\", \"caption\": \"short caption\", \"hashtags\": \"#tag1 #tag2 (5-8 tags)\" },\\n  \"instagram\": { \"hook\": \"reel hook\", \"video_script\": \"reel script\", \"caption\": \"engaging caption with CTA\", \"hashtags\": \"#tag1 #tag2 (10-15 tags)\" },\\n  \"facebook\": { \"hook\": \"scroll-stopping opener\", \"caption\": \"longer post with value and CTA\", \"hashtags\": \"#tag1 #tag2 (3-5 tags)\", \"video_script\": \"\" }\\n}\\nRules: No offensive content. No false claims. No medical/legal/financial promises. No spammy hashtags. Each platform MUST have a unique caption. Focus on African foodstuff sourcing, cooking, community and trust.';\nreturn [{ json: { stopped: false, ai_request: aiRequest(system, user, 0.85) } }];"
       },
-      "id": "stop-check",
-      "name": "Emergency Stop Check",
+      "id": "8394aec3-6f37-408e-ab4d-a6d689bb1e6d",
+      "name": "Emergency Stop And Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 300]
+      "position": [
+        360,
+        200
+      ]
     },
     {
       "parameters": {
         "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
             {
-              "id": "not-stopped",
-              "leftValue": "={{ $json.stopped }}",
-              "rightValue": false,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "id": "ffeb9f94-c92c-4aef-af4f-7f6d7fe37b20",
+              "leftValue": "={{ !$json.stopped }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "if-not-stopped",
+      "id": "c72357b0-7871-4cba-a35e-a4e531f3005b",
       "name": "Not Stopped?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [660, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst systemPrompt = 'You are Eki social media strategist. Brand: Eki - AI automation platform for businesses. Tone: professional, innovative, approachable. You generate unique content for each platform. Return ONLY valid JSON.';\nconst userPrompt = `Generate social media content for ${today}. Return JSON with this exact structure:\n{\n  \"tiktok\": { \"hook\": \"attention-grabbing first line\", \"video_script\": \"30-60 sec script with scenes\", \"caption\": \"short caption\", \"hashtags\": \"#tag1 #tag2 (5-8 tags)\" },\n  \"instagram\": { \"hook\": \"reel hook\", \"video_script\": \"reel script\", \"caption\": \"engaging caption with CTA\", \"hashtags\": \"#tag1 #tag2 (10-15 tags)\" },\n  \"facebook\": { \"hook\": \"scroll-stopping opener\", \"caption\": \"longer post with value and CTA\", \"hashtags\": \"#tag1 #tag2 (3-5 tags)\", \"video_script\": \"\" }\n}\nRules: No offensive content. No false claims. No medical/legal/financial promises. No spammy hashtags. Each platform MUST have unique caption. Focus on AI automation value.`;\n\nreturn [{\n  json: {\n    requestBody: {\n      model: 'llama-3.3-70b-versatile',\n      temperature: 0.85,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userPrompt }\n      ]\n    }\n  }\n}];"
-      },
-      "id": "build-ai-request",
-      "name": "Build AI Request",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [900, 300]
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        200
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "url": "={{ (($env.AI_API_BASE_URL || 'https://api.groq.com/openai/v1')).replace(/\\/+$/, '') + '/chat/completions' }}",
+        "options": {
+          "timeout": 60000
+        },
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.GROQ_API_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
-        "options": { "timeout": 30000 }
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}"
       },
-      "id": "generate-ai",
-      "name": "Generate Content (Groq)",
+      "id": "60dd80d9-58a6-4a54-ac1a-7110f02809c2",
+      "name": "Generate Content",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1020, 300]
+      "position": [
+        880,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
     },
     {
       "parameters": {
-        "jsCode": "// Parse Groq/OpenAI response into 3 platform items\nconst item = $input.first().json;\nlet rawContent = '';\n\nif (item.choices && item.choices[0]) {\n  rawContent = item.choices[0].message.content;\n} else {\n  return [{ json: { error: 'No AI response', raw: JSON.stringify(item) } }];\n}\n\n// Extract JSON (handle markdown code blocks if any)\nlet jsonStr = rawContent;\nconst jsonMatch = rawContent.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\nif (jsonMatch) jsonStr = jsonMatch[1].trim();\n\nlet content;\ntry {\n  content = JSON.parse(jsonStr);\n} catch(e) {\n  return [{ json: { error: 'JSON parse failed: ' + e.message, raw: rawContent } }];\n}\n\nconst today = new Date().toISOString().split('T')[0];\nconst platforms = ['tiktok', 'instagram', 'facebook'];\nconst results = [];\n\nfor (const platform of platforms) {\n  const p = content[platform] || {};\n  results.push({\n    json: {\n      date: today,\n      platform: platform,\n      content_type: platform === 'tiktok' ? 'short_video' : platform === 'instagram' ? 'reel' : 'post',\n      hook: p.hook || '',\n      caption: p.caption || '',\n      hashtags: p.hashtags || '',\n      video_script: p.video_script || '',\n      status: 'generated',\n      autopilot_status: 'pending',\n      scheduled_at: '',\n      published_at: '',\n      error: ''\n    }\n  });\n}\n\nreturn results;"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst content = parseAi($input.first().json);\nconst today = new Date().toISOString().slice(0, 10);\nconst offensiveRe = /\\b(fuck|shit|damn|bitch|nigger|faggot|retard)\\b/i;\nconst falseClaimRe = /\\b(guaranteed|100%|proven to|always works|never fails|instant results)\\b/i;\nconst medLegalFinRe = /\\b(cure|diagnose|legal advice|financial advice|investment returns|medical treatment|prescription)\\b/i;\nconst spamHashRe = /\\b(follow4follow|f4f|like4like|l4l|followback|instalike|likeforlike)\\b/i;\nconst platforms = ['tiktok', 'instagram', 'facebook'];\nconst rows = platforms.map((platform) => {\n  const p = content[platform] || {};\n  return { date: today, platform, content_type: platform === 'tiktok' ? 'short_video' : platform === 'instagram' ? 'reel' : 'post', hook: norm(p.hook), caption: norm(p.caption), hashtags: norm(p.hashtags), video_script: norm(p.video_script) };\n});\nconst captions = rows.map((r) => r.caption.toLowerCase());\nreturn rows.map((r) => {\n  const issues = [];\n  const text = r.caption + ' ' + r.video_script + ' ' + r.hook;\n  if (!r.caption) issues.push('empty_caption');\n  if (offensiveRe.test(text)) issues.push('offensive');\n  if (falseClaimRe.test(text)) issues.push('false_claim');\n  if (medLegalFinRe.test(text)) issues.push('med_legal_fin');\n  if (spamHashRe.test(r.hashtags)) issues.push('spam_hashtags');\n  if (captions.filter((c) => c === r.caption.toLowerCase()).length > 1) issues.push('duplicate');\n  const passed = issues.length === 0;\n  return { json: { ...r, status: passed ? 'approved' : 'flagged', autopilot_status: 'pending', scheduled_at: '', published_at: '', flag_reason: passed ? '' : issues.join(',') } };\n});"
       },
-      "id": "parse-response",
-      "name": "Parse AI Response",
+      "id": "31ca29b5-13c0-468a-a75a-bca11a872756",
+      "name": "Parse And Safety Check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1140, 300]
+      "position": [
+        1140,
+        200
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Safety checks\nconst items = $input.all();\nconst offensiveRe = /\\b(fuck|shit|damn|bitch|nigger|faggot|retard)\\b/i;\nconst falseClaimRe = /\\b(guaranteed|100%|proven to|always works|never fails|instant results)\\b/i;\nconst medLegalFinRe = /\\b(cure|diagnose|legal advice|financial advice|investment returns|medical treatment|prescription)\\b/i;\nconst spamHashRe = /\\b(follow4follow|f4f|like4like|l4l|followback|instalike|likeforlike)\\b/i;\n\nconst allCaptions = items.map(i => (i.json.caption || '').toLowerCase());\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i].json;\n  const issues = [];\n  const text = (item.caption || '') + ' ' + (item.video_script || '');\n\n  if (offensiveRe.test(text)) issues.push('offensive');\n  if (falseClaimRe.test(text)) issues.push('false_claim');\n  if (medLegalFinRe.test(text)) issues.push('med_legal_fin');\n  if (spamHashRe.test(item.hashtags || '')) issues.push('spam_hashtags');\n  \n  const dupes = allCaptions.filter(c => c === (item.caption || '').toLowerCase()).length;\n  if (dupes > 1) issues.push('duplicate');\n\n  const passed = issues.length === 0;\n  results.push({\n    json: {\n      ...item,\n      status: passed ? 'approved' : 'flagged',\n      error: passed ? '' : issues.join(',')\n    }\n  });\n}\n\nreturn results;"
-      },
-      "id": "safety-checks",
-      "name": "Safety Checks",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1380, 300]
-    },
-    {
-      "parameters": {
+        "resource": "sheet",
         "operation": "append",
-        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
-        "sheetName": { "__rl": true, "mode": "name", "value": "Social Posts" },
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Social Posts",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -118,215 +147,872 @@
             "autopilot_status": "={{ $json.autopilot_status }}",
             "scheduled_at": "={{ $json.scheduled_at }}",
             "published_at": "={{ $json.published_at }}",
-            "error": "={{ $json.error }}"
-          }
+            "flag_reason": "={{ $json.flag_reason }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content_type",
+              "displayName": "content_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hook",
+              "displayName": "hook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hashtags",
+              "displayName": "hashtags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "video_script",
+              "displayName": "video_script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "autopilot_status",
+              "displayName": "autopilot_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "scheduled_at",
+              "displayName": "scheduled_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "published_at",
+              "displayName": "published_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "flag_reason",
+              "displayName": "flag_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         },
-        "options": {}
+        "options": {
+          "cellFormat": "RAW"
+        }
       },
-      "id": "save-sheets",
+      "id": "c4ee55a4-987d-4edc-aefb-ac0a30bf5580",
       "name": "Save to Social Posts",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1620, 300],
-      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+      "position": [
+        1400,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "jsCode": "// Check if autopilot posting is enabled and Buffer key exists\nconst autopilotOn = ($env.AUTOPILOT_SOCIAL_POSTING || '').toLowerCase() === 'true';\nconst hasBuffer = !!$env.BUFFER_API_KEY;\nconst items = $input.all();\n\nconst results = items.map(item => ({\n  json: {\n    ...item.json,\n    should_post: autopilotOn && hasBuffer && item.json.status === 'approved',\n    posting_method: hasBuffer ? 'buffer' : 'none'\n  }\n}));\n\nreturn results;"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst flag = (v) => ['true', 'yes', '1'].includes(norm(v).toLowerCase());\nconst stopped = () => flag($env.AUTOPILOT_STOP);\nconst autopilotOn = () => flag($env.AUTOPILOT_SOCIAL_POSTING);\nconst bufferProfile = (platform) => norm($env['BUFFER_PROFILE_ID_' + String(platform).toUpperCase()]);\n// Autopilot posting is OFF by default. Only approved (safety-passed) posts are ever eligible.\nreturn $('Parse And Safety Check').all().map((i) => {\n  const p = i.json;\n  const profile = bufferProfile(p.platform);\n  const post = autopilotOn() && !stopped() && p.status === 'approved' && !!norm($env.BUFFER_API_KEY) && !!profile;\n  return { json: { ...p, should_post: post, buffer_profile: profile, text: (p.caption + (p.hashtags ? '\\n\\n' + p.hashtags : '')).trim() } };\n});"
       },
-      "id": "check-posting",
-      "name": "Check Posting Config",
+      "id": "e224b3e1-23af-43c6-aa0c-1f0106e0ab68",
+      "name": "Decide Posting",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1860, 300]
+      "position": [
+        1660,
+        200
+      ]
     },
     {
       "parameters": {
         "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
             {
-              "id": "should-post",
+              "id": "57d0f137-4875-424a-a21a-67d02a32902d",
               "leftValue": "={{ $json.should_post }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "if-should-post",
-      "name": "Should Auto-Post?",
+      "id": "ff7d20c6-2754-4af1-a354-6a83595a65eb",
+      "name": "Auto-Post?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [2100, 300]
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a283a347-adad-47aa-a20b-21a80deea585",
+      "name": "Loop Over Posts",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2180,
+        200
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "https://api.bufferapp.com/1/updates/create.json",
+        "options": {
+          "timeout": 15000
+        },
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.BUFFER_API_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.BUFFER_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ text: $json.caption + '\\n\\n' + $json.hashtags, profile_ids: [$env.BUFFER_PROFILE_ID], scheduled_at: new Date(Date.now() + 3600000).toISOString() }) }}",
-        "options": { "timeout": 15000 }
+        "jsonBody": "={{ JSON.stringify({ text: $json.text, profile_ids: [$json.buffer_profile], scheduled_at: new Date(Date.now() + 3600000).toISOString() }) }}"
       },
-      "id": "post-buffer",
+      "id": "478d7f1c-ce41-433b-ad71-8858d7802d45",
       "name": "Post to Buffer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2340, 200],
-      "continueOnFail": true
+      "position": [
+        2440,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Check if Buffer post succeeded or failed\nconst item = $input.first().json;\nconst success = item.success === true || item.updates || (item.id && !item.error);\n\nreturn [{\n  json: {\n    buffer_success: success,\n    buffer_response: item,\n    platform: $('Should Auto-Post?').first().json.platform,\n    caption: $('Should Auto-Post?').first().json.caption,\n    hashtags: $('Should Auto-Post?').first().json.hashtags,\n    date: $('Should Auto-Post?').first().json.date\n  }\n}];"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst r = $input.first().json || {};\nconst src = $('Loop Over Posts').first(1).json;\nconst ok = !r.error && r.success === true;\nreturn [{ json: { ok, platform: src.platform, date: src.date, caption: src.caption, hashtags: src.hashtags, hook: src.hook, error: ok ? '' : String((r.error && (r.error.message || r.error)) || 'buffer_reported_failure').slice(0, 200) } }];"
       },
-      "id": "check-buffer-result",
+      "id": "f91ec7f6-25a9-4729-a7af-dd2d1da5ad37",
       "name": "Check Buffer Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2580, 200]
+      "position": [
+        2700,
+        200
+      ]
     },
     {
       "parameters": {
         "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
             {
-              "id": "buffer-ok",
-              "leftValue": "={{ $json.buffer_success }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "id": "44a23e42-f668-4329-a9aa-b0a52491c096",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
-        }
-      },
-      "id": "buffer-success",
-      "name": "Buffer Success?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [2800, 200]
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
-        "text": "=⚠️ *Buffer Post Failed - Manual Posting Required*\n\n📌 Platform: *{{ $json.platform || 'unknown' }}*\n📅 Date: {{ $json.date }}\n\n📝 *Caption:*\n{{ $json.caption }}\n\n#️⃣ {{ $json.hashtags }}\n\n❌ Error: Buffer API returned failure.\nPlease post manually.",
-        "additionalFields": { "parse_mode": "Markdown" }
-      },
-      "id": "telegram-buffer-fail",
-      "name": "Telegram (Buffer Failed)",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [3040, 300],
-      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
-        "text": "=📱 *Eki Social Content - Review & Post Manually*\n\n📅 {{ $json.date }}\n📌 Platform: *{{ $json.platform.toUpperCase() }}*\n🎯 Type: {{ $json.content_type }}\n\n🪝 *Hook:* {{ $json.hook }}\n\n📝 *Caption:*\n{{ $json.caption }}\n\n#️⃣ {{ $json.hashtags }}\n\n🎬 *Script:* {{ $json.video_script || 'N/A' }}\n\n⚡ Status: `{{ $json.status }}`\n💡 Autopilot OFF or no Buffer key — post manually.",
-        "additionalFields": { "parse_mode": "Markdown" }
-      },
-      "id": "telegram-manual",
-      "name": "Telegram (Manual Post)",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [2340, 420],
-      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
-        "sheetName": { "__rl": true, "mode": "name", "value": "Automation Logs" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "timestamp": "={{ new Date().toISOString() }}",
-            "workflow": "12-ai-social-autopilot",
-            "action": "=content_generated",
-            "platform": "=all",
-            "status": "=completed",
-            "details": "=Generated 3 posts (TikTok, Instagram, Facebook)",
-            "error": ""
-          }
+          ],
+          "combinator": "and"
         },
         "options": {}
       },
-      "id": "log-action",
-      "name": "Log to Automation Logs",
+      "id": "da9f8a9a-dc28-405c-a26a-4e331fa734a9",
+      "name": "Buffer OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2960,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst p = $input.first().json;\nreturn [{ json: { timestamp: nowIso(), workflow: '12-ai-social-autopilot', action: 'buffer_scheduled', platform: norm(p.platform), status: 'completed', details: norm(p.date) } }];"
+      },
+      "id": "6c54d9fc-044f-457e-a2ff-c39c831566e7",
+      "name": "Build Buffer Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String((() => { const p = $json; const ok = p.ok === false; return (ok ? 'Buffer post failed - post manually' : 'Eki social content - review and post manually') + '\\n\\nPlatform: ' + String(p.platform).toUpperCase() + '\\nDate: ' + p.date + '\\n' + (p.hook ? '\\nHook: ' + p.hook : '') + '\\n\\nCaption:\\n' + p.caption + '\\n\\n' + (p.hashtags || '') + (p.status ? '\\n\\nSafety status: ' + p.status + (p.flag_reason ? ' (' + p.flag_reason + ')' : '') : '') + (ok ? '\\nError: ' + p.error : ''); })()).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "bd23a250-19c3-48d8-af3c-2c8b781a7c59",
+      "name": "Buffer Failed Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3220,
+        370
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst p = $('Check Buffer Result').first().json;\nreturn [{ json: { timestamp: nowIso(), workflow: '12-ai-social-autopilot', action: 'buffer_failed_manual', platform: norm(p.platform), status: 'buffer_failed', details: (norm(p.date) + ' ' + norm(p.error)).trim() } }];"
+      },
+      "id": "ef90f822-8e46-41e2-a26b-3656b02bd2c0",
+      "name": "Build Failure Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3480,
+        370
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Automation Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "workflow": "={{ $json.workflow }}",
+            "action": "={{ $json.action }}",
+            "platform": "={{ $json.platform }}",
+            "status": "={{ $json.status }}",
+            "details": "={{ $json.details }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "358351c6-3720-45bb-afe2-ec7ebf1a3e13",
+      "name": "Log Loop Row",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [3040, 100],
-      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+      "position": [
+        3740,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String((() => { const p = $json; const ok = p.ok === false; return (ok ? 'Buffer post failed - post manually' : 'Eki social content - review and post manually') + '\\n\\nPlatform: ' + String(p.platform).toUpperCase() + '\\nDate: ' + p.date + '\\n' + (p.hook ? '\\nHook: ' + p.hook : '') + '\\n\\nCaption:\\n' + p.caption + '\\n\\n' + (p.hashtags || '') + (p.status ? '\\n\\nSafety status: ' + p.status + (p.flag_reason ? ' (' + p.flag_reason + ')' : '') : '') + (ok ? '\\nError: ' + p.error : ''); })()).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "5ab71f87-fdbc-492c-af02-1b1816798ede",
+      "name": "Manual Post Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2180,
+        540
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst items = $input.all();\nreturn items.map((it, i) => { const src = $('Decide Posting').itemMatching(i).json; return { json: { timestamp: nowIso(), workflow: '12-ai-social-autopilot', action: 'manual_post', platform: norm(src.platform), status: src.status === 'flagged' ? 'flagged' : 'manual', details: (norm(src.date) + ' ' + norm(src.flag_reason)).trim() } }; });"
+      },
+      "id": "2d09dec8-9667-4f6a-a38f-9c744e875d9d",
+      "name": "Build Manual Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Automation Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "workflow": "={{ $json.workflow }}",
+            "action": "={{ $json.action }}",
+            "platform": "={{ $json.platform }}",
+            "status": "={{ $json.status }}",
+            "details": "={{ $json.details }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "ce6ae6f4-6479-47b5-a0ad-bf1738154080",
+      "name": "Log Manual Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2700,
+        540
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "content": "### Autopilot (generation + optional posting)\nGenerates TikTok / Instagram / Facebook content daily 09:00 (Africa/Lagos), runs safety checks, saves to `Social Posts`.\n**Posting is OFF by default** (`AUTOPILOT_SOCIAL_POSTING=false`): content goes to Telegram for manual posting.\n`AUTOPILOT_STOP=true` halts generation and posting.\nBuffer needs `BUFFER_API_KEY` + `BUFFER_PROFILE_ID_<TIKTOK|INSTAGRAM|FACEBOOK>` (EXTERNAL DEPENDENCY).",
+        "width": 480,
+        "height": 200
+      },
+      "id": "cc90b484-503b-482d-af73-a060aabbc0d2",
+      "name": "Behaviour",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "173f4d00-e5f8-4770-a5ce-b0d05592738a",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        370
+      ]
     }
   ],
   "connections": {
-    "Daily 9AM Trigger": {
-      "main": [[{ "node": "Emergency Stop Check", "type": "main", "index": 0 }]]
+    "Daily 09:00": {
+      "main": [
+        [
+          {
+            "node": "Emergency Stop And Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Emergency Stop Check": {
-      "main": [[{ "node": "Not Stopped?", "type": "main", "index": 0 }]]
+    "Emergency Stop And Prompt": {
+      "main": [
+        [
+          {
+            "node": "Not Stopped?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content": {
+      "main": [
+        [
+          {
+            "node": "Parse And Safety Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse And Safety Check": {
+      "main": [
+        [
+          {
+            "node": "Save to Social Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Social Posts": {
+      "main": [
+        [
+          {
+            "node": "Decide Posting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Posting": {
+      "main": [
+        [
+          {
+            "node": "Auto-Post?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Not Stopped?": {
       "main": [
-        [{ "node": "Build AI Request", "type": "main", "index": 0 }],
-        []
+        [
+          {
+            "node": "Generate Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Build AI Request": {
-      "main": [[{ "node": "Generate Content (Groq)", "type": "main", "index": 0 }]]
-    },
-    "Generate Content (Groq)": {
-      "main": [[{ "node": "Parse AI Response", "type": "main", "index": 0 }]]
-    },
-    "Parse AI Response": {
-      "main": [[{ "node": "Safety Checks", "type": "main", "index": 0 }]]
-    },
-    "Safety Checks": {
-      "main": [[{ "node": "Save to Social Posts", "type": "main", "index": 0 }]]
-    },
-    "Save to Social Posts": {
-      "main": [[{ "node": "Check Posting Config", "type": "main", "index": 0 }]]
-    },
-    "Check Posting Config": {
-      "main": [[{ "node": "Should Auto-Post?", "type": "main", "index": 0 }]]
-    },
-    "Should Auto-Post?": {
+    "Auto-Post?": {
       "main": [
-        [{ "node": "Post to Buffer", "type": "main", "index": 0 }],
-        [{ "node": "Telegram (Manual Post)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Loop Over Posts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual Post Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Posts": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Post to Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Post to Buffer": {
-      "main": [[{ "node": "Check Buffer Result", "type": "main", "index": 0 }]]
-    },
-    "Check Buffer Result": {
-      "main": [[{ "node": "Buffer Success?", "type": "main", "index": 0 }]]
-    },
-    "Buffer Success?": {
       "main": [
-        [{ "node": "Log to Automation Logs", "type": "main", "index": 0 }],
-        [{ "node": "Telegram (Buffer Failed)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Check Buffer Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Telegram (Buffer Failed)": {
-      "main": [[{ "node": "Log to Automation Logs", "type": "main", "index": 0 }]]
+    "Check Buffer Result": {
+      "main": [
+        [
+          {
+            "node": "Buffer OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Telegram (Manual Post)": {
-      "main": [[{ "node": "Log to Automation Logs", "type": "main", "index": 0 }]]
+    "Buffer OK?": {
+      "main": [
+        [
+          {
+            "node": "Build Buffer Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buffer Failed Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buffer Failed Alert": {
+      "main": [
+        [
+          {
+            "node": "Build Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Buffer Log": {
+      "main": [
+        [
+          {
+            "node": "Log Loop Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure Log": {
+      "main": [
+        [
+          {
+            "node": "Log Loop Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Loop Row": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Post Alert": {
+      "main": [
+        [
+          {
+            "node": "Build Manual Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Manual Log": {
+      "main": [
+        [
+          {
+            "node": "Log Manual Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Emergency Stop And Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": false,
   "settings": {
     "executionOrder": "v1",
     "timezone": "Africa/Lagos",
-    "saveExecutionProgress": true,
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "staticData": null,
-  "tags": [{ "name": "social-media" }, { "name": "autopilot" }, { "name": "production" }],
-  "active": false
+  "pinData": {},
+  "tags": []
 }

@@ -1,137 +1,417 @@
 {
   "name": "Eki - 04 Waitlist Management",
+  "id": "ekiwf04",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "join-waitlist",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
-      "id": "e674c321-4f1b-419b-a010-b6f7924c2561",
-      "name": "Waitlist Webhook Trigger",
+      "id": "24cf751b-0747-4115-ae9a-9d8d9d66bcf5",
+      "name": "Waitlist Webhook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         100,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "read",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Waitlist!A:G",
-        "options": {}
-      },
-      "id": "c6be98bb-fcf2-4df4-8d41-e0e2ac6b67a3",
-      "name": "Read Waitlist Sheet",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        320,
-        300
+        370
       ],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+        "httpHeaderAuth": {
+          "id": "eki-cred-webhook-secret",
+          "name": "Eki Webhook Shared Secret"
         }
-      }
+      },
+      "webhookId": "e44f201f-a586-48cb-a8c3-3c43bad78c5f"
     },
     {
       "parameters": {
-        "jsCode": "const waitlist = $input.all();\nconst payload = $('Waitlist Webhook Trigger').first().json.body;\nconst whatsapp = payload.whatsapp.toLowerCase().trim();\nconst duplicate = waitlist.find(row => row.json.whatsapp && row.json.whatsapp.toLowerCase().trim() === whatsapp);\n\nreturn {\n  is_duplicate: !!duplicate,\n  existing_data: duplicate ? duplicate.json : null,\n  name: payload.name,\n  whatsapp: whatsapp,\n  user_type: payload.user_type || 'Vendor',\n  current_total: waitlist.length\n};"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst b = $input.first().json.body || {};\nconst name = norm(b.name);\nconst email = norm(b.email).toLowerCase();\nconst whatsapp = digits(b.whatsapp || b.phone);\nconst errors = [];\nif (!name) errors.push('name is required');\nif (!email && !whatsapp) errors.push('email or whatsapp is required');\nif (email && !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) errors.push('email is invalid');\nif (whatsapp && (whatsapp.length < 8 || whatsapp.length > 15)) errors.push('whatsapp must be 8-15 digits (international format, digits only)');\nif (errors.length) return [{ json: { valid: false, errors } }];\nconst consent = b.consent === true || ['true', 'yes', '1'].includes(norm(b.consent).toLowerCase());\nconst ut = norm(b.user_type).toLowerCase();\nreturn [{ json: { valid: true, signup: { name, email, whatsapp, consent, user_type: ut === 'buyer' ? 'Buyer' : 'Vendor' } } }];"
       },
-      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfb",
-      "name": "Check Duplicate",
+      "id": "f25fa9e8-fa01-4c3a-a0f6-535d44bd3056",
+      "name": "Validate Signup",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        540,
-        300
+        360,
+        370
       ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.is_duplicate }}",
-              "value2": true
+              "id": "c4dfd936-e653-43ea-a53d-07ac28ce0f11",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "90b8a4b0-7ea9-4bc8-a373-92b2fabc0f46",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        370
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", errors: $json.errors } }}",
+        "options": {
+          "responseCode": 400
         }
       },
-      "id": "a0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfc",
-      "name": "Duplicate?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [
-        760,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "responseCode": 200,
-        "responseBody": "={\n  \"status\": \"already_registered\",\n  \"position\": {{ $json.existing_data.position }},\n  \"referral_code\": \"{{ $json.existing_data.referral_code }}\",\n  \"message\": \"You are already on the Eki waitlist!\"\n}",
-        "options": {}
-      },
-      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfd",
-      "name": "Respond Position Reminder",
+      "id": "4e4baa30-1f79-45ba-a479-95b5c4b6c7e0",
+      "name": "Respond 400",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
+      "typeVersion": 1.1,
       "position": [
-        980,
-        150
+        880,
+        710
       ]
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst nameClean = input.name.replace(/[^a-zA-Z]/g, '').substring(0,3).toUpperCase();\nconst refCode = `WL-EKI-${nameClean}-${Math.random().toString(36).substring(2,6).toUpperCase()}`;\nconst newPosition = input.current_total + 1;\n\nreturn {\n  whatsapp: input.whatsapp,\n  name: input.name,\n  position: newPosition,\n  referral_code: refCode,\n  referrals_count: 0,\n  user_type: input.user_type,\n  signup_date: new Date().toISOString().split('T')[0]\n};"
-      },
-      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfd",
-      "name": "Generate Waitlist Record",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        980,
-        450
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Waitlist!A:G",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Waitlist",
+          "mode": "name"
+        },
         "options": {}
       },
-      "id": "2be5b0cd-562a-4df4-8d41-c741e0a290b0",
-      "name": "Append to Waitlist Sheet",
+      "id": "6e644d27-b32e-4b8c-aff8-c390dfdcd232",
+      "name": "Read Waitlist",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1200,
-        450
+        880,
+        370
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst s = $('Validate Signup').first().json.signup;\nconst rows = $input.all().map((i) => i.json).filter((r) => norm(r.email) || norm(r.whatsapp));\nconst dup = rows.find((r) => (s.email && norm(r.email).toLowerCase() === s.email) || (s.whatsapp && digits(r.whatsapp) === s.whatsapp));\nif (dup) return [{ json: { is_duplicate: true, response: { status: 'already_registered', position: parseInt(dup.position, 10) || null, referral_code: norm(dup.referral_code), message: 'You are already on the Eki waitlist.' } } }];\nconst base = (s.name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'EKI').padEnd(3, 'X');\nconst code = 'WL-EKI-' + base + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();\nconst position = rows.length + 1;\nconst record = { email: s.email, whatsapp: s.whatsapp, name: s.name, position: String(position), referral_code: code, referrals_count: '0', user_type: s.user_type, signup_date: nowIso().slice(0, 10), consent: s.consent ? 'yes' : 'no' };\nconst base_url = appLink();\nconst refLink = base_url ? base_url + (base_url.includes('?') ? '&' : '?') + 'ref=' + code : code;\nreturn [{ json: { is_duplicate: false, record, ref_link: refLink, consent: s.consent, response: { status: 'success', position, referral_code: code, message: 'Waitlist registration complete.' } } }];"
+      },
+      "id": "03c1aeba-ad89-48fa-a757-68bf3dc3f98d",
+      "name": "Dedupe And Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        370
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f5e0a236-0ff7-471c-ae5a-40dc3437f2e3",
+              "leftValue": "={{ $json.is_duplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1da0cf73-8590-4b3d-aba7-96e959cc54d1",
+      "name": "Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        370
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "3b0db1e2-2d78-4a1c-a363-24cfe3ec5221",
+      "name": "Respond Already Registered",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Waitlist",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ $json.record.email }}",
+            "whatsapp": "={{ $json.record.whatsapp }}",
+            "name": "={{ $json.record.name }}",
+            "position": "={{ $json.record.position }}",
+            "referral_code": "={{ $json.record.referral_code }}",
+            "referrals_count": "={{ $json.record.referrals_count }}",
+            "user_type": "={{ $json.record.user_type }}",
+            "signup_date": "={{ $json.record.signup_date }}",
+            "consent": "={{ $json.record.consent }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "whatsapp",
+              "displayName": "whatsapp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "position",
+              "displayName": "position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referrals_count",
+              "displayName": "referrals_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_type",
+              "displayName": "user_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "signup_date",
+              "displayName": "signup_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "consent",
+              "displayName": "consent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "b63c58d3-4d3c-4ed2-a871-2a843814110c",
+      "name": "Append Waitlist Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1660,
+        540
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Dedupe And Build').first().json.response }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "271ee81f-047c-4017-a7fa-34912e9c6b52",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst tplLang = norm($env.WA_TEMPLATE_LANG) || 'en';\nconst waClean = (s) => norm(s).replace(/[\\r\\n\\t]+/g, ' ').replace(/ {5,}/g, '    ').slice(0, 900) || '-';\n// Business-initiated WhatsApp messages MUST be approved templates. Never free-form text.\nconst buildTemplate = (key, phone, params) => {\n  const name = norm($env['WA_TPL_' + key]);\n  if (!name) return { ok: false, reason: 'template_not_configured:WA_TPL_' + key };\n  const to = digits(phone);\n  if (to.length < 8 || to.length > 15) return { ok: false, reason: 'invalid_phone' };\n  return {\n    ok: true,\n    template: name,\n    payload: {\n      messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'template',\n      template: { name, language: { code: tplLang }, components: [{ type: 'body', parameters: params.map((p) => ({ type: 'text', text: waClean(p) })) }] },\n    },\n  };\n};\n// Returns '' when the lead may be contacted, otherwise the reason it must NOT be.\nconst notContactableReason = (l) => {\n  if (!yes(l.opt_in)) return 'no_opt_in';\n  if (norm(l.opt_out_at)) return 'opted_out';\n  const st = norm(l.status).toLowerCase();\n  if (['unsubscribed', 'converted', 'churned'].includes(st)) return 'status_' + st;\n  const d = digits(l.phone);\n  if (d.length < 8 || d.length > 15) return 'invalid_phone';\n  return '';\n};\nconst d = $('Dedupe And Build').first().json;\nconst r = d.record;\nconst out = { email_to: '', email_subject: '', email_html: '', wa_payload: null, wa_reason: '' };\nconst from = norm($env.RESEND_FROM_EMAIL);\nif (r.email && norm($env.RESEND_API_KEY) && from) {\n  out.email_to = r.email;\n  out.email_subject = 'You are on the Eki waitlist - position #' + r.position;\n  out.email_html = '<p>Hi ' + r.name.replace(/[<>&]/g, '') + ',</p><p>You are officially #' + r.position + ' on the Eki waitlist.</p><p>Share your personal referral link to move up:</p><p><strong>' + d.ref_link + '</strong></p><p>The Eki Team</p>';\n}\nif (!r.whatsapp) out.wa_reason = 'no_whatsapp';\nelse if (!d.consent) out.wa_reason = 'no_consent';\nelse {\n  const t = buildTemplate('WAITLIST_CONFIRM', r.whatsapp, [r.name, String(r.position), d.ref_link]);\n  if (t.ok) out.wa_payload = t.payload; else out.wa_reason = t.reason;\n}\nreturn [{ json: { ...out, send_email: !!out.email_to, send_wa: !!out.wa_payload, payload: out.wa_payload } }];"
+      },
+      "id": "a0159d15-e34d-4e81-a777-e72298b9621b",
+      "name": "Prepare Notifications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bead069b-d752-4f91-aff8-ce1098d83d59",
+              "leftValue": "={{ $json.send_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "893c84d3-5c72-4e72-a1c6-8c0dff02e000",
+      "name": "Send Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2440,
+        370
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.whatsapp.com/whatsapps",
+        "url": "https://api.resend.com/emails",
+        "options": {
+          "timeout": 15000
+        },
         "sendHeaders": true,
-        "headersUi": {
-          "parameter": [
+        "headerParameters": {
+          "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
             },
             {
               "name": "Content-Type",
@@ -141,72 +421,161 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.whatsapp }}\"], \"subject\": \"You are on the list! 🎉 Position #{{ $json.position }}\", \"html\": \"<p>Hey {{ $json.name }},</p><p>You are officially #{{ $json.position }} on the Eki waitlist!</p><p>Want to move up? Share your personal referral link with other traders:</p><p><strong>https://eki-marketplace.com/signup?ref={{ $json.referral_code }}</strong></p><p>Every friend who registers moves you 5 spots closer to early onboarding access!</p><p>Cheers,<br>The Eki Team</p>\"}"
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM_EMAIL, to: [$json.email_to], subject: $json.email_subject, html: $json.email_html }) }}"
       },
-      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfe",
+      "id": "a753f9b1-5013-4fc7-a4cc-c1263b3682d1",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2700,
+        370
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ba0b01e2-27bd-4631-a162-e00a11a9edca",
+              "leftValue": "={{ $json.send_wa }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a8324869-2c10-4887-a993-2e0baa6b389c",
+      "name": "Send WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2440,
+        710
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/' + ($env.WHATSAPP_GRAPH_VERSION || 'v23.0') + '/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}"
+      },
+      "id": "16e8a259-79b9-4677-a59d-ccd4b926f1b6",
       "name": "Send WhatsApp Confirmation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1420,
-        450
-      ]
+        2700,
+        710
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
     },
     {
       "parameters": {
-        "responseCode": 200,
-        "responseBody": "={\n  \"status\": \"success\",\n  \"position\": {{ $json.position }},\n  \"referral_code\": \"{{ $json.referral_code }}\",\n  \"message\": \"Waitlist registration complete. WhatsApp confirmation sent.\"\n}",
-        "options": {}
+        "content": "### Payload\n`POST /webhook/join-waitlist` with header `X-Eki-Webhook-Secret`.\n`{ \"name\": \"..\", \"email\": \"..\", \"whatsapp\": \"234..\", \"user_type\": \"Vendor|Buyer\", \"consent\": true }`\nEmail confirmation uses Resend (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`). WhatsApp confirmation needs consent + approved template `WA_TPL_WAITLIST_CONFIRM` (EXTERNAL DEPENDENCY).\nNotification failures do not affect the API response; they fail the execution and alert via workflow 00.",
+        "width": 480,
+        "height": 200
       },
-      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfe",
-      "name": "Respond Webhook Success",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [
-        1640,
-        450
-      ]
-    },
-    {
-      "parameters": {
-        "content": "### Setup Instructions\n1. Replace `EKI_SPREADSHEET_ID_PLACEHOLDER` with Google Sheet ID.\n2. Replace `WHATSAPP_ACCESS_TOKEN_PLACEHOLDER` with actual WhatsApp API token.\n3. Waitlist table columns: `whatsapp`, `name`, `position`, `referral_code`, `referrals_count`, `user_type`, `signup_date`.",
-        "height": 140,
-        "width": 280
-      },
-      "id": "bb7fe1cc-2781-4bdf-87f5-a8cdb615b1eb",
-      "name": "Sticky Note Setup",
-      "type": "n8n-nodes-base.noOp",
+      "id": "db92da5d-7a32-4daa-a1fd-74b982561468",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         100,
-        100
+        30
       ]
     }
   ],
   "connections": {
-    "Waitlist Webhook Trigger": {
+    "Waitlist Webhook": {
       "main": [
         [
           {
-            "node": "Read Waitlist Sheet",
+            "node": "Validate Signup",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Waitlist Sheet": {
+    "Validate Signup": {
       "main": [
         [
           {
-            "node": "Check Duplicate",
+            "node": "Valid?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Check Duplicate": {
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Read Waitlist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Waitlist": {
+      "main": [
+        [
+          {
+            "node": "Dedupe And Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe And Build": {
       "main": [
         [
           {
@@ -221,47 +590,74 @@
       "main": [
         [
           {
-            "node": "Respond Position Reminder",
+            "node": "Respond Already Registered",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Generate Waitlist Record",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Generate Waitlist Record": {
-      "main": [
-        [
-          {
-            "node": "Append to Waitlist Sheet",
+            "node": "Append Waitlist Row",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Append to Waitlist Sheet": {
+    "Append Waitlist Row": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notifications": {
+      "main": [
+        [
+          {
+            "node": "Send Email?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email?": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp?": {
       "main": [
         [
           {
             "node": "Send WhatsApp Confirmation",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send WhatsApp Confirmation": {
-      "main": [
-        [
-          {
-            "node": "Respond Webhook Success",
             "type": "main",
             "index": 0
           }
@@ -272,9 +668,10 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Africa/Lagos"
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "meta": {
-    "instanceId": "eki-launch-automation"
-  }
+  "pinData": {},
+  "tags": []
 }

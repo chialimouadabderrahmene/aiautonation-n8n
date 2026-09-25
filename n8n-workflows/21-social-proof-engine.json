@@ -1,101 +1,304 @@
 {
   "name": "Eki - 21 Social Proof Engine",
+  "id": "ekiwf21",
   "nodes": [
     {
-      "id": "fc4f0947-2927-437e-832d-7d18403dba92",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-proof",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "f7bfb043-0f3d-47b5-a97a-7cb66c01c8b5",
       "name": "Event Webhook",
-      "type": "n8n-nodes-base.webhookTrigger",
+      "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        0,
-        0
+        100,
+        200
       ],
-      "parameters": {
-        "path": "social-proof",
-        "options": {}
-      }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "eki-cred-webhook-secret",
+          "name": "Eki Webhook Shared Secret"
+        }
+      },
+      "webhookId": "3b140f93-f426-4b1b-a6f5-6e50be3ce5ee"
     },
     {
-      "id": "b0cea248-3eed-4b5d-b9f0-fc61bed76216",
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst b = $input.first().json.body || {};\nconst vendor = norm(b.vendor || b.vendor_name);\nconst metric = norm(b.metric) || 'first_sale';\nif (!vendor) return [{ json: { valid: false, errors: ['vendor is required'] } }];\nconst ev = { event_type: norm(b.event) || 'milestone', vendor_name: vendor.slice(0, 80), metric: metric.slice(0, 60), value: norm(b.value) || '1' };\nconst system = 'You write social proof content for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Use ONLY the facts provided; never invent numbers, quotes or details. Return ONLY JSON.';\nconst user = 'Generate social proof content for this Eki milestone. Return JSON: {\"reel_script\":\"\",\"carousel_slides\":[\"\",\"\",\"\",\"\",\"\"],\"caption\":\"\",\"quote_card_text\":\"\",\"hashtags\":\"\"}. Event: ' + ev.event_type + ' - ' + ev.vendor_name + ' achieved ' + ev.metric + ': ' + ev.value;\nreturn [{ json: { valid: true, ev, ai_request: aiRequest(system, user, 0.6) } }];"
+      },
+      "id": "866c4cda-18a2-465a-a0b7-f41afcf1d1e5",
       "name": "Parse Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        300,
-        0
-      ],
-      "parameters": {
-        "jsCode": "const e = $json;\nreturn [{json:{\n  event_type: e.event || 'milestone',\n  vendor_name: e.vendor || 'Vendor',\n  metric: e.metric || 'first_sale',\n  value: e.value || 1,\n  timestamp: new Date().toISOString()\n}}];"
-      }
+        360,
+        200
+      ]
     },
     {
-      "id": "cb8c8551-56cb-4276-bb44-629dfdbff81e",
-      "name": "GPT-4 Generate Proof",
-      "type": "n8n-nodes-base.openAi",
-      "typeVersion": 2,
-      "position": [
-        600,
-        0
-      ],
       "parameters": {
-        "model": "gpt-4o-mini",
-        "messages": {
-          "values": [
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
             {
-              "role": "user",
-              "content": "=Generate social proof content for this Eki milestone. Return JSON: {reel_script, carousel_slides[5], caption, quote_card_text, hashtags}. Event: {{$json.event_type}} - {{$json.vendor_name}} achieved {{$json.metric}}: {{$json.value}}"
+              "id": "88d7eb31-b8a5-40e4-ae29-2ba56db4c692",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5dbc3523-6474-4090-aeb3-05bf91f70525",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", errors: $json.errors } }}",
+        "options": {
+          "responseCode": 400
         }
       },
-      "credentials": {
-        "openAiApi": "openAiApi"
-      }
+      "id": "11262f14-819e-4f5e-a2b3-9aa4f8c7049f",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        540
+      ]
     },
     {
-      "id": "a37e16aa-e944-4d59-9c89-8dc9e1b79e90",
-      "name": "Queue Content",
-      "type": "n8n-nodes-base.googleSheets",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.AI_API_BASE_URL || 'https://api.groq.com/openai/v1')).replace(/\\/+$/, '') + '/chat/completions' }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}"
+      },
+      "id": "2363ace4-107f-4dcd-a3a2-6a7520228b82",
+      "name": "AI Generate Proof",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst d = parseAi($input.first().json);\nconst ev = $('Parse Event').first().json.ev;\nreturn [{ json: { event: ev.event_type + ':' + ev.metric + '=' + ev.value, vendor: ev.vendor_name, content: JSON.stringify(d), quote: norm(d.quote_card_text), status: 'pending', created: nowIso() } }];"
+      },
+      "id": "b3181b80-370f-42f2-adbe-0e5c7938d7a9",
+      "name": "Build Queue Row",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        900,
-        0
-      ],
+        1140,
+        200
+      ]
+    },
+    {
       "parameters": {
+        "resource": "sheet",
         "operation": "append",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "SocialProof",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "SocialProof",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "event": "",
-            "vendor": "",
-            "content": "",
-            "status": "pending",
-            "created": ""
-          }
+            "event": "={{ $json.event }}",
+            "vendor": "={{ $json.vendor }}",
+            "content": "={{ $json.content }}",
+            "status": "={{ $json.status }}",
+            "created": "={{ $json.created }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vendor",
+              "displayName": "vendor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created",
+              "displayName": "created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
         }
       },
+      "id": "ffa45f1d-2f04-4d38-aa22-84fde13ce0dc",
+      "name": "Queue Content",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1400,
+        200
+      ],
       "credentials": {
-        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
-      }
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
-      "id": "d81b79af-deb0-472e-bec4-9f352788fa9a",
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String('Social proof generated for ' + $('Build Queue Row').first().json.vendor + ' (' + $('Build Queue Row').first().json.event + ').\\nQueued for approval.\\nPreview: ' + $('Build Queue Row').first().json.quote).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "1923283c-4bfc-49ef-ae72-68e599a6aaab",
       "name": "Notify Team",
       "type": "n8n-nodes-base.telegram",
-      "typeVersion": 2,
+      "typeVersion": 1.2,
       "position": [
-        1200,
-        0
+        1660,
+        200
       ],
-      "parameters": {
-        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
-        "text": "=\ud83c\udfc6 Social Proof Generated!\n{{$json.vendor_name}} - {{$json.event_type}}\nContent queued for approval.\nPreview: {{$node[\"GPT-4 Generate Proof\"].json.output.quote_card_text}}"
-      },
       "credentials": {
-        "telegramApi": "telegramApi"
-      }
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"queued\" } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "9ad4780e-eca1-4fde-aea5-82b533539879",
+      "name": "Respond Queued",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Payload\n`POST /webhook/social-proof` + header `X-Eki-Webhook-Secret` with `{ \"event\": \"milestone\", \"vendor\": \"Vendor name\", \"metric\": \"first_sale\", \"value\": 1 }`.\nNothing in the Eki backend calls this yet (integration point for a future backend event). Content is generated ONLY from the facts sent and queued as `pending` for human approval; get the vendor's consent before publishing.",
+        "width": 460,
+        "height": 180
+      },
+      "id": "2bb2219b-33d4-4f02-a6ec-0645fd992e7b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
     }
   ],
   "connections": {
@@ -114,14 +317,43 @@
       "main": [
         [
           {
-            "node": "GPT-4 Generate Proof",
+            "node": "Valid?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GPT-4 Generate Proof": {
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Proof",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Proof": {
+      "main": [
+        [
+          {
+            "node": "Build Queue Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Queue Row": {
       "main": [
         [
           {
@@ -129,7 +361,11 @@
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Queue Content": {
+      "main": [
         [
           {
             "node": "Notify Team",
@@ -138,13 +374,26 @@
           }
         ]
       ]
+    },
+    "Notify Team": {
+      "main": [
+        [
+          {
+            "node": "Respond Queued",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": false,
   "settings": {
-    "timezone": "Africa/Lagos"
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
   "pinData": {},
-  "versionId": "2e137917-3299-493a-971a-bd40e8fbfb74",
-  "active": false,
   "tags": []
 }

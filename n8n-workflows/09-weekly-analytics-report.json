@@ -1,239 +1,210 @@
 {
-  "name": "Weekly Analytics Report",
+  "name": "Eki - 09 Weekly Analytics Report",
+  "id": "ekiwf09",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 9,
-              "triggerAtDay": 1
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
             }
           ]
         }
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000901",
-      "name": "Monday 9AM Trigger",
+      "id": "ceff55b8-4c5e-4e30-a53d-c1de727f3f7c",
+      "name": "Monday 09:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 300]
+      "position": [
+        100,
+        200
+      ]
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Leads"
-        }
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000902",
+      "id": "fc037ebc-183f-40c5-a1cd-2256ca327e77",
       "name": "Read Leads",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [260, 100],
+      "position": [
+        360,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Content Drafts"
-        }
+          "value": "Content Drafts",
+          "mode": "name"
+        },
+        "options": {}
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000903",
+      "id": "e4628ed8-57f6-4cb0-a6a1-8ab9d5b14ad0",
       "name": "Read Content Drafts",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [260, 260],
+      "position": [
+        620,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Feedback"
-        }
+          "value": "Feedback",
+          "mode": "name"
+        },
+        "options": {}
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000904",
+      "id": "57900e9c-9072-4b9f-ab64-c38539b47947",
       "name": "Read Feedback",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [260, 420],
+      "position": [
+        880,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Waitlist"
-        }
+          "value": "Waitlist",
+          "mode": "name"
+        },
+        "options": {}
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000905",
+      "id": "2e941ac9-526b-497a-a423-d65bd21dc995",
       "name": "Read Waitlist",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [260, 580],
+      "position": [
+        1140,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
       "parameters": {
-        "mode": "append",
-        "options": {}
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 86400000);\nconst twoWeeksAgo = new Date(now.getTime() - 14 * 86400000);\nconst rows = (n) => $(n).all().map((i) => i.json).filter((r) => Object.values(r).some((v) => norm(v) !== ''));\nconst leads = rows('Read Leads'); const content = rows('Read Content Drafts'); const feedback = rows('Read Feedback'); const waitlist = rows('Read Waitlist');\nconst inRange = (v, from, to) => { const d = new Date(norm(v)); return !Number.isNaN(d.getTime()) && d >= from && d < to; };\nconst leadDate = (l) => l.signup_date || l.first_contact || l.created_date;\nconst newLeadsThisWeek = leads.filter((l) => inRange(leadDate(l), weekAgo, new Date(now.getTime() + 1))).length;\nconst newLeadsPrevWeek = leads.filter((l) => inRange(leadDate(l), twoWeeksAgo, weekAgo)).length;\nconst leadsBySource = {};\nleads.filter((l) => inRange(leadDate(l), weekAgo, new Date(now.getTime() + 1))).forEach((l) => { const s = norm(l.source) || 'unknown'; leadsBySource[s] = (leadsBySource[s] || 0) + 1; });\nconst st = (r) => norm(r.status).toLowerCase();\nconst contentThisWeek = content.filter((c) => inRange(c.created_date || c.approval_date, weekAgo, new Date(now.getTime() + 1))).length;\nconst ratings = feedback.map((f) => parseFloat(f.rating)).filter((r) => !Number.isNaN(r));\nconst avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : 'N/A';\nconst recCount = feedback.filter((f) => ['true', 'yes'].includes(norm(f.would_recommend).toLowerCase())).length;\nconst totalSignups = leads.filter((l) => ['active', 'converted'].includes(st(l))).length;\nconst wow = newLeadsPrevWeek > 0 ? (((newLeadsThisWeek - newLeadsPrevWeek) / newLeadsPrevWeek) * 100).toFixed(1) : (newLeadsThisWeek > 0 ? '100.0' : '0.0');\nconst referralLeads = leads.filter((l) => norm(l.source).toLowerCase() === 'referral');\nreturn [{ json: {\n  week_start: weekAgo.toISOString().slice(0, 10), week_end: now.toISOString().slice(0, 10),\n  total_leads: leads.length, new_leads_this_week: newLeadsThisWeek, new_leads_prev_week: newLeadsPrevWeek, leads_by_source: leadsBySource,\n  total_content_created: content.length, content_this_week: contentThisWeek,\n  content_approved: content.filter((c) => st(c) === 'approved').length, content_pending: content.filter((c) => ['draft', 'pending'].includes(st(c))).length, content_published: content.filter((c) => st(c) === 'published').length,\n  total_signups: totalSignups, conversion_rate: leads.length ? ((totalSignups / leads.length) * 100).toFixed(1) : '0.0',\n  total_referrals: referralLeads.length, referrals_this_week: referralLeads.filter((l) => inRange(leadDate(l), weekAgo, new Date(now.getTime() + 1))).length,\n  total_feedback: feedback.length, feedback_this_week: feedback.filter((f) => inRange(f.submitted_date || f.timestamp, weekAgo, new Date(now.getTime() + 1))).length,\n  avg_feedback_rating: avgRating, nps_recommend_percent: feedback.length ? ((recCount / feedback.length) * 100).toFixed(0) : 'N/A',\n  waitlist_size: waitlist.length, new_waitlist_this_week: waitlist.filter((x) => inRange(x.signup_date, weekAgo, new Date(now.getTime() + 1))).length,\n  week_over_week_growth: wow, wow_trend: parseFloat(wow) > 0 ? 'up' : (parseFloat(wow) < 0 ? 'down' : 'flat'),\n} }];"
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000906",
-      "name": "Merge All Data",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [520, 180]
-    },
-    {
-      "parameters": {
-        "mode": "append",
-        "options": {}
-      },
-      "id": "d4e5f6a7-4001-4001-8001-000000000916",
-      "name": "Merge All Data 2",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [520, 420]
-    },
-    {
-      "parameters": {
-        "mode": "append",
-        "options": {}
-      },
-      "id": "d4e5f6a7-4001-4001-8001-000000000917",
-      "name": "Merge Final",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [780, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Calculate comprehensive analytics for the past 7 days\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);\n\n// Get data from each sheet via node references\nconst leads = $('Read Leads').all().map(i => i.json);\nconst content = $('Read Content Drafts').all().map(i => i.json);\nconst feedback = $('Read Feedback').all().map(i => i.json);\nconst waitlist = $('Read Waitlist').all().map(i => i.json);\n\n// --- LEADS METRICS ---\nconst totalLeads = leads.length;\nconst newLeadsThisWeek = leads.filter(l => {\n  const d = new Date(l.signup_date || l.created_date);\n  return d >= weekAgo && d <= now;\n}).length;\nconst newLeadsPrevWeek = leads.filter(l => {\n  const d = new Date(l.signup_date || l.created_date);\n  return d >= twoWeeksAgo && d < weekAgo;\n}).length;\n\n// Leads by source\nconst leadsBySource = {};\nleads.filter(l => {\n  const d = new Date(l.signup_date || l.created_date);\n  return d >= weekAgo && d <= now;\n}).forEach(l => {\n  const source = l.source || 'unknown';\n  leadsBySource[source] = (leadsBySource[source] || 0) + 1;\n});\n\n// --- CONTENT METRICS ---\nconst totalContent = content.length;\nconst contentThisWeek = content.filter(c => {\n  const d = new Date(c.created_date || c.date);\n  return d >= weekAgo && d <= now;\n}).length;\nconst approvedContent = content.filter(c => (c.status || '').toLowerCase() === 'approved').length;\nconst pendingContent = content.filter(c => (c.status || '').toLowerCase() === 'pending').length;\nconst publishedContent = content.filter(c => (c.status || '').toLowerCase() === 'published').length;\n\n// --- FEEDBACK METRICS ---\nconst totalFeedback = feedback.length;\nconst feedbackThisWeek = feedback.filter(f => {\n  const d = new Date(f.timestamp || f.date);\n  return d >= weekAgo && d <= now;\n}).length;\nconst ratings = feedback.map(f => parseFloat(f.rating)).filter(r => !isNaN(r));\nconst avgRating = ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : 'N/A';\nconst npsScore = feedback.filter(f => f.would_recommend === true || f.would_recommend === 'true').length;\nconst npsPercent = totalFeedback > 0 ? ((npsScore / totalFeedback) * 100).toFixed(0) : 'N/A';\n\n// --- WAITLIST METRICS ---\nconst waitlistSize = waitlist.length;\nconst newWaitlistThisWeek = waitlist.filter(w => {\n  const d = new Date(w.signup_date || w.date);\n  return d >= weekAgo && d <= now;\n}).length;\n\n// --- SIGNUPS & CONVERSIONS ---\nconst totalSignups = leads.filter(l => (l.status || '').toLowerCase() === 'active' || (l.status || '').toLowerCase() === 'converted').length;\nconst conversionRate = totalLeads > 0 ? ((totalSignups / totalLeads) * 100).toFixed(1) : '0.0';\n\n// --- REFERRALS ---\nconst totalReferrals = leads.filter(l => (l.source || '').toLowerCase() === 'referral').length;\nconst referralsThisWeek = leads.filter(l => {\n  const d = new Date(l.signup_date || l.created_date);\n  return (l.source || '').toLowerCase() === 'referral' && d >= weekAgo && d <= now;\n}).length;\n\n// --- WEEK OVER WEEK ---\nconst wowGrowth = newLeadsPrevWeek > 0 \n  ? (((newLeadsThisWeek - newLeadsPrevWeek) / newLeadsPrevWeek) * 100).toFixed(1) \n  : (newLeadsThisWeek > 0 ? '100.0' : '0.0');\nconst wowTrend = parseFloat(wowGrowth) > 0 ? '📈' : (parseFloat(wowGrowth) < 0 ? '📉' : '➡️');\n\nconst weekStart = weekAgo.toISOString().split('T')[0];\nconst weekEnd = now.toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    week_start: weekStart,\n    week_end: weekEnd,\n    total_leads: totalLeads,\n    new_leads_this_week: newLeadsThisWeek,\n    new_leads_prev_week: newLeadsPrevWeek,\n    leads_by_source: leadsBySource,\n    total_content_created: totalContent,\n    content_this_week: contentThisWeek,\n    content_approved: approvedContent,\n    content_pending: pendingContent,\n    content_published: publishedContent,\n    total_signups: totalSignups,\n    conversion_rate: conversionRate,\n    total_referrals: totalReferrals,\n    referrals_this_week: referralsThisWeek,\n    total_feedback: totalFeedback,\n    feedback_this_week: feedbackThisWeek,\n    avg_feedback_rating: avgRating,\n    nps_recommend_percent: npsPercent,\n    waitlist_size: waitlistSize,\n    new_waitlist_this_week: newWaitlistThisWeek,\n    week_over_week_growth: wowGrowth,\n    wow_trend: wowTrend\n  }\n}];"
-      },
-      "id": "d4e5f6a7-4001-4001-8001-000000000907",
+      "id": "7e946215-2ddd-4b01-a8a0-5a870da0975b",
       "name": "Calculate Analytics",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1040, 300]
+      "position": [
+        1400,
+        200
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.first().json;\n\n// Build leads by source rows\nlet sourceRows = '';\nconst sources = d.leads_by_source || {};\nfor (const [source, count] of Object.entries(sources)) {\n  const pct = d.new_leads_this_week > 0 ? ((count / d.new_leads_this_week) * 100).toFixed(0) : '0';\n  sourceRows += `<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">${source}</td><td style=\"padding:8px;border-bottom:1px solid #eee;text-align:center;\">${count}</td><td style=\"padding:8px;border-bottom:1px solid #eee;text-align:center;\">${pct}%</td></tr>`;\n}\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"></head>\n<body style=\"font-family: 'Segoe UI', Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #f5f5f5; padding: 20px;\">\n<div style=\"background-color: white; border-radius: 12px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);\">\n\n<h1 style=\"color: #1a1a2e; margin-bottom: 4px;\">📊 Weekly Growth Report — [APP_NAME]</h1>\n<p style=\"color: #666; font-size: 14px;\">Week of ${d.week_start} to ${d.week_end}</p>\n<hr style=\"border: none; border-top: 2px solid #eee; margin: 20px 0;\">\n\n<h2 style=\"color: #1a1a2e;\">🎯 Key Metrics</h2>\n<table style=\"width:100%;border-collapse:collapse;margin-bottom:24px;\">\n<tr style=\"background-color:#f8f9fa;\"><th style=\"padding:12px;text-align:left;\">Metric</th><th style=\"padding:12px;text-align:center;\">Value</th><th style=\"padding:12px;text-align:center;\">Trend</th></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Total Leads</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.total_leads}</td><td style=\"padding:8px;text-align:center;\">—</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">New Leads This Week</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.new_leads_this_week}</td><td style=\"padding:8px;text-align:center;\">${d.wow_trend} ${d.week_over_week_growth}%</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Active Signups</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.total_signups}</td><td style=\"padding:8px;text-align:center;\">—</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Conversion Rate</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.conversion_rate}%</td><td style=\"padding:8px;text-align:center;\">—</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Waitlist Size</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.waitlist_size}</td><td style=\"padding:8px;text-align:center;\">+${d.new_waitlist_this_week} new</td></tr>\n</table>\n\n<h2 style=\"color: #1a1a2e;\">📈 Leads by Source</h2>\n<table style=\"width:100%;border-collapse:collapse;margin-bottom:24px;\">\n<tr style=\"background-color:#f8f9fa;\"><th style=\"padding:12px;text-align:left;\">Source</th><th style=\"padding:12px;text-align:center;\">Count</th><th style=\"padding:12px;text-align:center;\">% of New</th></tr>\n${sourceRows || '<tr><td colspan=\"3\" style=\"padding:8px;text-align:center;color:#999;\">No new leads this week</td></tr>'}\n</table>\n\n<h2 style=\"color: #1a1a2e;\">📝 Content Performance</h2>\n<table style=\"width:100%;border-collapse:collapse;margin-bottom:24px;\">\n<tr style=\"background-color:#f8f9fa;\"><th style=\"padding:12px;text-align:left;\">Status</th><th style=\"padding:12px;text-align:center;\">Count</th></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Total Content Pieces</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.total_content_created}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Created This Week</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.content_this_week}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Published</td><td style=\"padding:8px;text-align:center;font-weight:bold;color:#4CAF50;\">${d.content_published}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Approved (Ready)</td><td style=\"padding:8px;text-align:center;font-weight:bold;color:#2196F3;\">${d.content_approved}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Pending Review</td><td style=\"padding:8px;text-align:center;font-weight:bold;color:#FF9800;\">${d.content_pending}</td></tr>\n</table>\n\n<h2 style=\"color: #1a1a2e;\">⭐ Feedback Summary</h2>\n<table style=\"width:100%;border-collapse:collapse;margin-bottom:24px;\">\n<tr style=\"background-color:#f8f9fa;\"><th style=\"padding:12px;text-align:left;\">Metric</th><th style=\"padding:12px;text-align:center;\">Value</th></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Total Feedback Received</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.total_feedback}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">This Week</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.feedback_this_week}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Average Rating</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.avg_feedback_rating}/5 ⭐</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Would Recommend</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.nps_recommend_percent}%</td></tr>\n</table>\n\n<h2 style=\"color: #1a1a2e;\">🤝 Referral Program</h2>\n<table style=\"width:100%;border-collapse:collapse;margin-bottom:24px;\">\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Total Referrals (All Time)</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.total_referrals}</td></tr>\n<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">Referrals This Week</td><td style=\"padding:8px;text-align:center;font-weight:bold;\">${d.referrals_this_week}</td></tr>\n</table>\n\n<div style=\"background-color: #E3F2FD; border-radius: 8px; padding: 16px; margin-top: 24px;\">\n<p style=\"margin: 0; font-size: 14px; color: #1565C0;\">💡 <strong>Quick Summary:</strong> ${d.new_leads_this_week} new leads this week (${d.wow_trend} ${d.week_over_week_growth}% WoW), ${d.content_this_week} content pieces created, avg feedback ${d.avg_feedback_rating}/5.</p>\n</div>\n\n<p style=\"color: #999; font-size: 12px; margin-top: 24px;\">Generated automatically by [APP_NAME] Analytics • ${d.week_end}</p>\n</div>\n</body>\n</html>`;\n\nreturn [{\n  json: {\n    ...d,\n    html_report: html\n  }\n}];"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst d = $input.first().json;\nconst sourceRows = Object.entries(d.leads_by_source || {}).map(([s, c]) => '<tr><td>' + esc(s) + '</td><td>' + c + '</td></tr>').join('') || '<tr><td colspan=\"2\">No new leads this week</td></tr>';\nconst td = 'style=\"padding:8px;border-bottom:1px solid #eee;\"';\nconst html = '<div style=\"font-family:Arial,sans-serif;max-width:700px;margin:0 auto;\"><h1>Weekly Growth Report - Eki</h1><p>Week of ' + esc(d.week_start) + ' to ' + esc(d.week_end) + '</p>'\n  + '<h2>Key metrics</h2><table style=\"width:100%;border-collapse:collapse;\">'\n  + '<tr><td ' + td + '>Total leads</td><td ' + td + '><b>' + d.total_leads + '</b></td></tr>'\n  + '<tr><td ' + td + '>New leads this week</td><td ' + td + '><b>' + d.new_leads_this_week + '</b> (' + d.wow_trend + ' ' + d.week_over_week_growth + '% WoW)</td></tr>'\n  + '<tr><td ' + td + '>Active signups</td><td ' + td + '><b>' + d.total_signups + '</b></td></tr>'\n  + '<tr><td ' + td + '>Conversion rate</td><td ' + td + '><b>' + d.conversion_rate + '%</b></td></tr>'\n  + '<tr><td ' + td + '>Waitlist size</td><td ' + td + '><b>' + d.waitlist_size + '</b> (+' + d.new_waitlist_this_week + ' new)</td></tr></table>'\n  + '<h2>Leads by source</h2><table style=\"width:100%;border-collapse:collapse;\">' + sourceRows + '</table>'\n  + '<h2>Content</h2><p>Created this week: ' + d.content_this_week + ' | Approved: ' + d.content_approved + ' | Pending: ' + d.content_pending + ' | Published: ' + d.content_published + '</p>'\n  + '<h2>Feedback</h2><p>Total: ' + d.total_feedback + ' (this week ' + d.feedback_this_week + ') | Average: ' + d.avg_feedback_rating + '/5 | Would recommend: ' + d.nps_recommend_percent + '%</p>'\n  + '<h2>Referrals</h2><p>Total: ' + d.total_referrals + ' | This week: ' + d.referrals_this_week + '</p></div>';\nconst text = 'Weekly Growth Report\\n' + d.week_start + ' -> ' + d.week_end + '\\n\\nNew leads: ' + d.new_leads_this_week + ' (' + d.wow_trend + ' ' + d.week_over_week_growth + '% WoW)\\nTotal leads: ' + d.total_leads + '\\nConversion: ' + d.conversion_rate + '%\\nWaitlist: ' + d.waitlist_size + '\\n\\nContent: created ' + d.content_this_week + ', published ' + d.content_published + ', pending ' + d.content_pending + '\\nFeedback: avg ' + d.avg_feedback_rating + '/5, recommend ' + d.nps_recommend_percent + '%\\nReferrals this week: ' + d.referrals_this_week;\nconst to = norm($env.TEAM_EMAIL);\nreturn [{ json: { ...d, telegram_text: text, send_email: !!(to && norm($env.RESEND_API_KEY) && norm($env.RESEND_FROM_EMAIL)), email_to: to, email_subject: 'Weekly Growth Report - ' + d.week_start + ' to ' + d.week_end, email_html: html } }];"
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000908",
-      "name": "Generate HTML Report",
+      "id": "3dd58bdf-3bfa-4800-a6d9-396e3ac5fa14",
+      "name": "Generate Report",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 300]
+      "position": [
+        1660,
+        200
+      ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.telegram.com/emails",
-        "sendHeaders": true,
-        "headersUi": {
-          "parameter": [
-            {
-              "name": "Authorization",
-              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\"from\": \"Eki Analytics <analytics@eki-marketplace.com>\", \"to\": [\"YOUR_TEAM_EMAIL@example.com\"], \"subject\": \"📊 Weekly Growth Report — {{ $json.week_start }} to {{ $json.week_end }}\", \"html\": {{ JSON.stringify($json.html_report) }}}"
-      },
-      "id": "d4e5f6a7-4001-4001-8001-000000000909",
-      "name": "Telegram - Send Report",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1560, 200]
-    },
-    {
-      "parameters": {
-        "chatId": "YOUR_TELEGRAM_CHAT_ID",
-        "text": "📊 *Weekly Growth Report*\n📅 {{ $json.week_start }} → {{ $json.week_end }}\n\n🎯 *Key Metrics*\n• New Leads: {{ $json.new_leads_this_week }} ({{ $json.wow_trend }} {{ $json.week_over_week_growth }}% WoW)\n• Total Leads: {{ $json.total_leads }}\n• Conversion Rate: {{ $json.conversion_rate }}%\n• Waitlist: {{ $json.waitlist_size }}\n\n📝 *Content*\n• Created: {{ $json.content_this_week }} this week\n• Published: {{ $json.content_published }}\n• Pending: {{ $json.content_pending }}\n\n⭐ *Feedback*\n• Avg Rating: {{ $json.avg_feedback_rating }}/5\n• Would Recommend: {{ $json.nps_recommend_percent }}%\n\n🤝 *Referrals*: {{ $json.referrals_this_week }} this week\n\n_Full report sent via email._",
-        "additionalFields": {
-          "parse_mode": "Markdown"
-        }
-      },
-      "id": "d4e5f6a7-4001-4001-8001-000000000910",
-      "name": "Telegram - Weekly Summary",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [1560, 400],
-      "credentials": {
-        "telegramApi": {
-          "id": "3",
-          "name": "Telegram Bot API"
-        }
-      }
-    },
-    {
-      "parameters": {
+        "resource": "sheet",
         "operation": "append",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Analytics"
+          "value": "Analytics",
+          "mode": "name"
         },
         "columns": {
           "mappingMode": "defineBelow",
@@ -248,58 +219,301 @@
             "waitlist_size": "={{ $json.waitlist_size }}",
             "total_referrals": "={{ $json.total_referrals }}",
             "wow_growth": "={{ $json.week_over_week_growth }}"
-          }
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "report_date",
+              "displayName": "report_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "week_start",
+              "displayName": "week_start",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_leads",
+              "displayName": "total_leads",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "new_leads",
+              "displayName": "new_leads",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "conversion_rate",
+              "displayName": "conversion_rate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content_published",
+              "displayName": "content_published",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "avg_feedback_rating",
+              "displayName": "avg_feedback_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "waitlist_size",
+              "displayName": "waitlist_size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_referrals",
+              "displayName": "total_referrals",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "wow_growth",
+              "displayName": "wow_growth",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         },
         "options": {
-          "cellFormat": "USER_ENTERED"
+          "cellFormat": "RAW"
         }
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000911",
+      "id": "101295ab-ee52-4d58-a9f4-92b11124cc27",
       "name": "Append Weekly Snapshot",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1820, 300],
+      "position": [
+        1920,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "content": "## 🔧 Weekly Analytics Report Setup\n\n### Schedule\nRuns every **Monday at 9:00 AM** (Europe/Rome timezone).\n\n### Google Sheet Requirements\nThis workflow reads from 4 sheets:\n\n**\"Leads\" sheet columns:**\n- `signup_date` or `created_date` — ISO date\n- `source` — lead source (organic, referral, etc.)\n- `status` — Active, Converted, etc.\n\n**\"Content Drafts\" sheet columns:**\n- `created_date` or `date`\n- `status` — Approved, Pending, Published\n\n**\"Feedback\" sheet columns:**\n- `timestamp` or `date`\n- `rating` — numeric 1-5\n- `would_recommend` — boolean\n\n**\"Waitlist\" sheet columns:**\n- `signup_date` or `date`\n\n**\"Analytics\" sheet columns (auto-populated):**\n- `report_date`, `week_start`, `total_leads`, `new_leads`\n- `conversion_rate`, `content_published`, `avg_feedback_rating`\n- `waitlist_size`, `total_referrals`, `wow_growth`\n\n### Adding Recipients\nEdit the **Telegram - Send Report** node to add CC/BCC recipients.\nOr change `to` list to a distribution list email.\n\n### Customizing Metrics\nEdit the **Calculate Analytics** Code node to:\n- Add/remove metrics\n- Change time window (default: 7 days)\n- Adjust conversion definitions\n\n### Replace Placeholders\n- `YOUR_TEAM_EMAIL@example.com` — team distribution email\n- `YOUR_TELEGRAM_CHAT_ID` — Telegram group chat ID\n- `Eki` — your app name\n- `YOUR_GOOGLE_SHEET_URL` — your Google Sheet URL",
-        "width": 420,
-        "height": 620
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($('Generate Report').first().json.telegram_text).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
-      "id": "d4e5f6a7-4001-4001-8001-000000000912",
-      "name": "Sticky Note",
+      "id": "6f016f10-d7d0-45cc-a7db-af1a78f92629",
+      "name": "Telegram Weekly Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2180,
+        200
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6732532c-0b90-4a94-a5f0-a84347b7a947",
+              "leftValue": "={{ $('Generate Report').first().json.send_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "591bb33e-502a-4926-a3bc-46e4a8e517eb",
+      "name": "Send Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "email_to",
+              "value": "={{ $('Generate Report').first().json.email_to }}",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "email_subject",
+              "value": "={{ $('Generate Report').first().json.email_subject }}",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "email_html",
+              "value": "={{ $('Generate Report').first().json.email_html }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "67d0026d-b867-41b3-a74f-f6e9ee51ef14",
+      "name": "Email Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM_EMAIL, to: [$json.email_to], subject: $json.email_subject, html: $json.email_html }) }}"
+      },
+      "id": "b3d6c1ef-3a0f-449e-a67c-1277bfafe1ac",
+      "name": "Send Report Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2960,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "content": "### Weekly report (Mondays 09:00 Africa/Lagos)\nReads Leads, Content Drafts, Feedback, Waitlist; appends a row to `Analytics`; posts a Telegram summary; emails `TEAM_EMAIL` via Resend when configured.",
+        "width": 380,
+        "height": 130
+      },
+      "id": "d2fd6ddc-6044-498c-a645-f4ed2f3a20ad",
+      "name": "Setup",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-280, 40]
+      "position": [
+        100,
+        30
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3e73abfe-429e-4ba7-a6bf-259448fcfb84",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        370
+      ]
     }
   ],
   "connections": {
-    "Monday 9AM Trigger": {
+    "Monday 09:00": {
       "main": [
         [
           {
             "node": "Read Leads",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Read Content Drafts",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Read Feedback",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Read Waitlist",
             "type": "main",
             "index": 0
           }
@@ -310,7 +524,7 @@
       "main": [
         [
           {
-            "node": "Merge All Data",
+            "node": "Read Content Drafts",
             "type": "main",
             "index": 0
           }
@@ -321,9 +535,9 @@
       "main": [
         [
           {
-            "node": "Merge All Data",
+            "node": "Read Feedback",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -332,7 +546,7 @@
       "main": [
         [
           {
-            "node": "Merge All Data 2",
+            "node": "Read Waitlist",
             "type": "main",
             "index": 0
           }
@@ -340,39 +554,6 @@
       ]
     },
     "Read Waitlist": {
-      "main": [
-        [
-          {
-            "node": "Merge All Data 2",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge All Data": {
-      "main": [
-        [
-          {
-            "node": "Merge Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge All Data 2": {
-      "main": [
-        [
-          {
-            "node": "Merge Final",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge Final": {
       "main": [
         [
           {
@@ -387,34 +568,73 @@
       "main": [
         [
           {
-            "node": "Generate HTML Report",
+            "node": "Generate Report",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate HTML Report": {
-      "main": [
-        [
-          {
-            "node": "Telegram - Send Report",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Telegram - Weekly Summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Telegram - Send Report": {
+    "Generate Report": {
       "main": [
         [
           {
             "node": "Append Weekly Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Weekly Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Telegram Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Weekly Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email?": {
+      "main": [
+        [
+          {
+            "node": "Email Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Fields": {
+      "main": [
+        [
+          {
+            "node": "Send Report Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
             "type": "main",
             "index": 0
           }
@@ -425,20 +645,10 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Europe/Rome"
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "tags": [
-    {
-      "name": "analytics"
-    },
-    {
-      "name": "reporting"
-    },
-    {
-      "name": "weekly"
-    }
-  ],
-  "meta": {
-    "instanceId": "app-launch-automation"
-  }
+  "pinData": {},
+  "tags": []
 }

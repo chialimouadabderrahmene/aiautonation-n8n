@@ -1,380 +1,776 @@
 {
   "name": "Eki - 06 WhatsApp Engagement Follow-up",
+  "id": "ekiwf06",
   "nodes": [
     {
-      "id": "e30217b3-4d4a-483d-941d-316c24307e83",
-      "name": "Daily 10AM Check",
-      "type": "n8n-nodes-base.cronTrigger",
-      "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ],
       "parameters": {
         "rule": {
-          "hour": 10,
-          "minute": 0,
-          "weekday": [
-            0,
-            0
-          ]
-        }
-      }
-    },
-    {
-      "id": "8615b7fc-d29e-4c2e-92a7-8bb7cb3a5b16",
-      "name": "Get All Leads",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 2,
-      "position": [
-        300,
-        0
-      ],
-      "parameters": {
-        "operation": "getRows",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "Leads"
-      },
-      "credentials": {
-        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
-      }
-    },
-    {
-      "id": "ac0930ee-d792-42ca-b4f1-38a562704ef7",
-      "name": "Find Inactive Leads",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        600,
-        0
-      ],
-      "parameters": {
-        "jsCode": "return ($json || []).filter(l => {\n  const lastContact = l.last_wa ? new Date(l.last_wa).getTime() : 0;\n  const daysSince = (Date.now() - lastContact) / 86400000;\n  return l.status !== 'churned' && l.status !== 'unsubscribed' && daysSince >= 7;\n}).map(l => {\n  const daysSince = Math.floor((Date.now() - new Date(l.last_wa||Date.now()).getTime()) / 86400000);\n  let dayBucket;\n  if(daysSince >= 21) dayBucket = 21;\n  else if(daysSince >= 14) dayBucket = 14;\n  else if(daysSince >= 7) dayBucket = 7;\n  return {json: {...l, followup_day: dayBucket}};\n});"
-      }
-    },
-    {
-      "id": "055cd5b1-d33a-422d-9f1c-56215f45bbb8",
-      "name": "Route by Days",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 2,
-      "position": [
-        900,
-        0
-      ],
-      "parameters": {
-        "dataType": "string",
-        "value1": "={{$json.followup_day}}",
-        "rules": [
-          {
-            "value": "7"
-          },
-          {
-            "value": "14"
-          },
-          {
-            "value": "21"
-          }
-        ]
-      }
-    },
-    {
-      "id": "06473d23-e7ba-4ad1-9121-8f23ebec23b0",
-      "name": "WA 7-Day Re-engage",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
-      "position": [
-        1200,
-        0
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
-        "authentication": "none",
-        "sendBody": true,
-        "contentType": "json",
-        "bodyParameters": {
-          "parameters": [
+          "interval": [
             {
-              "name": "messaging_product",
-              "value": "whatsapp"
-            },
-            {
-              "name": "to",
-              "value": "={{$json.phone}}"
-            },
-            {
-              "name": "type",
-              "value": "text"
-            },
-            {
-              "name": "text.body",
-              "value": "=Hey {{$json.name}}! \ud83d\udc4b Just checking in. Eki is helping vendors get more orders and buyers find trusted African foodstuff. No pressure, but your store/profile is waiting: https://eki.app/continue\n\nReply READY to get started or STOP to opt out."
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
             }
           ]
-        },
-        "options": {
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Authorization",
-                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
-              }
-            ]
-          }
         }
-      }
+      },
+      "id": "1f0697f1-d343-4442-ae53-23280d560332",
+      "name": "Daily 10:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        200
+      ]
     },
     {
-      "id": "9c91c3f9-e384-42bb-813c-1e74c10b0a8a",
-      "name": "WA 14-Day Re-engage",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "339a0a9b-7ec8-47ae-a03c-2bfd476cec9a",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
       "position": [
-        1200,
+        360,
         200
       ],
-      "parameters": {
-        "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
-        "authentication": "none",
-        "sendBody": true,
-        "contentType": "json",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "messaging_product",
-              "value": "whatsapp"
-            },
-            {
-              "name": "to",
-              "value": "={{$json.phone}}"
-            },
-            {
-              "name": "type",
-              "value": "text"
-            },
-            {
-              "name": "text.body",
-              "value": "=Hi {{$json.name}} - we noticed you haven't come back to Eki yet. Here's what you're missing:\n\u2705 Verified buyers looking for your products\n\u2705 Secure payments (no more fake alerts)\n\u2705 Professional storefront in 15 min\n\nLast chance to set up free: https://eki.app/signup\nReply STOP to unsubscribe."
-            }
-          ]
-        },
-        "options": {
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Authorization",
-                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
-              }
-            ]
-          }
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
-      "id": "2e166a71-6d4b-4c32-b32f-7440174e7af4",
-      "name": "WA 21-Day Final",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
-      "position": [
-        1200,
-        400
-      ],
       "parameters": {
-        "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
-        "authentication": "none",
-        "sendBody": true,
-        "contentType": "json",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "messaging_product",
-              "value": "whatsapp"
-            },
-            {
-              "name": "to",
-              "value": "={{$json.phone}}"
-            },
-            {
-              "name": "type",
-              "value": "text"
-            },
-            {
-              "name": "text.body",
-              "value": "={{$json.name}}, this is our last message. Your Eki store is still waiting for you. When you're ready, you can set up in 15 min: https://eki.app/signup\n\nWe won't message again unless you reply. Reply RESTART if you want to begin later."
-            }
-          ]
-        },
-        "options": {
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Authorization",
-                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": "59416d28-0736-4e25-9ddc-6ef34d0b7f3c",
-      "name": "Update Status",
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst LEAD_FIELDS = [\"lead_id\",\"phone\",\"email\",\"name\",\"user_type\",\"user_segment\",\"country\",\"foodstuff_specialty\",\"source\",\"interest_level\",\"intent_level\",\"status\",\"opt_in\",\"opt_in_source\",\"opt_in_at\",\"opt_out_at\",\"signup_date\",\"first_contact\",\"last_message\",\"last_wa\",\"wa_day\",\"last_nurture\",\"nurture_day\",\"last_reengage\",\"reengage_step\",\"referral_code\",\"feedback_requested_date\",\"feedback_received_date\",\"last_feedback_rating\",\"last_wa_error\",\"notes\"];\nconst blankLead = () => Object.fromEntries(LEAD_FIELDS.map((f) => [f, '']));\nconst mergeLead = (existing, updates) => {\n  const out = blankLead();\n  for (const f of LEAD_FIELDS) { if (existing && existing[f] !== undefined && existing[f] !== null) out[f] = String(existing[f]); }\n  for (const f of LEAD_FIELDS) { if (updates && updates[f] !== undefined && updates[f] !== null) out[f] = String(updates[f]); }\n  return out;\n};\nconst leadIdFor = (phone, email) => digits(phone) ? 'P' + digits(phone) : (norm(email) ? 'E' + norm(email).toLowerCase() : '');\nconst tplLang = norm($env.WA_TEMPLATE_LANG) || 'en';\nconst waClean = (s) => norm(s).replace(/[\\r\\n\\t]+/g, ' ').replace(/ {5,}/g, '    ').slice(0, 900) || '-';\n// Business-initiated WhatsApp messages MUST be approved templates. Never free-form text.\nconst buildTemplate = (key, phone, params) => {\n  const name = norm($env['WA_TPL_' + key]);\n  if (!name) return { ok: false, reason: 'template_not_configured:WA_TPL_' + key };\n  const to = digits(phone);\n  if (to.length < 8 || to.length > 15) return { ok: false, reason: 'invalid_phone' };\n  return {\n    ok: true,\n    template: name,\n    payload: {\n      messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'template',\n      template: { name, language: { code: tplLang }, components: [{ type: 'body', parameters: params.map((p) => ({ type: 'text', text: waClean(p) })) }] },\n    },\n  };\n};\n// Returns '' when the lead may be contacted, otherwise the reason it must NOT be.\nconst notContactableReason = (l) => {\n  if (!yes(l.opt_in)) return 'no_opt_in';\n  if (norm(l.opt_out_at)) return 'opted_out';\n  const st = norm(l.status).toLowerCase();\n  if (['unsubscribed', 'converted', 'churned'].includes(st)) return 'status_' + st;\n  const d = digits(l.phone);\n  if (d.length < 8 || d.length > 15) return 'invalid_phone';\n  return '';\n};\n// status=nurturing leads with 7+ days of silence. Steps: 7d, 14d, 21d(final -> churned). Approved templates only.\nconst MAX = parseInt($env.WA_MAX_PER_RUN || '40', 10) || 40;\nconst appOr = () => appLink() || 'our app';\nconst STEPS = { 0: 'REENGAGE_7', 1: 'REENGAGE_14', 2: 'REENGAGE_21' };\nconst leads = $input.all().map((i) => i.json).filter((l) => norm(l.lead_id) && norm(l.phone));\nconst out = [];\nconst missing = new Set();\nlet waiting = 0;\nfor (const raw of leads) {\n  if (norm(raw.status).toLowerCase() !== 'nurturing') continue;\n  const step = parseInt(raw.reengage_step, 10) || 0;\n  if (step > 2) continue;\n  const anchor = Math.max(Date.parse(norm(raw.last_message)) || 0, Date.parse(norm(raw.last_wa)) || 0, Date.parse(norm(raw.last_reengage)) || 0);\n  const inactiveDays = anchor ? (Date.now() - anchor) / 86400000 : Infinity;\n  if (inactiveDays < 7) continue;\n  const lead = mergeLead(raw, {});\n  if (notContactableReason(lead)) continue;\n  const t = buildTemplate(STEPS[step], lead.phone, [lead.name || 'there', appOr()]);\n  if (!t.ok) { if (t.reason.startsWith('template_not_configured')) { missing.add(t.reason.split(':')[1]); waiting++; } continue; }\n  if (out.length >= MAX) break;\n  out.push({ json: { send: true, lead, step_index: step, step: STEPS[step], payload: t.payload } });\n}\nif (missing.size) out.push({ json: { send: false, alert: 'Re-engagement blocked: ' + waiting + ' lead(s) waiting. Configure approved WhatsApp templates: ' + [...missing].join(', ') } });\nreturn out;"
+      },
+      "id": "b907efee-6455-4926-ae89-15f177a271ec",
+      "name": "Select Inactive Leads",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1500,
-        0
-      ],
-      "parameters": {
-        "jsCode": "return $json.map(l => ({json: {...l, last_wa: new Date().toISOString(), status: l.followup_day >= 21 ? 'churned' : l.status}}));"
-      }
+        620,
+        200
+      ]
     },
     {
-      "id": "f4bd096f-7c47-4aa8-9ea2-22c45568d5b9",
-      "name": "Log Follow-up",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 2,
-      "position": [
-        1800,
-        0
-      ],
       "parameters": {
-        "operation": "append",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "Leads"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6fcedeee-0aac-4eb2-ac8a-bec73b964516",
+              "leftValue": "={{ $json.send }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "credentials": {
-        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
-      }
+      "id": "0ae75828-4869-4db9-a04c-1ce125fe6089",
+      "name": "Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        200
+      ]
     },
     {
-      "id": "d30644e2-3307-4434-b227-1a8411abe1ff",
-      "name": "Inactive Alert",
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($json.alert).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "68c3724c-5c2f-420f-a2b4-c33397c13ae5",
+      "name": "Config Alert",
       "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        540
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "ed3a36b1-d1cb-4ea4-a8e6-409cd4b3699e",
+      "name": "Loop Over Leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/' + ($env.WHATSAPP_GRAPH_VERSION || 'v23.0') + '/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}"
+      },
+      "id": "73983264-047d-4c97-ab70-51caddfa128e",
+      "name": "Send WA Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst r = $input.first().json || {};\nconst out = [];\n{\n  const src = $('Loop Over Leads').first(1).json;\n  const ok = !!(r.messages && r.messages[0] && r.messages[0].id) && !r.error;\n  const lead = { ...src.lead };\n  if (ok) {\n    lead.reengage_step = String(src.step_index + 1); lead.last_reengage = nowIso(); lead.last_wa = nowIso(); lead.last_wa_error = '';\n    if (src.step_index >= 2) lead.status = 'churned';\n  } else { lead.last_wa_error = String((r.error && (r.error.message || r.error)) || 'send_failed').slice(0, 200); }\n  out.push({ json: { lead, sent: ok, step: src.step, error: ok ? '' : lead.last_wa_error } });\n}\nreturn out;"
+      },
+      "id": "b6272104-4e59-4c15-a7f1-5254c22a808a",
+      "name": "Record Result",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        0,
-        0
-      ],
-      "parameters": {
-        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
-        "text": "=\u26a0\ufe0f Lead inactive {{$json.followup_day}} days\nName: {{$json.name}}\nPhone: {{$json.phone}}\nRe-engagement sent via WhatsApp"
-      },
-      "credentials": {
-        "telegramApi": "telegramApi"
-      }
+        1660,
+        200
+      ]
     },
-    [
-      2100,
-      0
-    ]
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead.lead_id }}",
+            "phone": "={{ $json.lead.phone }}",
+            "email": "={{ $json.lead.email }}",
+            "name": "={{ $json.lead.name }}",
+            "user_type": "={{ $json.lead.user_type }}",
+            "user_segment": "={{ $json.lead.user_segment }}",
+            "country": "={{ $json.lead.country }}",
+            "foodstuff_specialty": "={{ $json.lead.foodstuff_specialty }}",
+            "source": "={{ $json.lead.source }}",
+            "interest_level": "={{ $json.lead.interest_level }}",
+            "intent_level": "={{ $json.lead.intent_level }}",
+            "status": "={{ $json.lead.status }}",
+            "opt_in": "={{ $json.lead.opt_in }}",
+            "opt_in_source": "={{ $json.lead.opt_in_source }}",
+            "opt_in_at": "={{ $json.lead.opt_in_at }}",
+            "opt_out_at": "={{ $json.lead.opt_out_at }}",
+            "signup_date": "={{ $json.lead.signup_date }}",
+            "first_contact": "={{ $json.lead.first_contact }}",
+            "last_message": "={{ $json.lead.last_message }}",
+            "last_wa": "={{ $json.lead.last_wa }}",
+            "wa_day": "={{ $json.lead.wa_day }}",
+            "last_nurture": "={{ $json.lead.last_nurture }}",
+            "nurture_day": "={{ $json.lead.nurture_day }}",
+            "last_reengage": "={{ $json.lead.last_reengage }}",
+            "reengage_step": "={{ $json.lead.reengage_step }}",
+            "referral_code": "={{ $json.lead.referral_code }}",
+            "feedback_requested_date": "={{ $json.lead.feedback_requested_date }}",
+            "feedback_received_date": "={{ $json.lead.feedback_received_date }}",
+            "last_feedback_rating": "={{ $json.lead.last_feedback_rating }}",
+            "last_wa_error": "={{ $json.lead.last_wa_error }}",
+            "notes": "={{ $json.lead.notes }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_type",
+              "displayName": "user_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_segment",
+              "displayName": "user_segment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "country",
+              "displayName": "country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "foodstuff_specialty",
+              "displayName": "foodstuff_specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "interest_level",
+              "displayName": "interest_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "intent_level",
+              "displayName": "intent_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_in",
+              "displayName": "opt_in",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_in_source",
+              "displayName": "opt_in_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_in_at",
+              "displayName": "opt_in_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_out_at",
+              "displayName": "opt_out_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "signup_date",
+              "displayName": "signup_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "first_contact",
+              "displayName": "first_contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_message",
+              "displayName": "last_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_wa",
+              "displayName": "last_wa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "wa_day",
+              "displayName": "wa_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_nurture",
+              "displayName": "last_nurture",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nurture_day",
+              "displayName": "nurture_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_reengage",
+              "displayName": "last_reengage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reengage_step",
+              "displayName": "reengage_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "feedback_requested_date",
+              "displayName": "feedback_requested_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "feedback_received_date",
+              "displayName": "feedback_received_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_feedback_rating",
+              "displayName": "last_feedback_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_wa_error",
+              "displayName": "last_wa_error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "a6f6d268-f76c-4635-a330-f9a37d18bd82",
+      "name": "Upsert Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\n// gather the result of every loop iteration\nconst rs = [];\nfor (let run = 0; run < 1000; run++) { let a; try { a = $('Record Result').all(0, run); } catch (e) { break; } if (!a || !a.length) break; rs.push(...a.map((i) => i.json)); }\nconst sent = rs.filter((r) => r.sent).length;\nconst failed = rs.length - sent;\nconst firstErr = rs.find((r) => !r.sent);\nreturn [{ json: { text: 'WhatsApp re-engagement: ' + sent + ' sent, ' + failed + ' failed' + (firstErr ? '\\nFirst error: ' + firstErr.error : '') } }];"
+      },
+      "id": "6d5fb0cf-9990-4e9d-aad9-036903f64118",
+      "name": "Summarize Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        370
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($json.text).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "8a493b96-19ee-43c7-ad57-e3180acec7bd",
+      "name": "Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1660,
+        370
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "### Re-engagement (status = nurturing)\n7 / 14 / 21 days of silence -> `WA_TPL_REENGAGE_7/14/21`. Each step is sent once (`reengage_step`), 21-day step marks the lead `churned`.\nAny inbound WhatsApp message (workflow 13) resets the counter.",
+        "width": 400,
+        "height": 150
+      },
+      "id": "ec21aca9-f319-4599-af1a-554314f7805e",
+      "name": "Behaviour",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "01f22441-8476-4b5b-ac44-a5505e1670e1",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        370
+      ]
+    }
   ],
   "connections": {
-    "Daily 10AM Check": {
+    "Select Inactive Leads": {
       "main": [
         [
           {
-            "node": "Get All Leads",
+            "node": "Send?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Get All Leads": {
+    "Send?": {
       "main": [
         [
           {
-            "node": "Find Inactive Leads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Find Inactive Leads": {
-      "main": [
-        [
-          {
-            "node": "Route by Days",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Route by Days": {
-      "main": [
-        [
-          {
-            "node": "WA 7-Day Re-engage",
+            "node": "Loop Over Leads",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "WA 14-Day Re-engage",
+            "node": "Config Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Leads": {
+      "main": [
+        [
+          {
+            "node": "Summarize Run",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "WA 21-Day Final",
+            "node": "Send WA Template",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "WA 7-Day Re-engage": {
+    "Send WA Template": {
       "main": [
         [
           {
-            "node": "Update Status",
+            "node": "Record Result",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "WA 14-Day Re-engage": {
+    "Record Result": {
       "main": [
         [
           {
-            "node": "Update Status",
+            "node": "Upsert Lead",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "WA 21-Day Final": {
+    "Upsert Lead": {
       "main": [
         [
           {
-            "node": "Update Status",
+            "node": "Loop Over Leads",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Update Status": {
+    "Summarize Run": {
       "main": [
         [
           {
-            "node": "Log Follow-up",
+            "node": "Telegram Summary",
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Daily 10:00": {
+      "main": [
         [
           {
-            "node": "Inactive Alert",
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Select Inactive Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
             "type": "main",
             "index": 0
           }
@@ -382,11 +778,13 @@
       ]
     }
   },
+  "active": false,
   "settings": {
-    "timezone": "Africa/Lagos"
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
   "pinData": {},
-  "versionId": "97e687a0-0a37-464c-a4c9-d942adb71b3a",
-  "active": false,
   "tags": []
 }

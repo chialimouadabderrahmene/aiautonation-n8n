@@ -1,142 +1,560 @@
 {
   "name": "Eki - 17 ManyChat Comment Funnel",
+  "id": "ekiwf17",
   "nodes": [
     {
-      "id": "cf65bb72-8290-42d8-a03b-5a7c66f5c68b",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manychat-comment",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "3f748949-4a74-4744-ad4f-583bb9cb6666",
       "name": "ManyChat Webhook",
-      "type": "n8n-nodes-base.webhookTrigger",
+      "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        0,
-        0
+        100,
+        200
       ],
-      "parameters": {
-        "path": "manychat-comment",
-        "options": {}
-      }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "eki-cred-webhook-secret",
+          "name": "Eki Webhook Shared Secret"
+        }
+      },
+      "webhookId": "35862797-8e2f-4cd8-ad59-ea15e97d67ce"
     },
     {
-      "id": "81f3ce4e-e5dd-4c4f-8d7c-d3b3eba6c08e",
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst b = $input.first().json.body || {};\nconst keyword = norm(b.keyword || b.text).toUpperCase().replace(/[^A-Z]/g, '');\nconst name = norm(b.name || b.first_name) || 'there';\nconst username = norm(b.username || b.ig_username).replace(/^@/, '').toLowerCase().replace(/[^a-z0-9._]/g, '');\nconst vendorKeys = ['VENDOR', 'SELL', 'INFO', 'JOIN'];\nconst persona = vendorKeys.includes(keyword) ? 'vendor' : keyword === 'BUY' ? 'buyer' : 'unknown';\nconst app = appLink(); const ven = vendorLink(); const wa = norm($env.WHATSAPP_CTA_LINK);\nlet text;\nif (persona === 'vendor') text = 'Hi ' + name + '! Selling foodstuff online? Eki is a marketplace where African foodstuff vendors can reach buyers worldwide.' + (ven ? ' Start here: ' + ven : '') + (wa ? '\\nPrefer WhatsApp? ' + wa : '');\nelse if (persona === 'buyer') text = 'Hi ' + name + '! Looking for African foodstuff? Eki connects you with vendors.' + (app ? ' Browse here: ' + app : '') + (wa ? '\\nPrefer WhatsApp? ' + wa : '');\nelse text = 'Hi ' + name + '! Thanks for your comment.' + (app ? ' Learn more about Eki: ' + app : '');\nreturn [{ json: {\n  keyword, persona, name, username, known_keyword: persona !== 'unknown',\n  reply: { version: 'v2', content: { messages: [{ type: 'text', text }] } },\n} }];"
+      },
+      "id": "e33f6dfe-f865-4439-a000-5105621280aa",
       "name": "Parse Comment",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        300,
-        0
-      ],
-      "parameters": {
-        "jsCode": "const body = $json;\nconst keyword = (body.keyword || body.text || '').toUpperCase();\nconst user = body.name || body.username || 'Unknown';\nreturn [{json:{user,keyword,platform:'instagram',source:body.source||'manychat',timestamp:new Date().toISOString()}}];"
-      }
+        360,
+        200
+      ]
     },
     {
-      "id": "a66735f5-b342-4496-a396-876d270fe0de",
-      "name": "Route by Keyword",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 2,
-      "position": [
-        600,
-        0
-      ],
       "parameters": {
-        "dataType": "string",
-        "value1": "={{$json.keyword}}",
-        "rules": [
-          {
-            "value": "VENDOR"
-          },
-          {
-            "value": "SELL"
-          },
-          {
-            "value": "BUY"
-          },
-          {
-            "value": "INFO"
-          },
-          {
-            "value": "JOIN"
-          }
-        ]
-      }
-    },
-    {
-      "id": "2e60ca93-6be2-47e3-bb56-80e9d5986294",
-      "name": "Send Vendor DM",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 2,
-      "position": [
-        900,
-        0
-      ],
-      "parameters": {
-        "chatId": "={{$json.user}}",
-        "text": "=Hi {{$json.user}}! \ud83d\udc4b You're selling on IG? Eki gives you a pro storefront, secure payments, order management. Free to set up. Start here: https://eki.app/vendor"
+        "respondWith": "json",
+        "responseBody": "={{ $json.reply }}",
+        "options": {
+          "responseCode": 200
+        }
       },
-      "credentials": {
-        "telegramApi": "telegramApi"
-      }
+      "id": "7879e7b4-859c-4a5b-a48d-276aa8eadbfc",
+      "name": "Reply To ManyChat",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        200
+      ]
     },
     {
-      "id": "f82f8d79-822a-4ad0-a2bc-22febe3510d2",
-      "name": "Send Buyer DM",
-      "type": "n8n-nodes-base.telegram",
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst p = $('Parse Comment').first().json;\nconst key = p.username || p.name.toLowerCase().replace(/[^a-z0-9]/g, '');\nif (!key) return [];\nreturn [{ json: { lead_id: 'I' + key } }];"
+      },
+      "id": "7e6015f2-022e-4b28-aa04-160e5b20a846",
+      "name": "Prepare Lead Lookup",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        900,
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "lead_id",
+              "lookupValue": "={{ $json.lead_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4dde5e43-73ee-4dcd-af2c-bafdd8908f6e",
+      "name": "Lookup Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1140,
         200
       ],
-      "parameters": {
-        "chatId": "={{$json.user}}",
-        "text": "=Hi {{$json.user}}! \ud83d\udc4b Looking for trusted African foodstuff? Eki connects you with verified sellers. Browse here: https://eki.app/buy"
-      },
       "credentials": {
-        "telegramApi": "telegramApi"
-      }
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true
     },
     {
-      "id": "1feaf62c-9713-4cd7-a994-d39a5ff4c741",
-      "name": "Log Lead",
-      "type": "n8n-nodes-base.googleSheets",
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst LEAD_FIELDS = [\"lead_id\",\"phone\",\"email\",\"name\",\"user_type\",\"user_segment\",\"country\",\"foodstuff_specialty\",\"source\",\"interest_level\",\"intent_level\",\"status\",\"opt_in\",\"opt_in_source\",\"opt_in_at\",\"opt_out_at\",\"signup_date\",\"first_contact\",\"last_message\",\"last_wa\",\"wa_day\",\"last_nurture\",\"nurture_day\",\"last_reengage\",\"reengage_step\",\"referral_code\",\"feedback_requested_date\",\"feedback_received_date\",\"last_feedback_rating\",\"last_wa_error\",\"notes\"];\nconst blankLead = () => Object.fromEntries(LEAD_FIELDS.map((f) => [f, '']));\nconst mergeLead = (existing, updates) => {\n  const out = blankLead();\n  for (const f of LEAD_FIELDS) { if (existing && existing[f] !== undefined && existing[f] !== null) out[f] = String(existing[f]); }\n  for (const f of LEAD_FIELDS) { if (updates && updates[f] !== undefined && updates[f] !== null) out[f] = String(updates[f]); }\n  return out;\n};\nconst leadIdFor = (phone, email) => digits(phone) ? 'P' + digits(phone) : (norm(email) ? 'E' + norm(email).toLowerCase() : '');\nconst p = $('Parse Comment').first().json;\nconst id = $('Prepare Lead Lookup').first().json.lead_id;\nconst existing = $input.first().json || {};\nconst now = nowIso();\nconst u = { lead_id: id, name: existing.name || p.name, source: existing.source || 'instagram', status: existing.status || 'new', user_type: p.persona !== 'unknown' ? p.persona : (existing.user_type || 'unknown'), first_contact: existing.first_contact || now, signup_date: existing.signup_date || now.slice(0, 10), last_message: now, notes: 'instagram @' + (p.username || '?') + ' keyword ' + p.keyword };\nif (!norm(existing.opt_in)) u.opt_in = 'no'; // an Instagram comment is not WhatsApp marketing consent\nreturn [{ json: { lead: mergeLead(existing, u), keyword: p.keyword, persona: p.persona } }];"
+      },
+      "id": "6445f5d9-a860-4416-af19-f488c90213cf",
+      "name": "Merge Lead",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        0
-      ],
+        1400,
+        200
+      ]
+    },
+    {
       "parameters": {
-        "operation": "append",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "Leads",
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "name": "",
-            "keyword": "",
-            "platform": "",
-            "source": "",
-            "timestamp": ""
-          }
+            "lead_id": "={{ $json.lead.lead_id }}",
+            "phone": "={{ $json.lead.phone }}",
+            "email": "={{ $json.lead.email }}",
+            "name": "={{ $json.lead.name }}",
+            "user_type": "={{ $json.lead.user_type }}",
+            "user_segment": "={{ $json.lead.user_segment }}",
+            "country": "={{ $json.lead.country }}",
+            "foodstuff_specialty": "={{ $json.lead.foodstuff_specialty }}",
+            "source": "={{ $json.lead.source }}",
+            "interest_level": "={{ $json.lead.interest_level }}",
+            "intent_level": "={{ $json.lead.intent_level }}",
+            "status": "={{ $json.lead.status }}",
+            "opt_in": "={{ $json.lead.opt_in }}",
+            "opt_in_source": "={{ $json.lead.opt_in_source }}",
+            "opt_in_at": "={{ $json.lead.opt_in_at }}",
+            "opt_out_at": "={{ $json.lead.opt_out_at }}",
+            "signup_date": "={{ $json.lead.signup_date }}",
+            "first_contact": "={{ $json.lead.first_contact }}",
+            "last_message": "={{ $json.lead.last_message }}",
+            "last_wa": "={{ $json.lead.last_wa }}",
+            "wa_day": "={{ $json.lead.wa_day }}",
+            "last_nurture": "={{ $json.lead.last_nurture }}",
+            "nurture_day": "={{ $json.lead.nurture_day }}",
+            "last_reengage": "={{ $json.lead.last_reengage }}",
+            "reengage_step": "={{ $json.lead.reengage_step }}",
+            "referral_code": "={{ $json.lead.referral_code }}",
+            "feedback_requested_date": "={{ $json.lead.feedback_requested_date }}",
+            "feedback_received_date": "={{ $json.lead.feedback_received_date }}",
+            "last_feedback_rating": "={{ $json.lead.last_feedback_rating }}",
+            "last_wa_error": "={{ $json.lead.last_wa_error }}",
+            "notes": "={{ $json.lead.notes }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_type",
+              "displayName": "user_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_segment",
+              "displayName": "user_segment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "country",
+              "displayName": "country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "foodstuff_specialty",
+              "displayName": "foodstuff_specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "interest_level",
+              "displayName": "interest_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "intent_level",
+              "displayName": "intent_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_in",
+              "displayName": "opt_in",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_in_source",
+              "displayName": "opt_in_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_in_at",
+              "displayName": "opt_in_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opt_out_at",
+              "displayName": "opt_out_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "signup_date",
+              "displayName": "signup_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "first_contact",
+              "displayName": "first_contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_message",
+              "displayName": "last_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_wa",
+              "displayName": "last_wa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "wa_day",
+              "displayName": "wa_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_nurture",
+              "displayName": "last_nurture",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nurture_day",
+              "displayName": "nurture_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_reengage",
+              "displayName": "last_reengage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reengage_step",
+              "displayName": "reengage_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "feedback_requested_date",
+              "displayName": "feedback_requested_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "feedback_received_date",
+              "displayName": "feedback_received_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_feedback_rating",
+              "displayName": "last_feedback_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_wa_error",
+              "displayName": "last_wa_error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
         }
       },
+      "id": "1f50e8bb-9fc6-4c15-a9d2-77750a4d4652",
+      "name": "Upsert Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1660,
+        200
+      ],
       "credentials": {
-        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
-      }
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
-      "id": "2e7a540b-2cc2-4054-a98c-aba185cc30bd",
-      "name": "Telegram Alert",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 2,
-      "position": [
-        1500,
-        0
-      ],
       "parameters": {
-        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
-        "text": "=\ud83d\udcac New lead from Instagram!\nUser: {{$json.user}}\nKeyword: {{$json.keyword}}"
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String('New Instagram lead\\nUser: ' + $('Merge Lead').first().json.lead.name + ' (' + $('Merge Lead').first().json.lead.lead_id + ')\\nKeyword: ' + $('Merge Lead').first().json.keyword + '\\nType: ' + $('Merge Lead').first().json.persona).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
+      "id": "c39a07bf-64b5-490d-a7a9-d3e6dc203047",
+      "name": "Team Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1920,
+        200
+      ],
       "credentials": {
-        "telegramApi": "telegramApi"
-      }
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "### ManyChat External Request\nPOST to `/webhook/manychat-comment` with header `X-Eki-Webhook-Secret` and body `{ \"name\": \"{{first_name}}\", \"username\": \"{{ig_username}}\", \"keyword\": \"{{last_input_text}}\" }`.\nThe workflow REPLIES with a ManyChat dynamic-block (v2) message, so ManyChat sends the DM itself (no ManyChat API key needed here). Keywords: VENDOR / SELL / INFO / JOIN -> vendor, BUY -> buyer.\nOptional `WHATSAPP_CTA_LINK` (your wa.me click-to-chat link).",
+        "width": 520,
+        "height": 210
+      },
+      "id": "869aadc0-57ec-4b9a-ad7d-d58eaf28381b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
     }
   ],
   "connections": {
@@ -155,79 +573,62 @@
       "main": [
         [
           {
-            "node": "Route by Keyword",
+            "node": "Reply To ManyChat",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Route by Keyword": {
+    "Reply To ManyChat": {
       "main": [
         [
           {
-            "node": "Send Vendor DM",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Vendor DM",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Buyer DM",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Vendor DM",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Vendor DM",
+            "node": "Prepare Lead Lookup",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send Vendor DM": {
+    "Prepare Lead Lookup": {
       "main": [
         [
           {
-            "node": "Log Lead",
+            "node": "Lookup Lead",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send Buyer DM": {
+    "Lookup Lead": {
       "main": [
         [
           {
-            "node": "Log Lead",
+            "node": "Merge Lead",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Log Lead": {
+    "Merge Lead": {
       "main": [
         [
           {
-            "node": "Telegram Alert",
+            "node": "Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Lead": {
+      "main": [
+        [
+          {
+            "node": "Team Alert",
             "type": "main",
             "index": 0
           }
@@ -235,11 +636,13 @@
       ]
     }
   },
+  "active": false,
   "settings": {
-    "timezone": "Africa/Lagos"
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
   "pinData": {},
-  "versionId": "f11beccb-f360-46e8-860e-c2066f70a9c0",
-  "active": false,
   "tags": []
 }

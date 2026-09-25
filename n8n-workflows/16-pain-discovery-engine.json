@@ -1,152 +1,327 @@
 {
   "name": "Eki - 16 Pain Discovery Engine",
+  "id": "ekiwf16",
   "nodes": [
     {
-      "id": "9c02aa24-3219-4df2-90fa-bfa8a966a60a",
-      "name": "Daily 6AM",
-      "type": "n8n-nodes-base.cronTrigger",
-      "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ],
       "parameters": {
         "rule": {
-          "hour": 6
-        }
-      }
-    },
-    {
-      "id": "906d7662-d0b5-41f7-8a60-266d71376525",
-      "name": "Scrape Reddit",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
-      "position": [
-        300,
-        0
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "https://www.reddit.com/r/Nigeria+r/diaspora+r/AfricanFood/search.json?q=foodstuff+vendor+problem&restrict_sr=1&sort=top&t=week",
-        "options": {
-          "headers": {
-            "User-Agent": "EkiBot/1.0"
-          }
-        }
-      }
-    },
-    {
-      "id": "723cd37b-32fe-4cae-80f6-6a7ffbad98ad",
-      "name": "Extract Pains",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        600,
-        0
-      ],
-      "parameters": {
-        "jsCode": "const posts = $json.data.children || [];\nreturn posts.slice(0,20).map(p => ({\n  json: {\n    pain: p.data.title,\n    text: p.data.selftext,\n    upvotes: p.data.ups,\n    source: 'reddit'\n  }\n}));"
-      }
-    },
-    {
-      "id": "513a79a5-8884-4897-b920-56f86a7d0545",
-      "name": "GPT-4 Categorize",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
-      "position": [
-        900,
-        0
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "genericCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "contentType": "json",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
+          "interval": [
             {
-              "name": "model",
-              "value": "gpt-4o-mini"
-            },
-            {
-              "name": "messages",
-              "value": [
-                {
-                  "role": "user",
-                  "content": "Categorize this pain point: vendor/buyer, category (DM_Chaos/Payment_Fraud/Scam_Fear/No_Buyers/Trust), emotional_intensity 1-10. Return JSON:{persona,category,intensity,keywords}"
-                }
-              ]
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
             }
           ]
         }
-      }
+      },
+      "id": "9b664875-41c5-4c95-a412-01c87985ca29",
+      "name": "Daily 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        200
+      ]
     },
     {
-      "id": "a31bc4ed-a3fb-45cc-a267-e6137a925b3c",
-      "name": "Save to Pain DB",
-      "type": "n8n-nodes-base.googleSheets",
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.reddit.com/r/Nigeria+diaspora+AfricanFood/search.json?q=foodstuff+vendor+problem&restrict_sr=1&sort=top&t=week&limit=20",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "EkiPainDiscovery/1.0 (contact: team)"
+            }
+          ]
+        }
+      },
+      "id": "1f60b0b4-a480-4dec-a606-10e0e91a4506",
+      "name": "Fetch Reddit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        360,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst posts = (($input.first().json.data || {}).children || []).map((c) => c.data || {}).filter((d) => d.title);\nif (!posts.length) return [];\nconst listing = posts.slice(0, 20).map((d, i) => (i + 1) + '. ' + norm(d.title).slice(0, 200) + ' :: ' + norm(d.selftext).slice(0, 300));\nconst system = 'You categorize community posts for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Return ONLY JSON.';\nconst user = 'For each numbered post decide if it describes a pain point. Return JSON {\"items\":[{\"index\":1,\"persona\":\"vendor|buyer\",\"category\":\"DM_Chaos|Payment_Fraud|Scam_Fear|No_Buyers|Trust|Other\",\"intensity\":1-10,\"keywords\":[\"...\"]}]}. Skip posts that are not pain points.\\n\\n' + listing.join('\\n');\nreturn [{ json: { ai_request: aiRequest(system, user, 0.2), posts: posts.slice(0, 20).map((d) => ({ title: norm(d.title), ups: d.ups || 0 })) } }];"
+      },
+      "id": "28a0fb97-8d76-4a73-aea0-a5d32532cd82",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        0
-      ],
+        620,
+        200
+      ]
+    },
+    {
       "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.AI_API_BASE_URL || 'https://api.groq.com/openai/v1')).replace(/\\/+$/, '') + '/chat/completions' }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}"
+      },
+      "id": "8b2691be-f54e-43fe-a826-b3eb57d03df5",
+      "name": "AI Categorize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst d = parseAi($input.first().json);\nconst posts = $('Build AI Request').first().json.posts;\nconst now = nowIso();\nreturn (Array.isArray(d.items) ? d.items : []).map((it) => {\n  const p = posts[(parseInt(it.index, 10) || 0) - 1];\n  if (!p) return null;\n  return { json: { pain: p.title, category: norm(it.category) || 'Other', intensity: String(parseInt(it.intensity, 10) || 0), persona: norm(it.persona), keywords: Array.isArray(it.keywords) ? it.keywords.join(', ') : '', upvotes: String(p.ups), source: 'reddit', created: now } };\n}).filter(Boolean);"
+      },
+      "id": "de3a31ff-6f98-451b-ab4a-60d1f34cf0bc",
+      "name": "Build Pain Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
         "operation": "append",
-        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
-        "sheetName": "PainPoints",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "PainPoints",
+          "mode": "name"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "pain": "",
-            "category": "",
-            "intensity": "",
-            "persona": "",
-            "source": ""
-          }
+            "pain": "={{ $json.pain }}",
+            "category": "={{ $json.category }}",
+            "intensity": "={{ $json.intensity }}",
+            "persona": "={{ $json.persona }}",
+            "keywords": "={{ $json.keywords }}",
+            "upvotes": "={{ $json.upvotes }}",
+            "source": "={{ $json.source }}",
+            "created": "={{ $json.created }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "pain",
+              "displayName": "pain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "intensity",
+              "displayName": "intensity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "persona",
+              "displayName": "persona",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "keywords",
+              "displayName": "keywords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "upvotes",
+              "displayName": "upvotes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created",
+              "displayName": "created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
         }
       },
+      "id": "aa49eed6-e61f-455a-ab42-513182061523",
+      "name": "Save to Pain DB",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1400,
+        200
+      ],
       "credentials": {
-        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
-      }
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "content": "### Reddit\nReads the public search JSON (no OAuth). Reddit may rate-limit or block unauthenticated automated requests; the workflow then errors and alerts via workflow 00. Review Reddit API terms before relying on this in production.",
+        "width": 400,
+        "height": 130
+      },
+      "id": "8a68690e-b274-475e-a503-cde2b4447f1f",
+      "name": "Limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "8eb1a610-1063-4f9c-a1f9-47d003e7aa74",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        370
+      ]
     }
   ],
   "connections": {
-    "Daily 6AM": {
+    "Daily 06:00": {
       "main": [
         [
           {
-            "node": "Scrape Reddit",
+            "node": "Fetch Reddit",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Scrape Reddit": {
+    "Fetch Reddit": {
       "main": [
         [
           {
-            "node": "Extract Pains",
+            "node": "Build AI Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extract Pains": {
+    "Build AI Request": {
       "main": [
         [
           {
-            "node": "GPT-4 Categorize",
+            "node": "AI Categorize",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GPT-4 Categorize": {
+    "AI Categorize": {
+      "main": [
+        [
+          {
+            "node": "Build Pain Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pain Rows": {
       "main": [
         [
           {
@@ -156,13 +331,26 @@
           }
         ]
       ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Fetch Reddit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": false,
   "settings": {
-    "timezone": "Africa/Lagos"
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
   "pinData": {},
-  "versionId": "fcdfa20b-3e50-4b62-bfd7-fb5243b5c111",
-  "active": false,
   "tags": []
 }

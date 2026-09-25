@@ -1,76 +1,164 @@
 {
-  "name": "Feedback Collection & Routing",
+  "name": "Eki - 08 Feedback Collection & Routing",
+  "id": "ekiwf08",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 11
+              "field": "cronExpression",
+              "expression": "0 11 * * *"
             }
           ]
         }
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000801",
-      "name": "Daily 11AM Trigger",
+      "id": "2e320a77-ce78-448a-ab2f-49c7ff0e3239",
+      "name": "Daily 11:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 100]
+      "position": [
+        100,
+        200
+      ]
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Leads"
+          "value": "Leads",
+          "mode": "name"
         },
-        "filtersUI": {
-          "values": [
-            {
-              "lookupColumn": "status",
-              "lookupValue": "Active"
-            }
-          ]
-        }
+        "options": {}
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000802",
-      "name": "Read Active Leads",
+      "id": "88dc610a-7de6-48c3-a2f8-d316816b220d",
+      "name": "Read Leads",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [260, 100],
+      "position": [
+        360,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
     },
     {
       "parameters": {
-        "jsCode": "// Filter leads who signed up exactly 7 days ago\nconst now = new Date();\nconst items = $input.all();\nconst eligible = [];\n\nfor (const item of items) {\n  const signupDate = new Date(item.json.signup_date);\n  if (isNaN(signupDate.getTime())) continue;\n  \n  const daysSinceSignup = Math.floor((now - signupDate) / (1000 * 60 * 60 * 24));\n  \n  // Send feedback request to users who signed up 7 days ago (± 1 day tolerance)\n  if (daysSinceSignup >= 6 && daysSinceSignup <= 8) {\n    eligible.push({\n      json: {\n        ...item.json,\n        days_since_signup: daysSinceSignup\n      }\n    });\n  }\n}\n\nif (eligible.length === 0) {\n  return [{ json: { empty: true, message: 'No eligible users for feedback request today' } }];\n}\n\nreturn eligible;"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n// Active users who signed up 6-8 days ago and have not been asked yet.\nconst form = norm($env.FEEDBACK_FORM_URL);\nconst from = norm($env.RESEND_FROM_EMAIL);\nconst eligible = [];\nfor (const l of $input.all().map((i) => i.json)) {\n  if (norm(l.status).toLowerCase() !== 'active') continue;\n  if (norm(l.feedback_requested_date)) continue;\n  const email = norm(l.email).toLowerCase();\n  if (!email || !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) continue;\n  const d = daysSince(l.signup_date);\n  if (!(d >= 6 && d <= 8)) continue;\n  eligible.push({ l, email });\n}\nif (!eligible.length) return [];\nif (!form || !from || !norm($env.RESEND_API_KEY)) {\n  return [{ json: { send: false, alert: 'Feedback requests blocked: ' + eligible.length + ' eligible user(s). Set FEEDBACK_FORM_URL, RESEND_API_KEY and RESEND_FROM_EMAIL.' } }];\n}\nconst reward = norm($env.FEEDBACK_REWARD_TEXT);\nreturn eligible.slice(0, 50).map(({ l, email }) => ({ json: {\n  send: true, lead_id: norm(l.lead_id), email_to: email,\n  email_subject: 'Quick question (takes 30 seconds)',\n  email_html: '<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;\"><h2>Hi ' + esc(l.name || 'there') + ',</h2><p>You have been on <strong>Eki</strong> for about a week. We would love your honest feedback - it helps us build a better product.</p><p style=\"text-align:center;margin:24px 0;\"><a href=\"' + esc(form) + '\" style=\"background:#6C63FF;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;display:inline-block;\">Share your feedback</a></p><p>It takes less than 30 seconds.</p>' + (reward ? '<p>' + esc(reward) + '</p>' : '') + '<p>The Eki Team</p></div>',\n} }));"
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000803",
-      "name": "Filter 7-Day Users",
+      "id": "069c6f46-a39b-47d3-a5da-6d863a25f4d9",
+      "name": "Select 7-Day Users",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [520, 100]
+      "position": [
+        620,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a63e8436-6952-400c-ab00-a963fe348633",
+              "leftValue": "={{ $json.send }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b905fa27-7e5f-42ea-aa8b-8d06928fc833",
+      "name": "Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($json.alert).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "71559981-8f86-40ee-a6fd-2bdd2b6e6dc1",
+      "name": "Config Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        540
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "7ab3ce6c-7581-45ab-a3a9-19af531acff6",
+      "name": "Loop Over Requests",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1140,
+        200
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.whatsapp.com/emails",
+        "url": "https://api.resend.com/emails",
+        "options": {
+          "timeout": 15000
+        },
         "sendHeaders": true,
-        "headersUi": {
-          "parameter": [
+        "headerParameters": {
+          "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
             },
             {
               "name": "Content-Type",
@@ -80,258 +168,856 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.email }}\"], \"subject\": \"Quick question (takes 30 seconds) 🙏\", \"html\": \"<div style=\\\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\\\">\\n<h2>Hey {{ $json.name }},</h2>\\n<p>You've been using <strong>Eki</strong> for a week now! 🎉</p>\\n<p>We'd love your honest feedback — it helps us build a better product for you.</p>\\n<div style=\\\"text-align: center; margin: 24px 0;\\\">\\n<a href=\\\"[FEEDBACK_FORM_LINK]?email={{ $json.email }}&name={{ $json.name }}\\\" style=\\\"background-color: #6C63FF; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px;\\\">Share Your Feedback 💬</a>\\n</div>\\n<p>It takes less than <strong>30 seconds</strong>.</p>\\n<p>As a thank you, you'll get <strong>exclusive marketplace premium status</strong>.</p>\\n<p>Your opinion truly matters to us.</p>\\n<p>With gratitude,<br>The Eki Team</p>\\n</div>\"}"
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM_EMAIL, to: [$json.email_to], subject: $json.email_subject, html: $json.email_html }) }}"
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000804",
-      "name": "WhatsApp - Feedback Request",
+      "id": "261d2d34-2c68-4bbd-a430-c8a59f5296d9",
+      "name": "Send Feedback Request",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [780, 100]
+      "position": [
+        1400,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst r = $input.first().json || {};\nconst src = $('Loop Over Requests').first(1).json;\nconst ok = !!r.id && !r.error;\n// on failure nothing is marked, so the user is picked up again on the next daily run\nreturn ok ? [{ json: { lead_id: src.lead_id, feedback_requested_date: nowIso().slice(0, 10) } }] : [{ json: { lead_id: '', skipped: true } }];"
+      },
+      "id": "993a7b5a-facb-4969-a2c9-d097fb76d482",
+      "name": "Record Request Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9944a838-15f6-4585-a1ca-8f975c727a8f",
+              "leftValue": "={{ !$json.skipped }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "016bbbac-f63b-4ed7-ace2-cc386e1d2568",
+      "name": "Was Sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
         "operation": "update",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Leads"
+          "value": "Leads",
+          "mode": "name"
         },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "email": "={{ $json.email }}",
-            "status": "Feedback Requested",
-            "feedback_requested_date": "={{ new Date().toISOString().split('T')[0] }}"
-          }
+            "lead_id": "={{ $json.lead_id }}",
+            "feedback_requested_date": "={{ $json.feedback_requested_date }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "user_type",
+              "displayName": "user_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "user_segment",
+              "displayName": "user_segment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "country",
+              "displayName": "country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "foodstuff_specialty",
+              "displayName": "foodstuff_specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "interest_level",
+              "displayName": "interest_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "intent_level",
+              "displayName": "intent_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_in",
+              "displayName": "opt_in",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_in_source",
+              "displayName": "opt_in_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_in_at",
+              "displayName": "opt_in_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_out_at",
+              "displayName": "opt_out_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "signup_date",
+              "displayName": "signup_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "first_contact",
+              "displayName": "first_contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_message",
+              "displayName": "last_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_wa",
+              "displayName": "last_wa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "wa_day",
+              "displayName": "wa_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_nurture",
+              "displayName": "last_nurture",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "nurture_day",
+              "displayName": "nurture_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_reengage",
+              "displayName": "last_reengage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "reengage_step",
+              "displayName": "reengage_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "feedback_requested_date",
+              "displayName": "feedback_requested_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "feedback_received_date",
+              "displayName": "feedback_received_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_feedback_rating",
+              "displayName": "last_feedback_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_wa_error",
+              "displayName": "last_wa_error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         },
         "options": {
-          "cellFormat": "USER_ENTERED"
+          "cellFormat": "RAW"
         }
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000805",
-      "name": "Update Status - Requested",
+      "id": "64df1d59-eea3-43a8-ab18-20e829176bf8",
+      "name": "Mark Requested",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1040, 100],
+      "position": [
+        2180,
+        200
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "collect-feedback",
-        "responseMode": "lastNode",
-        "options": {}
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000806",
-      "name": "Webhook - Collect Feedback",
+      "id": "fa424ee2-df56-4adf-a805-ad9965fa651a",
+      "name": "Collect Feedback Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 520],
-      "webhookId": "collect-feedback-001"
+      "position": [
+        100,
+        880
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "eki-cred-webhook-secret",
+          "name": "Eki Webhook Shared Secret"
+        }
+      },
+      "webhookId": "c3dc55e6-2710-4e59-ad49-8758b66c002b"
     },
     {
       "parameters": {
-        "jsCode": "// Normalize and validate feedback data\nconst body = $input.first().json.body;\n\nconst email = (body.email || '').trim().toLowerCase();\nconst rating = parseInt(body.rating, 10);\nconst comments = (body.comments || '').trim();\nconst wouldRecommend = body.would_recommend === true || body.would_recommend === 'true' || body.would_recommend === 'yes';\n\nif (!email || isNaN(rating) || rating < 1 || rating > 5) {\n  throw new Error('Invalid feedback data: email and rating (1-5) are required');\n}\n\nreturn [{\n  json: {\n    email,\n    rating,\n    comments,\n    would_recommend: wouldRecommend,\n    timestamp: new Date().toISOString(),\n    rating_category: rating >= 4 ? 'positive' : (rating === 3 ? 'neutral' : 'negative')\n  }\n}];"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst b = $input.first().json.body || {};\nconst email = norm(b.email).toLowerCase();\nconst rating = parseInt(b.rating, 10);\nconst errors = [];\nif (!email || !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) errors.push('valid email is required');\nif (Number.isNaN(rating) || rating < 1 || rating > 5) errors.push('rating must be an integer 1-5');\nif (errors.length) return [{ json: { valid: false, errors } }];\nconst rec = b.would_recommend === true || ['true', 'yes', '1'].includes(norm(b.would_recommend).toLowerCase());\nconst today = nowIso().slice(0, 10);\nreturn [{ json: { valid: true, fb: {\n  feedback_id: 'F-' + Date.now(), email, user_role: norm(b.user_role), rating: String(rating), primary_value: norm(b.primary_value),\n  pain_point: norm(b.pain_point), comments: norm(b.comments).slice(0, 2000), would_recommend: rec ? 'TRUE' : 'FALSE',\n  submitted_date: today, action_taken: 'Pending Review', rating_category: rating >= 4 ? 'positive' : (rating === 3 ? 'neutral' : 'negative'),\n} } }];"
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000807",
+      "id": "8f103134-be3b-4ce7-a194-74dd25398f90",
       "name": "Validate Feedback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [260, 520]
+      "position": [
+        360,
+        880
+      ]
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f7876e3d-5539-47fe-a3e1-580a94fee629",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5829e1a2-3df2-466a-a23c-cec74315c90b",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"error\", errors: $json.errors } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "5fa648ad-8573-42b6-aecd-00f76eb7f23b",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        1220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
         "operation": "append",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Feedback"
+          "value": "Feedback",
+          "mode": "name"
         },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "email": "={{ $json.email }}",
-            "rating": "={{ $json.rating }}",
-            "comments": "={{ $json.comments }}",
-            "would_recommend": "={{ $json.would_recommend }}",
-            "timestamp": "={{ $json.timestamp }}",
-            "rating_category": "={{ $json.rating_category }}"
-          }
+            "feedback_id": "={{ $json.fb.feedback_id }}",
+            "email": "={{ $json.fb.email }}",
+            "user_role": "={{ $json.fb.user_role }}",
+            "rating": "={{ $json.fb.rating }}",
+            "primary_value": "={{ $json.fb.primary_value }}",
+            "pain_point": "={{ $json.fb.pain_point }}",
+            "comments": "={{ $json.fb.comments }}",
+            "would_recommend": "={{ $json.fb.would_recommend }}",
+            "submitted_date": "={{ $json.fb.submitted_date }}",
+            "action_taken": "={{ $json.fb.action_taken }}",
+            "rating_category": "={{ $json.fb.rating_category }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "feedback_id",
+              "displayName": "feedback_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "user_role",
+              "displayName": "user_role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "rating",
+              "displayName": "rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "primary_value",
+              "displayName": "primary_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "pain_point",
+              "displayName": "pain_point",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "comments",
+              "displayName": "comments",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "would_recommend",
+              "displayName": "would_recommend",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submitted_date",
+              "displayName": "submitted_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "rating_category",
+              "displayName": "rating_category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         },
         "options": {
-          "cellFormat": "USER_ENTERED"
+          "cellFormat": "RAW"
         }
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000808",
-      "name": "Append to Feedback Sheet",
+      "id": "0467fa26-aead-48f3-a38b-5fce2da5fea4",
+      "name": "Append Feedback",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [520, 520],
+      "position": [
+        880,
+        880
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": ""
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.rating }}",
-                    "rightValue": 4,
-                    "operator": {
-                      "type": "number",
-                      "operation": "gte"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "Positive (4-5)"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": ""
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.rating }}",
-                    "rightValue": 3,
-                    "operator": {
-                      "type": "number",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "Neutral (3)"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": ""
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.rating }}",
-                    "rightValue": 3,
-                    "operator": {
-                      "type": "number",
-                      "operation": "lt"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "Negative (1-2)"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst fb = $('Validate Feedback').first().json.fb;\nconst cat = fb.rating_category;\nconst reward = norm($env.FEEDBACK_REWARD_TEXT);\nconst iosUrl = norm($env.APP_STORE_REVIEW_URL);\nconst androidUrl = norm($env.PLAY_STORE_REVIEW_URL);\nlet extra = '';\nif (cat === 'positive' && (iosUrl || androidUrl)) {\n  extra = '<p>If you have a minute, a store review helps other people find Eki:</p><ul>' + (iosUrl ? '<li><a href=\"' + esc(iosUrl) + '\">Review on the App Store</a></li>' : '') + (androidUrl ? '<li><a href=\"' + esc(androidUrl) + '\">Review on Google Play</a></li>' : '') + '</ul>';\n}\nconst html = '<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;\"><h2>Thank you for your feedback</h2><p>We really appreciate you taking the time. Your input helps us improve Eki every day.</p>' + extra + (reward ? '<p>' + esc(reward) + '</p>' : '') + '<p>The Eki Team</p></div>';\nconst canEmail = !!norm($env.RESEND_API_KEY) && !!norm($env.RESEND_FROM_EMAIL);\nreturn [{ json: {\n  email_to: fb.email, email_subject: 'Thank you for your feedback', email_html: html, send_email: canEmail,\n  is_negative: cat === 'negative',\n  alert: 'Low feedback rating\\nFrom: ' + fb.email + '\\nRating: ' + fb.rating + '/5\\nWould recommend: ' + (fb.would_recommend === 'TRUE' ? 'Yes' : 'No') + '\\nComments: ' + (fb.comments || 'none'),\n  received_date: fb.submitted_date, rating: fb.rating, response: { status: 'success', rating_category: cat },\n} }];"
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000809",
-      "name": "Switch - Route by Rating",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [780, 520]
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.N8N_BASE_URL || 'http://localhost:5678' }}/webhook/request-review",
-        "method": "POST",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "email",
-              "value": "={{ $json.email }}"
-            },
-            {
-              "name": "rating",
-              "value": "={{ $json.rating }}"
-            },
-            {
-              "name": "would_recommend",
-              "value": "={{ $json.would_recommend }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "c3d4e5f6-3001-4001-8001-000000000810",
-      "name": "Request App Review",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1040, 380]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Log neutral feedback for product team review\nreturn [{\n  json: {\n    ...($input.first().json),\n    action: 'logged_for_product_team',\n    note: 'Neutral rating — review for product improvement opportunities'\n  }\n}];"
-      },
-      "id": "c3d4e5f6-3001-4001-8001-000000000811",
-      "name": "Log for Product Team",
+      "id": "d11ab615-fa4d-4918-a7df-a34c2751c57f",
+      "name": "Prepare Actions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1040, 540]
+      "position": [
+        1140,
+        880
+      ]
     },
     {
       "parameters": {
-        "chatId": "YOUR_TELEGRAM_CHAT_ID",
-        "text": "⚠️ *Low Feedback Rating Alert*\n\nFrom: {{ $json.email }}\nRating: {{ $json.rating }}/5 ⭐\nWould Recommend: {{ $json.would_recommend ? 'Yes' : 'No' }}\n\nComments:\n_{{ $json.comments || 'No comments provided' }}_\n\n🕐 {{ $json.timestamp }}",
-        "additionalFields": {
-          "parse_mode": "Markdown"
+        "respondWith": "json",
+        "responseBody": "={{ $('Prepare Actions').first().json.response }}",
+        "options": {
+          "responseCode": 200
         }
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000812",
-      "name": "Telegram - Low Rating Alert",
+      "id": "30dbbc0a-8ad2-4da4-ad9b-1b1f72612b8e",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "59233e58-222d-47e2-a9fd-e531d1164f20",
+              "leftValue": "={{ $('Prepare Actions').first().json.is_negative }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "95f3c230-cefb-47d2-a95e-3c2f2b5fa7c1",
+      "name": "Negative?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        710
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($('Prepare Actions').first().json.alert).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6302a9f5-9ce5-440d-aab4-68fa909d3504",
+      "name": "Low Rating Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1040, 700],
+      "position": [
+        1920,
+        710
+      ],
       "credentials": {
         "telegramApi": {
-          "id": "3",
-          "name": "Telegram Bot API"
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "42e29693-6f6b-4cad-a654-ac615f5f0417",
+              "leftValue": "={{ $('Prepare Actions').first().json.send_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2ec5caae-3cc0-44cd-aad7-63e7ed29cd11",
+      "name": "Send Thank-you?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        1050
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "email_to",
+              "value": "={{ $('Prepare Actions').first().json.email_to }}",
+              "type": "string"
+            },
+            {
+              "id": "b2",
+              "name": "email_subject",
+              "value": "={{ $('Prepare Actions').first().json.email_subject }}",
+              "type": "string"
+            },
+            {
+              "id": "b3",
+              "name": "email_html",
+              "value": "={{ $('Prepare Actions').first().json.email_html }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "db55a8bc-647d-4e97-ac06-3283fc67ca03",
+      "name": "Thank-you Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1920,
+        1050
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.whatsapp.com/emails",
+        "url": "https://api.resend.com/emails",
+        "options": {
+          "timeout": 15000
+        },
         "sendHeaders": true,
-        "headersUi": {
-          "parameter": [
+        "headerParameters": {
+          "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
             },
             {
               "name": "Content-Type",
@@ -341,111 +1027,525 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.email }}\"], \"subject\": \"Thank you for your feedback! 💜\", \"html\": \"<div style=\\\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\\\">\\n<h2>Thank you, {{ $json.email }}!</h2>\\n<p>We really appreciate you taking the time to share your feedback with us.</p>\\n<p>Your input helps us improve Eki every single day.</p>\\n<p>As promised, here's your reward: <strong>Use code EKIFEEDBACK for 10% off verification fees</strong></p>\\n<p>If you ever have more thoughts, ideas, or concerns — don't hesitate to reply to this email.</p>\\n<p>With appreciation,<br>The Eki Team</p>\\n</div>\"}"
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM_EMAIL, to: [$json.email_to], subject: $json.email_subject, html: $json.email_html }) }}"
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000813",
-      "name": "WhatsApp - Thank You Email",
+      "id": "84fca176-dee9-43c1-aa94-20e5c69b2258",
+      "name": "Send Thank-you Email",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1300, 520]
+      "position": [
+        2180,
+        1050
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "update",
         "documentId": {
           "__rl": true,
-          "mode": "url",
-          "value": "YOUR_GOOGLE_SHEET_URL"
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Leads"
+          "value": "Leads",
+          "mode": "name"
         },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "email": "={{ $json.email }}",
-            "status": "Feedback Received",
-            "feedback_received_date": "={{ new Date().toISOString().split('T')[0] }}",
-            "last_feedback_rating": "={{ $json.rating }}"
-          }
+            "email": "={{ $('Prepare Actions').first().json.email_to }}",
+            "feedback_received_date": "={{ $('Prepare Actions').first().json.received_date }}",
+            "last_feedback_rating": "={{ $('Prepare Actions').first().json.rating }}"
+          },
+          "matchingColumns": [
+            "email"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "user_type",
+              "displayName": "user_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "user_segment",
+              "displayName": "user_segment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "country",
+              "displayName": "country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "foodstuff_specialty",
+              "displayName": "foodstuff_specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "interest_level",
+              "displayName": "interest_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "intent_level",
+              "displayName": "intent_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_in",
+              "displayName": "opt_in",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_in_source",
+              "displayName": "opt_in_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_in_at",
+              "displayName": "opt_in_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "opt_out_at",
+              "displayName": "opt_out_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "signup_date",
+              "displayName": "signup_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "first_contact",
+              "displayName": "first_contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_message",
+              "displayName": "last_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_wa",
+              "displayName": "last_wa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "wa_day",
+              "displayName": "wa_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_nurture",
+              "displayName": "last_nurture",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "nurture_day",
+              "displayName": "nurture_day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_reengage",
+              "displayName": "last_reengage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "reengage_step",
+              "displayName": "reengage_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "referral_code",
+              "displayName": "referral_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "feedback_requested_date",
+              "displayName": "feedback_requested_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "feedback_received_date",
+              "displayName": "feedback_received_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_feedback_rating",
+              "displayName": "last_feedback_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_wa_error",
+              "displayName": "last_wa_error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         },
         "options": {
-          "cellFormat": "USER_ENTERED"
+          "cellFormat": "RAW"
         }
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000814",
-      "name": "Update Status - Received",
+      "id": "9afea84c-47f3-459c-aa39-e6777272bb7e",
+      "name": "Mark Feedback Received",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1560, 520],
+      "position": [
+        2440,
+        1050
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "content": "## 🔧 Feedback Collection Setup\n\n### This workflow has TWO trigger flows:\n\n**Flow A — Send Feedback Requests (Scheduled)**\n- Runs daily at 11:00 AM (Europe/Rome)\n- Finds users who signed up ~7 days ago\n- Sends feedback request email with form link\n\n**Flow B — Process Feedback (Webhook)**\n- Receives feedback submissions via POST webhook\n- Routes by rating: positive (4-5), neutral (3), negative (1-2)\n\n### Webhook URL\n`POST https://YOUR_N8N_DOMAIN/webhook/collect-feedback`\n\n### Expected POST Body\n```json\n{\n  \"email\": \"user@example.com\",\n  \"rating\": 4,\n  \"comments\": \"Great product!\",\n  \"would_recommend\": true\n}\n```\n\n### Form Integration\n- **Typeform**: Set up a webhook integration pointing to the collect-feedback URL\n- **Tally**: Use Tally's webhook feature\n- **Google Forms**: Use Google Apps Script to POST to the webhook\n\n### Google Sheet — \"Feedback\" columns:\n- `email`, `rating`, `comments`, `would_recommend`, `timestamp`, `rating_category`\n\n### Credentials Required\n1. **Google Sheets OAuth**\n2. **WhatsApp API Key** (for sending emails)\n3. **Telegram Bot API** (for low-rating alerts)\n\n### Replace Placeholders\n- `Eki` — your app name\n- `[FEEDBACK_FORM_LINK]` — your Typeform/Tally/Google Form URL\n- `marketplace premium status / verification fee discount` — what users get for giving feedback",
-        "width": 420,
-        "height": 660
+        "content": "### Flow A - request (daily 11:00 Africa/Lagos)\nActive users (status=active) 6-8 days after `signup_date`, not yet asked. Needs `FEEDBACK_FORM_URL`, Resend env vars.\n### Flow B - collect\n`POST /webhook/collect-feedback` + header `X-Eki-Webhook-Secret`.\n`{ \"email\": \"..\", \"rating\": 1-5, \"comments\": \"..\", \"would_recommend\": true }`\nRating 4-5: thank-you (+ store review links if `APP_STORE_REVIEW_URL` / `PLAY_STORE_REVIEW_URL` set). 1-2: Telegram alert. No reward is promised unless `FEEDBACK_REWARD_TEXT` is set.",
+        "width": 520,
+        "height": 250
       },
-      "id": "c3d4e5f6-3001-4001-8001-000000000815",
-      "name": "Sticky Note",
+      "id": "988aa0f8-eb61-4610-ab2e-ce0dd7c901cd",
+      "name": "Setup",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-300, 40]
+      "position": [
+        100,
+        30
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3f7fd86c-8033-458f-abde-3849c33c4814",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        370
+      ]
     }
   ],
   "connections": {
-    "Daily 11AM Trigger": {
+    "Daily 11:00": {
       "main": [
         [
           {
-            "node": "Read Active Leads",
+            "node": "Read Leads",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Active Leads": {
+    "Read Leads": {
       "main": [
         [
           {
-            "node": "Filter 7-Day Users",
+            "node": "Select 7-Day Users",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Filter 7-Day Users": {
+    "Select 7-Day Users": {
       "main": [
         [
           {
-            "node": "WhatsApp - Feedback Request",
+            "node": "Send?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "WhatsApp - Feedback Request": {
+    "Send?": {
       "main": [
         [
           {
-            "node": "Update Status - Requested",
+            "node": "Loop Over Requests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Config Alert",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Webhook - Collect Feedback": {
+    "Loop Over Requests": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Feedback Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Feedback Request": {
+      "main": [
+        [
+          {
+            "node": "Record Request Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Request Result": {
+      "main": [
+        [
+          {
+            "node": "Was Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Sent?": {
+      "main": [
+        [
+          {
+            "node": "Mark Requested",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Requested": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Feedback Webhook": {
       "main": [
         [
           {
@@ -460,87 +1560,138 @@
       "main": [
         [
           {
-            "node": "Append to Feedback Sheet",
+            "node": "Valid?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Append to Feedback Sheet": {
+    "Valid?": {
       "main": [
         [
           {
-            "node": "Switch - Route by Rating",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Switch - Route by Rating": {
-      "main": [
-        [
-          {
-            "node": "Request App Review",
+            "node": "Append Feedback",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Log for Product Team",
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Feedback": {
+      "main": [
+        [
+          {
+            "node": "Prepare Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Actions": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Success": {
+      "main": [
+        [
+          {
+            "node": "Negative?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Negative?": {
+      "main": [
+        [
+          {
+            "node": "Low Rating Alert",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Telegram - Low Rating Alert",
+            "node": "Send Thank-you?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Request App Review": {
+    "Low Rating Alert": {
       "main": [
         [
           {
-            "node": "WhatsApp - Thank You Email",
+            "node": "Send Thank-you?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Log for Product Team": {
+    "Send Thank-you?": {
       "main": [
         [
           {
-            "node": "WhatsApp - Thank You Email",
+            "node": "Thank-you Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Feedback Received",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Telegram - Low Rating Alert": {
+    "Thank-you Fields": {
       "main": [
         [
           {
-            "node": "WhatsApp - Thank You Email",
+            "node": "Send Thank-you Email",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "WhatsApp - Thank You Email": {
+    "Send Thank-you Email": {
       "main": [
         [
           {
-            "node": "Update Status - Received",
+            "node": "Mark Feedback Received",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
             "type": "main",
             "index": 0
           }
@@ -551,20 +1702,10 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Europe/Rome"
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "tags": [
-    {
-      "name": "feedback"
-    },
-    {
-      "name": "engagement"
-    },
-    {
-      "name": "routing"
-    }
-  ],
-  "meta": {
-    "instanceId": "app-launch-automation"
-  }
+  "pinData": {},
+  "tags": []
 }

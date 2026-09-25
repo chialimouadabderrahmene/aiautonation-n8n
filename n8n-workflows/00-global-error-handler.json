@@ -1,0 +1,104 @@
+{
+  "name": "Eki - 00 Global Error Handler",
+  "id": "ekiwf00",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "dcb2683a-3009-44f3-add5-d81c16ef28c4",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $input.first().json || {};\nconst wf = (e.workflow && e.workflow.name) || 'unknown workflow';\nconst ex = e.execution || {};\nconst msg = String((ex.error && ex.error.message) || 'unknown error').replace(/\\s+/g, ' ').slice(0, 300);\nconst lines = [\n  'n8n workflow error',\n  'Workflow: ' + wf,\n  'Node: ' + (ex.lastNodeExecuted || 'unknown'),\n  'Error: ' + msg,\n  'Execution: ' + (ex.id || 'n/a'),\n];\nif (ex.url) lines.push('Open: ' + ex.url);\nreturn [{ json: { text: lines.join('\\n'), workflow: wf, node: ex.lastNodeExecuted || '', error: msg } }];"
+      },
+      "id": "9bdedb40-1c82-4de8-a8a7-d6a634b14fe0",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String($json.text).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "bf51b19a-77b0-498b-ace2-0e84ac449740",
+      "name": "Alert Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        620,
+        200
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "### Global error handler\nEvery Eki workflow points its **Settings -> Error Workflow** at this workflow (id `ekiwf00`).\nAlerts contain the workflow, node and a truncated message only (no payloads / no personal data).\nAfter a UI import, re-select this workflow as the Error Workflow in each workflow's settings (the CLI import keeps the ids).",
+        "width": 420,
+        "height": 160
+      },
+      "id": "502dc082-9ed5-450e-a130-9d30122615c3",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        30
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Alert Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}

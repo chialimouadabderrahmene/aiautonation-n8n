@@ -1,351 +1,914 @@
 {
   "name": "Eki - 02 Content Approval Handler",
+  "id": "ekiwf02",
   "nodes": [
     {
       "parameters": {
+        "httpMethod": "POST",
         "path": "content-approval",
-        "options": {}
+        "responseMode": "onReceived",
+        "options": {},
+        "authentication": "headerAuth"
       },
-      "id": "e674b321-4f1b-419b-a010-b6f7924c2560",
+      "id": "e91a9a09-1551-4f92-a4d0-6ca28d34adea",
       "name": "Telegram Webhook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         100,
-        300
-      ]
+        370
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "eki-cred-telegram-secret",
+          "name": "Eki Telegram Webhook Secret"
+        }
+      },
+      "webhookId": "1e5e4269-1f91-49c8-a19b-46a126e24ba4"
     },
     {
       "parameters": {
-        "jsCode": "const message = $input.first().json.body.message.text;\nconst matches = message.match(/^\\/(approve|reject|edit)\\s+(\\d+)(?:\\s+(.+))?/i);\n\nif (!matches) {\n  return { action: 'ignore', message: 'No valid command found' };\n}\n\nreturn {\n  action: matches[1].toLowerCase(),\n  day_number: parseInt(matches[2]),\n  feedback: matches[3] || ''\n};"
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst upd = $input.first().json.body || {};\nconst msg = upd.message || upd.edited_message || {};\nconst text = norm(msg.text);\nconst chatId = norm(msg.chat && msg.chat.id);\nconst allowed = norm($env.TELEGRAM_CHAT_ID);\nif (!text) return [{ json: { action: 'ignore', reason: 'no_text' } }];\nif (!allowed || chatId !== allowed) return [{ json: { action: 'ignore', reason: 'unauthorized_chat' } }];\nconst m = text.match(/^\\/(approve|reject|edit)(?:@\\w+)?\\s+(\\d+)(?:\\s+([\\s\\S]+))?$/i);\nif (!m) return [{ json: { action: 'ignore', reason: 'no_command' } }];\nconst action = m[1].toLowerCase();\nconst feedback = norm(m[3]);\nif (action === 'edit' && !feedback) return [{ json: { action: 'ignore', reason: 'edit_needs_feedback' } }];\nreturn [{ json: { action, day_number: parseInt(m[2], 10), feedback } }];"
       },
-      "id": "d0e1ac6b-67a3-41bb-a5a5-c6be98bbfcf2",
+      "id": "ec314e2c-4434-4dd1-a72d-2e2cf0e9b914",
       "name": "Parse Command",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        320,
-        300
+        360,
+        370
       ]
     },
     {
       "parameters": {
-        "dataType": "string",
-        "value1": "={{ $json.action }}",
         "rules": {
-          "rules": [
-            {
-              "value2": "approve"
-            },
-            {
-              "value2": "reject"
-            },
-            {
-              "value2": "edit"
-            }
-          ]
-        }
-      },
-      "id": "90e3cd1c-2234-45aa-bbbe-b97c6452f10b",
-      "name": "Route Action",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 1,
-      "position": [
-        540,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Content Drafts!A:J",
-        "matchColumns": [
-          "day_number"
-        ],
-        "columnsToUpdate": [
-          "status",
-          "approval_date"
-        ],
-        "fieldsUi": {
           "values": [
             {
-              "column": "status",
-              "value": "Approved"
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "240e7198-f9b3-42f2-a6cf-806e84d5e235",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "approve",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "approve"
             },
             {
-              "column": "approval_date",
-              "value": "={{ new Date().toISOString() }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "3be5b0cd-562a-4df4-8d41-c741e0a290ab",
-      "name": "Update GSheet Approved",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        780,
-        150
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
-        "text": "=✅ **Content Approved for Day {{ $json.day_number }}**\n\nThe draft status has been updated in Google Sheets and queued for publishing.",
-        "additionalFields": {}
-      },
-      "id": "80b6b2cd-7f61-419b-a010-c6be98bbfcf2",
-      "name": "Telegram Confirm Approved",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        1020,
-        150
-      ],
-      "credentials": {
-        "telegramApi": {
-          "id": "1",
-          "name": "Telegram Bot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Content Drafts!A:J",
-        "matchColumns": [
-          "day_number"
-        ],
-        "columnsToUpdate": [
-          "status"
-        ],
-        "fieldsUi": {
-          "values": [
-            {
-              "column": "status",
-              "value": "Rejected"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "4be5b0cd-562a-4df4-8d41-c741e0a290ac",
-      "name": "Update GSheet Rejected",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        780,
-        300
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
-        "text": "=❌ **Content Rejected for Day {{ $json.day_number }}**\n\nThe draft status has been marked as Rejected in Google Sheets.",
-        "additionalFields": {}
-      },
-      "id": "90b6b2cd-7f61-419b-a010-c6be98bbfcf3",
-      "name": "Telegram Confirm Rejected",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        1020,
-        300
-      ],
-      "credentials": {
-        "telegramApi": {
-          "id": "1",
-          "name": "Telegram Bot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "read",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Content Drafts!A:J",
-        "options": {}
-      },
-      "id": "5be5b0cd-562a-4df4-8d41-c741e0a290ad",
-      "name": "Read Original Draft",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        780,
-        450
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const originalRow = $input.all().find(row => parseInt(row.json.day_number) === $('Parse Command').first().json.day_number);\nif (!originalRow) {\n  throw new Error('Original draft row not found');\n}\nreturn {\n  original_caption: originalRow.json.caption,\n  original_hook: originalRow.json.hook,\n  original_video_script: originalRow.json.video_script,\n  feedback: $('Parse Command').first().json.feedback,\n  day_number: $('Parse Command').first().json.day_number,\n  platform: originalRow.json.platform\n};"
-      },
-      "id": "1d234cd3-3245-42ea-af39-1234c2672d62",
-      "name": "Merge Original & Feedback",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        980,
-        450
-      ]
-    },
-    {
-      "parameters": {
-        "model": "gpt-4o",
-        "prompt": {
-          "messages": [
-            {
-              "role": "system",
-              "content": "You are a professional social media content creator for Eki. Revise the provided social post draft based on user feedback. Retain the same output JSON structure:\n{\n  \"hook\": \"One scroll-stopping sentence\",\n  \"caption\": \"Engagement caption (50-150 words) with emojis\",\n  \"hashtags\": \"#Hashtags #EkiMarket\",\n  \"video_script\": \"Short-form 30-sec script with visual cues in brackets\"\n}"
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5a7af3d3-b23a-4a10-a2ec-4179557276c0",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "reject",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reject"
             },
             {
-              "role": "user",
-              "content": "=Original Hook: {{ $json.original_hook }}\nOriginal Caption: {{ $json.original_caption }}\nOriginal Video Script: {{ $json.original_video_script }}\n\nFeedback for revision: {{ $json.feedback }}"
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e071319b-d9d3-4f6f-a416-64ad9a807b8a",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "edit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "edit"
             }
           ]
         },
         "options": {
-          "responseFormat": "json_object"
+          "fallbackOutput": "extra"
         }
       },
-      "id": "2bc34cd3-3245-42ea-af39-1234c2672d63",
-      "name": "OpenAI Content Revise",
-      "type": "n8n-nodes-base.openAi",
-      "typeVersion": 1.6,
+      "id": "592bbea7-d19c-4fba-a7bf-b60c355609fd",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
       "position": [
-        1180,
-        450
-      ],
-      "credentials": {
-        "openAiApi": {
-          "id": "1",
-          "name": "OpenAI API"
-        }
-      }
+        620,
+        370
+      ]
     },
     {
-      "parameters": {
-        "jsCode": "const aiResponse = JSON.parse($input.first().json.choices[0].message.content);\nreturn {\n  day_number: $('Merge Original & Feedback').first().json.day_number,\n  platform: $('Merge Original & Feedback').first().json.platform,\n  hook: aiResponse.hook,\n  caption: aiResponse.caption,\n  hashtags: aiResponse.hashtags,\n  video_script: aiResponse.video_script,\n  status: 'Draft'\n};"
-      },
-      "id": "3d234cd3-3245-42ea-af39-1234c2672d64",
-      "name": "Parse Revised Output",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "parameters": {},
+      "id": "0f73874a-35de-4f29-a73e-d8824035d292",
+      "name": "Ignore",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
       "position": [
-        1380,
-        450
+        880,
+        710
       ]
     },
     {
       "parameters": {
+        "resource": "sheet",
         "operation": "update",
-        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
-        "range": "Content Drafts!A:J",
-        "matchColumns": [
-          "day_number"
-        ],
-        "columnsToUpdate": [
-          "hook",
-          "caption",
-          "hashtags",
-          "video_script",
-          "status"
-        ],
-        "fieldsUi": {
-          "values": [
-            {
-              "column": "hook",
-              "value": "={{ $json.hook }}"
-            },
-            {
-              "column": "caption",
-              "value": "={{ $json.caption }}"
-            },
-            {
-              "column": "hashtags",
-              "value": "={{ $json.hashtags }}"
-            },
-            {
-              "column": "video_script",
-              "value": "={{ $json.video_script }}"
-            },
-            {
-              "column": "status",
-              "value": "Draft"
-            }
-          ]
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
         },
-        "options": {}
+        "sheetName": {
+          "__rl": true,
+          "value": "Content Drafts",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "day_number": "={{ $json.day_number }}",
+            "status": "Approved",
+            "approval_date": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "day_number"
+          ],
+          "schema": [
+            {
+              "id": "draft_id",
+              "displayName": "draft_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "day_number",
+              "displayName": "day_number",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hook",
+              "displayName": "hook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hashtags",
+              "displayName": "hashtags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "video_script",
+              "displayName": "video_script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "approval_date",
+              "displayName": "approval_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "publish_time",
+              "displayName": "publish_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published",
+              "displayName": "published",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_date",
+              "displayName": "created_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
       },
-      "id": "6be5b0cd-562a-4df4-8d41-c741e0a290ae",
-      "name": "Update GSheet Revised",
+      "id": "798c842d-d02d-43a8-ac7c-da390ba46ab9",
+      "name": "Mark Approved",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1580,
-        450
+        880,
+        200
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "1",
-          "name": "Google Sheets OAuth"
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
-        "text": "=📝 **Revised Eki Content Draft Ready!**\n\n📅 **Day Number:** {{ $json.day_number }}\n📱 **Platform:** {{ $json.platform }}\n\n🪝 **Revised Hook:** {{ $json.hook }}\n\n📝 **Revised Caption:**\n{{ $json.caption }}\n\n🏷️ **Hashtags:** {{ $json.hashtags }}\n\n🎬 **Revised Video Script:**\n{{ $json.video_script }}\n\n---\nReply with:\n• `/approve {{ $json.day_number }}`\n• `/reject {{ $json.day_number }}`\n• `/edit {{ $json.day_number }} [new feedback]`",
-        "additionalFields": {}
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String('Content approved for day ' + $('Parse Command').first().json.day_number + '. Status updated in Google Sheets; it will be picked up by the scheduler (workflow 10).').replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
-      "id": "91b6b2cd-7f61-419b-a010-c6be98bbfcf4",
-      "name": "Telegram Alert Revised Draft",
+      "id": "2b1e90a7-5009-4aa3-a8a6-5d0dba83cd71",
+      "name": "Confirm Approved",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1800,
-        450
+        1140,
+        200
       ],
       "credentials": {
         "telegramApi": {
-          "id": "1",
-          "name": "Telegram Bot API"
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "content": "### Connection Setup\n1. Set up a Webhook in Telegram Bot API configuration pointing to this webhook URL.\n2. Commands received format: `/approve 3` or `/reject 3` or `/edit 3 Make the tone more exciting!`.\n3. Make sure sheet columns match the updated fields.",
-        "height": 160,
-        "width": 300
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Content Drafts",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "day_number": "={{ $json.day_number }}",
+            "status": "Rejected"
+          },
+          "matchingColumns": [
+            "day_number"
+          ],
+          "schema": [
+            {
+              "id": "draft_id",
+              "displayName": "draft_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "day_number",
+              "displayName": "day_number",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hook",
+              "displayName": "hook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hashtags",
+              "displayName": "hashtags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "video_script",
+              "displayName": "video_script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "approval_date",
+              "displayName": "approval_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "publish_time",
+              "displayName": "publish_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published",
+              "displayName": "published",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_date",
+              "displayName": "created_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
       },
-      "id": "bb5fe1cc-2781-4bdf-87f5-a8cdb615b1eb",
-      "name": "Sticky Note Setup",
-      "type": "n8n-nodes-base.noOp",
+      "id": "ad18e7cb-84d9-407c-a70e-d5040719dcba",
+      "name": "Mark Rejected",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        370
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String('Content rejected for day ' + $('Parse Command').first().json.day_number + '.').replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "67cc2bc1-86b4-446d-ad39-117b3398a2e8",
+      "name": "Confirm Rejected",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        370
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Content Drafts",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "82251a30-d856-4f4c-acb7-f71842b6e8d4",
+      "name": "Read Drafts For Edit",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        540
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst cmd = $('Parse Command').first().json;\nconst rows = $input.all().map((i) => i.json);\nconst orig = rows.find((r) => parseInt(r.day_number, 10) === cmd.day_number);\nif (!orig) throw new Error('Original draft not found for day ' + cmd.day_number);\nconst system = 'You are a professional social media content creator for Eki, a digital marketplace connecting African foodstuff vendors with global buyers. Revise the provided social post draft based on user feedback. Do not invent statistics, testimonials, prices, or guarantees. Retain the same output JSON structure:\\n{\\n  \"hook\": \"One scroll-stopping sentence\",\\n  \"caption\": \"Engagement caption (50-150 words) with emojis\",\\n  \"hashtags\": \"#Hashtags #EkiMarket\",\\n  \"video_script\": \"Short-form 30-sec script with visual cues in brackets\"\\n}';\nconst user = 'Original Hook: ' + norm(orig.hook) + '\\nOriginal Caption: ' + norm(orig.caption) + '\\nOriginal Video Script: ' + norm(orig.video_script) + '\\n\\nFeedback for revision: ' + cmd.feedback;\nreturn [{ json: { day_number: cmd.day_number, platform: norm(orig.platform), ai_request: aiRequest(system, user, 0.7) } }];"
+      },
+      "id": "424f0493-d293-483d-ac4d-a60dea46f9c9",
+      "name": "Build Revision Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.AI_API_BASE_URL || 'https://api.groq.com/openai/v1')).replace(/\\/+$/, '') + '/chat/completions' }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}"
+      },
+      "id": "bb439190-0cae-4278-a5d8-2ca2a3c8b035",
+      "name": "AI Revise",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        540
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = (v) => (v === undefined || v === null) ? '' : String(v).trim();\nconst digits = (v) => norm(v).replace(/\\D/g, '');\nconst yes = (v) => ['yes', 'true', '1', 'y'].includes(norm(v).toLowerCase());\nconst hoursSince = (iso) => { const t = Date.parse(norm(iso)); return Number.isNaN(t) ? Infinity : (Date.now() - t) / 3600000; };\nconst daysSince = (iso) => hoursSince(iso) / 24;\nconst nowIso = () => new Date().toISOString();\nconst appLink = () => norm($env.APP_DOWNLOAD_LINK);\nconst vendorLink = () => norm($env.APP_VENDOR_LINK) || appLink();\nconst AI_MODEL = norm($env.AI_MODEL) || 'llama-3.3-70b-versatile';\nconst aiRequest = (system, user, temperature) => ({\n  model: AI_MODEL, temperature: temperature === undefined ? 0.7 : temperature, response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n});\nconst parseAi = (resp) => {\n  const raw = resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;\n  if (!raw) throw new Error('AI provider returned no content');\n  let s = String(raw).trim();\n  const m = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (e) { throw new Error('AI provider returned invalid JSON: ' + e.message); }\n};\nconst ai = parseAi($input.first().json);\nconst src = $('Build Revision Request').first().json;\nfor (const f of ['hook', 'caption', 'hashtags', 'video_script']) { if (typeof ai[f] !== 'string' || !ai[f].trim()) throw new Error('AI output missing field: ' + f); }\nreturn [{ json: { day_number: String(src.day_number), platform: src.platform, hook: ai.hook.trim(), caption: ai.caption.trim(), hashtags: ai.hashtags.trim(), video_script: ai.video_script.trim() } }];"
+      },
+      "id": "d708cfb7-9261-4cea-aef4-e13de55f3248",
+      "name": "Parse Revision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Content Drafts",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "day_number": "={{ $json.day_number }}",
+            "hook": "={{ $json.hook }}",
+            "caption": "={{ $json.caption }}",
+            "hashtags": "={{ $json.hashtags }}",
+            "video_script": "={{ $json.video_script }}",
+            "status": "Draft"
+          },
+          "matchingColumns": [
+            "day_number"
+          ],
+          "schema": [
+            {
+              "id": "draft_id",
+              "displayName": "draft_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "day_number",
+              "displayName": "day_number",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "hook",
+              "displayName": "hook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hashtags",
+              "displayName": "hashtags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "video_script",
+              "displayName": "video_script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "approval_date",
+              "displayName": "approval_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "publish_time",
+              "displayName": "publish_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "published",
+              "displayName": "published",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_date",
+              "displayName": "created_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "1961e80b-44bf-47f7-ac87-6f1b9ba10eb8",
+      "name": "Save Revision",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        540
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "eki-cred-gsheets",
+          "name": "Eki Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ String((() => { const r = $('Parse Revision').first().json; return 'Revised Eki content draft ready\\n\\nDay: ' + r.day_number + '\\nPlatform: ' + r.platform + '\\n\\nHook: ' + r.hook + '\\n\\nCaption:\\n' + r.caption + '\\n\\nHashtags: ' + r.hashtags + '\\n\\nVideo script:\\n' + r.video_script + '\\n\\nReply with:\\n/approve ' + r.day_number + '\\n/reject ' + r.day_number + '\\n/edit ' + r.day_number + ' [new feedback]'; })()).replace(/([_*\\[\\]`])/g, '\\\\$1') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0c4c7a8c-cf3d-4161-a2be-8c53c3e1def7",
+      "name": "Telegram Revised Draft",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2180,
+        540
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "eki-cred-telegram",
+          "name": "Eki Telegram Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "content": "### Telegram webhook\nRegister the bot webhook with a secret token so only Telegram can call this endpoint:\n`setWebhook?url=<WEBHOOK_URL>webhook/content-approval&secret_token=<TELEGRAM_WEBHOOK_SECRET>`\nCreate the n8n credential **Eki Telegram Webhook Secret** (Header Auth, name `X-Telegram-Bot-Api-Secret-Token`, value = the same secret).\nOnly messages from `TELEGRAM_CHAT_ID` are honoured.",
+        "width": 420,
+        "height": 200
+      },
+      "id": "8ddc5b7f-1626-4a4b-ac32-9ca61c1dfe7b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         100,
-        100
+        30
       ]
     }
   ],
@@ -376,98 +939,105 @@
       "main": [
         [
           {
-            "node": "Update GSheet Approved",
+            "node": "Mark Approved",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Update GSheet Rejected",
+            "node": "Mark Rejected",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ],
         [
           {
-            "node": "Read Original Draft",
+            "node": "Read Drafts For Edit",
             "type": "main",
-            "index": 2
+            "index": 0
           }
-        ]
-      ]
-    },
-    "Update GSheet Approved": {
-      "main": [
+        ],
         [
           {
-            "node": "Telegram Confirm Approved",
+            "node": "Ignore",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Update GSheet Rejected": {
+    "Mark Approved": {
       "main": [
         [
           {
-            "node": "Telegram Confirm Rejected",
+            "node": "Confirm Approved",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Original Draft": {
+    "Mark Rejected": {
       "main": [
         [
           {
-            "node": "Merge Original & Feedback",
+            "node": "Confirm Rejected",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Merge Original & Feedback": {
+    "Read Drafts For Edit": {
       "main": [
         [
           {
-            "node": "OpenAI Content Revise",
+            "node": "Build Revision Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "OpenAI Content Revise": {
+    "Build Revision Request": {
       "main": [
         [
           {
-            "node": "Parse Revised Output",
+            "node": "AI Revise",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse Revised Output": {
+    "AI Revise": {
       "main": [
         [
           {
-            "node": "Update GSheet Revised",
+            "node": "Parse Revision",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Update GSheet Revised": {
+    "Parse Revision": {
       "main": [
         [
           {
-            "node": "Telegram Alert Revised Draft",
+            "node": "Save Revision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Revision": {
+      "main": [
+        [
+          {
+            "node": "Telegram Revised Draft",
             "type": "main",
             "index": 0
           }
@@ -478,9 +1048,10 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Africa/Lagos"
+    "timezone": "Africa/Lagos",
+    "saveManualExecutions": true,
+    "errorWorkflow": "ekiwf00"
   },
-  "meta": {
-    "instanceId": "eki-launch-automation"
-  }
+  "pinData": {},
+  "tags": []
 }
