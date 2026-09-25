@@ -1,0 +1,385 @@
+{
+ "n8nVersion": "2.40.7",
+ "generatedFrom": "docker.n8n.io/n8nio/n8n:2.40.7",
+ "nodes": {
+  "n8n-nodes-base.code": {
+   "versions": [
+    1,
+    2
+   ],
+   "properties": [
+    "jsCode",
+    "language",
+    "mode",
+    "notice",
+    "pythonCode"
+   ]
+  },
+  "n8n-nodes-base.crypto": {
+   "versions": [
+    1,
+    2
+   ],
+   "properties": [
+    "action",
+    "algorithm",
+    "binaryData",
+    "binaryPropertyName",
+    "cipher",
+    "dataPropertyName",
+    "encoding",
+    "encodingType",
+    "mode",
+    "privateKey",
+    "secret",
+    "stringLength",
+    "type",
+    "value"
+   ]
+  },
+  "n8n-nodes-base.errorTrigger": {
+   "versions": [
+    1
+   ],
+   "properties": [
+    "notice"
+   ]
+  },
+  "n8n-nodes-base.googleSheets": {
+   "versions": [
+    1,
+    2,
+    3,
+    4,
+    4.1,
+    4.2,
+    4.3,
+    4.4,
+    4.5,
+    4.6,
+    4.7
+   ],
+   "properties": [
+    "authentication",
+    "autoMapNotice",
+    "clear",
+    "columnToMatchOn",
+    "columns",
+    "columnsToDelete",
+    "combineFilters",
+    "dataMode",
+    "dataProperty",
+    "dataStartRow",
+    "documentId",
+    "fieldsUi",
+    "filtersUI",
+    "id",
+    "keepFirstRow",
+    "key",
+    "keyRow",
+    "lookupColumn",
+    "lookupValue",
+    "numberToDelete",
+    "oldVersionNotice",
+    "operation",
+    "options",
+    "range",
+    "rawData",
+    "resource",
+    "rowsToDelete",
+    "sheetId",
+    "sheetName",
+    "sheetsUi",
+    "simple",
+    "startIndex",
+    "title",
+    "toDelete",
+    "valueToMatchOn"
+   ]
+  },
+  "n8n-nodes-base.httpRequest": {
+   "versions": [
+    1,
+    2,
+    3,
+    4,
+    4.1,
+    4.2,
+    4.3,
+    4.4,
+    4.5
+   ],
+   "properties": [
+    "allowUnauthorizedCerts",
+    "authentication",
+    "binaryPropertyName",
+    "body",
+    "bodyParameters",
+    "bodyParametersJson",
+    "bodyParametersUi",
+    "contentType",
+    "cssSelector",
+    "curlImport",
+    "dataField",
+    "dataPropertyName",
+    "elementsToOmit",
+    "fields",
+    "fieldsToInclude",
+    "genericAuthType",
+    "googleApiWarning",
+    "headerParameters",
+    "headerParametersJson",
+    "headerParametersUi",
+    "infoMessage",
+    "inputDataFieldName",
+    "jsonBody",
+    "jsonHeaders",
+    "jsonParameters",
+    "jsonQuery",
+    "maxLength",
+    "method",
+    "nodeCredentialType",
+    "onlyContent",
+    "optimizeResponse",
+    "options",
+    "provideSslCertificates",
+    "provideSslCertificatesNotice",
+    "queryParameters",
+    "queryParametersJson",
+    "queryParametersUi",
+    "rawContentType",
+    "requestMethod",
+    "responseFormat",
+    "responseType",
+    "sendBinaryData",
+    "sendBody",
+    "sendHeaders",
+    "sendQuery",
+    "specifyBody",
+    "specifyHeaders",
+    "specifyQuery",
+    "sslCertificate",
+    "truncateResponse",
+    "url"
+   ]
+  },
+  "n8n-nodes-base.if": {
+   "versions": [
+    1,
+    2,
+    2.1,
+    2.2,
+    2.3
+   ],
+   "properties": [
+    "combineOperation",
+    "conditions",
+    "looseTypeValidation",
+    "options"
+   ]
+  },
+  "n8n-nodes-base.manualTrigger": {
+   "versions": [
+    1
+   ],
+   "properties": [
+    "notice"
+   ]
+  },
+  "n8n-nodes-base.noOp": {
+   "versions": [
+    1
+   ],
+   "properties": []
+  },
+  "n8n-nodes-base.respondToWebhook": {
+   "versions": [
+    1,
+    1.1,
+    1.2,
+    1.3,
+    1.4,
+    1.5
+   ],
+   "properties": [
+    "contentTypeNotice",
+    "credentials",
+    "enableResponseOutput",
+    "generalNotice",
+    "inputFieldName",
+    "options",
+    "payload",
+    "redirectURL",
+    "respondWith",
+    "responseBody",
+    "responseDataSource",
+    "webhookNotice"
+   ]
+  },
+  "n8n-nodes-base.scheduleTrigger": {
+   "versions": [
+    1,
+    1.1,
+    1.2,
+    1.3,
+    1.4
+   ],
+   "properties": [
+    "misfireGraceSeconds",
+    "misfirePolicy",
+    "notice",
+    "rule",
+    "skipDurableScheduler"
+   ]
+  },
+  "n8n-nodes-base.set": {
+   "versions": [
+    1,
+    2,
+    3,
+    3.1,
+    3.2,
+    3.3,
+    3.4,
+    3.5
+   ],
+   "properties": [
+    "assignments",
+    "duplicateCount",
+    "duplicateItem",
+    "duplicateWarning",
+    "excludeFields",
+    "fields",
+    "include",
+    "includeFields",
+    "includeOtherFields",
+    "jsonOutput",
+    "keepOnlySet",
+    "mode",
+    "options",
+    "values"
+   ]
+  },
+  "n8n-nodes-base.splitInBatches": {
+   "versions": [
+    1,
+    2,
+    3
+   ],
+   "properties": [
+    "batchSize",
+    "options",
+    "splitInBatchesNotice"
+   ]
+  },
+  "n8n-nodes-base.stickyNote": {
+   "versions": [
+    1
+   ],
+   "properties": [
+    "color",
+    "content",
+    "height",
+    "width"
+   ]
+  },
+  "n8n-nodes-base.switch": {
+   "versions": [
+    1,
+    2,
+    3,
+    3.1,
+    3.2,
+    3.3,
+    3.4
+   ],
+   "properties": [
+    "dataType",
+    "fallbackOutput",
+    "looseTypeValidation",
+    "mode",
+    "numberOutputs",
+    "options",
+    "output",
+    "outputsAmount",
+    "rules",
+    "value1"
+   ]
+  },
+  "n8n-nodes-base.telegram": {
+   "versions": [
+    1,
+    1.1,
+    1.2
+   ],
+   "properties": [
+    "action",
+    "additionalFields",
+    "advancedInteractivityNotice",
+    "approvalOptions",
+    "approverIds",
+    "binaryData",
+    "binaryPropertyName",
+    "chatApproval",
+    "chatId",
+    "defineForm",
+    "description",
+    "download",
+    "draftId",
+    "file",
+    "fileId",
+    "forceReply",
+    "formFields",
+    "inlineKeyboard",
+    "inlineMessageId",
+    "jsonOutput",
+    "latitude",
+    "longitude",
+    "media",
+    "message",
+    "messageId",
+    "messageType",
+    "operation",
+    "options",
+    "postDecisionBehavior",
+    "queryId",
+    "replyKeyboard",
+    "replyKeyboardOptions",
+    "replyKeyboardRemove",
+    "replyMarkup",
+    "resource",
+    "responseType",
+    "results",
+    "richFormat",
+    "richMessageText",
+    "text",
+    "title",
+    "unauthorizedReplyText",
+    "userId"
+   ]
+  },
+  "n8n-nodes-base.webhook": {
+   "versions": [
+    1,
+    1.1,
+    2,
+    2.1
+   ],
+   "properties": [
+    "authentication",
+    "contentTypeNotice",
+    "httpMethod",
+    "multipleMethods",
+    "options",
+    "path",
+    "requireExecuteAccess",
+    "responseBinaryPropertyName",
+    "responseCode",
+    "responseData",
+    "responseMode",
+    "webhookNotice",
+    "webhookStreamingNotice"
+   ]
+  }
+ }
+}

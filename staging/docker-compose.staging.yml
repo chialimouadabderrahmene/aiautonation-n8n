@@ -1,0 +1,38 @@
+# Local staging for the Eki n8n automation. Nothing here reaches the internet:
+# n8n's outbound traffic is forced through the mock (HTTPS_PROXY) which impersonates Meta, Google,
+# Telegram, Resend, the AI provider, Apify, Reddit, Buffer and X.
+name: eki-staging
+services:
+  mock:
+    image: docker.n8n.io/n8nio/n8n:2.40.7   # reuse the pinned image: it already ships Node.js
+    container_name: eki-staging-mock
+    entrypoint: ["node", "/app/server.js"]
+    env_file: staging.env
+    environment:
+      SHEET_COLUMNS_PATH: /data/sheet-columns.json
+    volumes:
+      - ./mock:/app:ro
+      - ../schemas/sheet-columns.json:/data/sheet-columns.json:ro
+    ports:
+      - "9099:9099"
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.40.7
+    container_name: eki-staging-n8n
+    depends_on: [mock]
+    env_file: staging.env
+    environment:
+      HTTPS_PROXY: http://mock:9099
+      HTTP_PROXY: http://mock:9099
+      NO_PROXY: localhost,127.0.0.1,mock
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      LAUNCH_DATE: ${LAUNCH_DATE:?run staging/scripts/up.sh}
+      AUTOPILOT_SOCIAL_POSTING: ${AUTOPILOT_SOCIAL_POSTING:-false}
+      AUTOPILOT_STOP: ${AUTOPILOT_STOP:-false}
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./data/n8n:/home/node/.n8n
+      - ../n8n-workflows:/workflows:ro
+      - ./credentials.staging.json:/import/credentials.json:ro
+      - ./data/sched:/sched:ro
