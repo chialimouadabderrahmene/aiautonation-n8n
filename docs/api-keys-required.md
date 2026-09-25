@@ -1,63 +1,40 @@
-# API Keys and Credentials Directory — Eki AI Acquisition Machine
+# API keys and credentials — Eki n8n automation
 
-All credentials required to set up and run the Eki AI-powered acquisition system.
+Where each secret lives: **n8n credentials vault** (created in the n8n UI, referenced by name/id in the workflow files) or **Railway environment variables** (read with `$env`). Never commit real values. Full variable list: [env-vars.md](env-vars.md).
 
----
+## 1. Required for the core system
+| Service | Purpose | Kind | Where to get it |
+|---|---|---|---|
+| Google Sheets OAuth2 | database (all tabs) | n8n credential `Eki Google Sheets` | Google Cloud Console (enable Sheets + Drive APIs; OAuth client; redirect `<n8n url>/rest/oauth2-credential/callback`) |
+| Telegram bot | approvals, alerts, error workflow | n8n credential `Eki Telegram Bot` + `TELEGRAM_CHAT_ID` | @BotFather; chat id from `getUpdates` |
+| AI provider | content, analysis | `AI_API_KEY` (+ `AI_API_BASE_URL`, `AI_MODEL`) | Groq console (default) or OpenAI |
+| Shared webhook secret | authenticates callers of 03, 04, 07, 08, 17, 18, 21 | n8n credential `Eki Webhook Shared Secret` (Header Auth `X-Eki-Webhook-Secret`) | generate: `openssl rand -hex 32` |
+| Telegram webhook secret | authenticates Telegram → workflow 02 | n8n credential `Eki Telegram Webhook Secret` (Header Auth `X-Telegram-Bot-Api-Secret-Token`) | generate; pass the same value as `secret_token` to `setWebhook` |
+| `N8N_ENCRYPTION_KEY` | encrypts the credentials vault | Railway variable | `openssl rand -hex 32`; **back it up** — losing it makes every credential unreadable |
 
-## 1. Core Credentials (Required)
+## 2. WhatsApp (EXTERNAL DEPENDENCY)
+| Item | Variable | Where |
+|---|---|---|
+| Permanent access token | `WHATSAPP_ACCESS_TOKEN` | Meta Business Settings → System users → generate token (`whatsapp_business_messaging`, `whatsapp_business_management`) |
+| Phone number id | `WHATSAPP_PHONE_NUMBER_ID` | Meta app → WhatsApp → API Setup |
+| App secret | `WHATSAPP_APP_SECRET` | Meta app → Settings → Basic (used to verify `X-Hub-Signature-256`) |
+| Verify token | `WHATSAPP_VERIFY_TOKEN` | any random string; same value in Meta webhook config |
+| Approved templates | `WA_TPL_*` | WhatsApp Manager → Message templates ([whatsapp-templates.md](whatsapp-templates.md)) |
 
-| Service | Purpose | Format | Where to Obtain |
-|:---|:---|:---|:---|
-| **Google Sheets OAuth2** | Read/write leads, intelligence, content, analytics | Client ID + Client Secret | [Google Cloud Console](https://console.cloud.google.com/) (Enable Sheets & Drive APIs) |
-| **WhatsApp Cloud API Token** | ALL lead communication — welcome, nurture, follow-ups | Permanent System User Token | Meta Business Settings → System Users → Generate Token with `whatsapp_business_messaging` |
-| **WhatsApp Phone Number ID** | Identifies your WhatsApp sender | Numeric ID | Meta App Dashboard → WhatsApp → API Setup |
-| **OpenAI API Key** | Content generation, trend analysis, pattern extraction | `sk-proj-...` | [OpenAI Platform](https://platform.openai.com/api-keys) (use GPT-4o) |
-| **Telegram Bot Token** | Team alerts, content approvals, daily reports | `123456789:ABCdef...` | [@BotFather](https://t.me/BotFather) on Telegram |
-| **Telegram Chat ID** | Target group for alerts and approvals | `-100123456789` | `https://api.telegram.org/bot<TOKEN>/getUpdates` |
+## 3. Email (Resend) — EXTERNAL DEPENDENCY
+`RESEND_API_KEY`, `RESEND_FROM_EMAIL` (verified domain), `TEAM_EMAIL`.
 
-## 2. Lead Acquisition (Required for Comment Funnel)
+## 4. Optional integrations (all off by default)
+| Service | Variables / credential | Notes |
+|---|---|---|
+| ManyChat (Pro) | none in n8n — ManyChat calls workflow 17 with the shared-secret header and receives the reply message | no ManyChat API key needed |
+| Buffer | `BUFFER_API_KEY`, `BUFFER_PROFILE_ID_<PLATFORM>` | request shape not verified against the live API |
+| X / Twitter | n8n OAuth2 credential `Eki Twitter X OAuth2`, `TWITTER_POSTING_ENABLED=true` | needs a developer app with write access |
+| Apify | `APIFY_TOKEN`, `APIFY_TRENDS_ACTOR_ID`, `APIFY_TRENDS_INPUT_JSON` | check the terms of the platforms you scrape |
+| Feedback form | `FEEDBACK_FORM_URL` | Tally/Typeform/Google Forms |
 
-| Service | Purpose | Format | Cost |
-|:---|:---|:---|:---|
-| **ManyChat API** | Instagram comment → DM automation | API Key via ManyChat account | $15-45/mo |
-| **Instagram Business Accounts** | @eki.vendors, @eki.buyers, @eki.market | Instagram handles | Free (requires Business conversion) |
-
-## 3. Intelligence Engine (Required for Workflows 15-16)
-
-| Service | Purpose | Format | Cost |
-|:---|:---|:---|:---|
-| **Apify API Token** | Scrape Instagram/TikTok trends & Reddit pain points | `apify_api_...` | $45/mo (Starter) |
-
-## 4. Social Posting (Optional)
-
-| Service | Purpose | Format |
-|:---|:---|:---|
-| **Buffer API Token** | Auto-schedule posts to Facebook, Instagram, LinkedIn | `Bearer buf_abc...` |
-| **Buffer Profile IDs** | Target account identifiers | `64fa368297491cf32018ea1b` |
-
-## 5. Environment Variables Summary
-
-```env
-# --- Required ---
-GOOGLE_SHEETS_ID=your-spreadsheet-id
-OPENAI_API_KEY=sk-proj-...
-TELEGRAM_CHAT_ID=-100123456789
-WHATSAPP_ACCESS_TOKEN=EAAxxxx...
-WHATSAPP_PHONE_NUMBER_ID=1234567890
-WHATSAPP_VERIFY_TOKEN=your-secret-string
-APIFY_TOKEN=apify_api_...
-
-# --- Optional ---
-BUFFER_API_KEY=your-buffer-token
-BUFFER_PROFILE_ID=your-profile-id
-TEAM_EMAIL=team@eki.app
-```
-
-## Security Best Practices
-
-> [!WARNING]
-> **Never commit real API keys to GitHub.**
-> - Store all keys in n8n credentials vault or Railway env vars
-> - WhatsApp token must be a **Permanent** System User token (temporary tokens expire in 24h)
-> - Rotate keys quarterly
-> - Back up `N8N_ENCRYPTION_KEY` — losing it makes all saved credentials unreadable
+## Security practice
+- Keep secrets in the vault / Railway variables only; rotate quarterly and after any staff change.
+- The WhatsApp token must be a **permanent** System-User token (temporary ones expire in 24 h).
+- Restrict who can open the n8n editor: any editor can read `$env` (that is why `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` is a deliberate trade-off).
+- Execution data contains phone numbers and message text: production keeps failed executions only and prunes after 14 days.

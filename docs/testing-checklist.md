@@ -1,136 +1,58 @@
-# Testing Checklist — Eki Automation System
+# Testing checklist — Eki n8n automation
 
-This document outlines the step-by-step verification procedures for each n8n workflow. Since the user is running Windows, commands are provided in both **Windows PowerShell (Invoke-RestMethod)** and **standard bash curl** formats.
+Three levels. Level 1 needs no accounts and is what produced [staging-test-report.md](staging-test-report.md); level 3 needs real accounts and dedicated test data.
 
----
-
-## 1. Webhook Test Payloads & Simulation Commands
-
-### Workflow 03: Lead Capture Webhook
-*Tests de-duplication, Google Sheets entry, and welcome trigger.*
-
-*   **Test URL:** `http://localhost:5678/webhook-test/lead-capture` (Replace localhost with production domain in live environments).
-*   **Expected Behavior:** Lead appended to the `Leads` sheet. A request forwarded to the Welcome Sequence webhook. If `intent_level` is `High`, a Telegram alert is sent.
-
-**PowerShell Command:**
-```powershell
-Invoke-RestMethod -Uri "http://localhost:5678/webhook-test/lead-capture" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"name": "Chinedu Obi", "email": "chinedu@eki-marketplace.com", "source": "LinkedIn ad", "intent_level": "High"}'
-```
-
-**Bash/Curl Command:**
+## 1. Static (no Docker, seconds)
 ```bash
-curl -X POST http://localhost:5678/webhook-test/lead-capture \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Chinedu Obi", "email": "chinedu@eki-marketplace.com", "source": "LinkedIn ad", "intent_level": "High"}'
+node tools/validate-workflows.js
 ```
+Checks: JSON validity; every node type/version/parameter exists in n8n 2.40.7 (`tools/n8n-node-catalog.json`, generated from the pinned image); all connections/reachability; credential references; **every webhook authenticated** (only 13's two Meta endpoints are exempt: verify-token handshake and in-flow HMAC); Sheets tabs/columns vs `schemas/sheet-columns.json`; no free-form WhatsApp text outside workflow 13; timezone = Africa/Lagos and Error Workflow set everywhere; forbidden content (wrong brand text, the two legacy domains, stale URLs, localhost, local-file links, placeholders, test emails/phones — the exact patterns are the `FORBIDDEN` list in `tools/validate-workflows.js`); every `$env` used is documented in `.env.railway.example`.
 
----
-
-### Workflow 04: Waitlist Management Webhook
-*Tests early-access signup, position generation, custom referral code creation, and confirmation email trigger.*
-
-*   **Test URL:** `http://localhost:5678/webhook-test/waitlist`
-*   **Expected Behavior:** Waitlist entry created with unique referral code (e.g. `WL-EKI-CHI-ABCD`), position incremented, confirmation email sent via Resend.
-
-**PowerShell Command:**
-```powershell
-Invoke-RestMethod -Uri "http://localhost:5678/webhook-test/waitlist" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"name": "Chiara Rossi", "email": "chiara.rossi@example.it", "user_type": "Buyer"}'
-```
-
-**Bash/Curl Command:**
+## 2. Staging (Docker + Node) — real n8n, mocked providers
 ```bash
-curl -X POST http://localhost:5678/webhook-test/waitlist \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Chiara Rossi", "email": "chiara.rossi@example.it", "user_type": "Buyer"}'
+bash staging/scripts/up.sh                 # fresh stack, imports everything
+node staging/run-tests.js                  # t1-t4: workflows 00-22
+bash staging/scripts/stage.sh posting-on && node staging/run-tests.js t5
+bash staging/scripts/stage.sh stop-on    && node staging/run-tests.js t6
+bash staging/scripts/stage.sh default    && node staging/run-tests.js t9   # ~4 min: real schedule triggers, activation of all 22
 ```
+Scheduled workflows are executed through their **Manual Run** trigger (`n8n execute`); t9 additionally proves the real Schedule Triggers fire in production (trigger) mode using every-minute copies, and that all 22 real workflows activate. Webhook workflows are called over HTTP exactly like production callers. The mock enforces the WhatsApp 24-hour rule, template well-formedness, Google Sheet columns and provider authentication, and supports fault injection (outages, 429s) to test retries.
 
----
+Reading results: each check is `PASS/FAIL` with the assertion text; `staging/out/` holds JSON per suite (git-ignored). The matrix in `docs/staging-test-report.md` is generated from those files by `node tools/make-report.js`.
 
-### Workflow 07: Referral Campaign Webhook
-*Tests attribution loops when a new lead registers via a referral link.*
+## 3. Real-account smoke test (dedicated test data only)
+Prerequisites: real n8n on Railway, credentials, Sheet, Telegram group, a **test WhatsApp number you own**, a `.test`/own mailbox. **Do not use production customer data.** Use your own numbers/emails and delete the rows afterwards.
 
-*   **Test URL:** `http://localhost:5678/webhook-test/referral-signup`
-*   **Expected Behavior:** Parent referrer's points incremented. If points hit 3 or 5, an email notification is dispatched to the referrer announcing their trade rewards.
+Set `N8N=https://<domain>/webhook` and `SECRET=<X-Eki-Webhook-Secret value>`.
 
-**PowerShell Command:**
-```powershell
-Invoke-RestMethod -Uri "http://localhost:5678/webhook-test/referral-signup" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"ref": "WL-EKI-CHI-ABCD", "new_user_email": "new.vendor@eki-marketplace.com", "new_user_name": "Kofi Mensah"}'
-```
+| # | Action | Expected |
+|---|---|---|
+| 1 | `curl -X POST $N8N/lead-capture` **without** the header | 403 |
+| 2 | same with header, body `{}` | 400 with reasons |
+| 3 | `{"name":"QA Lead","phone":"<your number>","source":"smoke","user_type":"vendor","consent":true}` | 200; `Leads` row (`opt_in=yes`); Telegram alert; welcome **template** arrives (only if `WA_TPL_WELCOME_D1` approved) |
+| 4 | repeat #3 | `duplicate:true`, no second WhatsApp |
+| 5 | same without `consent` | row `opt_in=no`, nothing sent |
+| 6 | `POST $N8N/join-waitlist` `{"name":"QA","email":"<your email>","user_type":"Buyer","consent":true}` | position, referral code, confirmation email |
+| 7 | `POST $N8N/track-referral` with that code and a new email | referrer count +1; second call → `duplicate` |
+| 8 | `POST $N8N/collect-feedback` rating 2 then 5 | Feedback rows; Telegram alert for 2; thank-you email; 5 includes store links only if configured |
+| 9 | send `hi`, `BUYER`, `STOP`, `hello` from your phone to the business number | replies; after `STOP` the row is `unsubscribed` and `hello` gets **no** reply |
+| 10 | signed/unsigned WhatsApp POST tests ([WHATSAPP_TEST_PAYLOADS.md](../WHATSAPP_TEST_PAYLOADS.md)) | valid → 200; missing/wrong → 401 |
+| 11 | Telegram: `/approve`, `/reject`, `/edit` from the team group and from another chat | only the team group works |
+| 12 | run 01, 10, 12, 14 with *Manual Run* | see [AUTOPILOT_TESTING_GUIDE.md](../AUTOPILOT_TESTING_GUIDE.md) §2 |
+| 13 | run 05 / 06 / 19 with a seeded test lead (`opt_in=yes`) | one template per run; with templates unset → one Telegram "blocked" alert and no send |
+| 14 | break something on purpose (wrong AI key) and run 01 | workflow 00 posts an `n8n workflow error` alert (workflow, node, message) |
 
-**Bash/Curl Command:**
-```bash
-curl -X POST http://localhost:5678/webhook-test/referral-signup \
-  -H "Content-Type: application/json" \
-  -d '{"ref": "WL-EKI-CHI-ABCD", "new_user_email": "new.vendor@eki-marketplace.com", "new_user_name": "Kofi Mensah"}'
-```
+## Webhook reference
+| Path | Header | Body |
+|---|---|---|
+| `lead-capture` | `X-Eki-Webhook-Secret` | `name`, `phone` or `email`, `source`, `user_type`, `consent`, `intent_level`, `country` |
+| `join-waitlist` | same | `name`, `email` and/or `whatsapp`, `user_type` (Vendor/Buyer), `consent` |
+| `track-referral` | same | `referral_code` (or `ref`), `new_user_email` (or `new_email`), `new_user_name` |
+| `collect-feedback` | same | `email`, `rating` 1-5, `comments`, `would_recommend`, optional `user_role`, `primary_value`, `pain_point` |
+| `manychat-comment` | same | `name`, `username`, `keyword` |
+| `content-multiply` | same | `idea` |
+| `social-proof` | same | `vendor`, `event`, `metric`, `value` |
+| `content-approval` | `X-Telegram-Bot-Api-Secret-Token` | Telegram update JSON |
+| `whatsapp-webhook` | `X-Hub-Signature-256` (POST) / verify token (GET) | Meta payload |
 
----
-
-### Workflow 08: Client Feedback Collection Webhook
-*Tests routing of client feedback based on numeric score rating.*
-
-*   **Test URL:** `http://localhost:5678/webhook-test/collect-feedback`
-*   **Expected Behavior:**
-    *   Rating 4-5: Trigger App Store review invitation email.
-    *   Rating 3: Log in product queue (No alert).
-    *   Rating 1-2: Telegram alert notifying team of low rating for manual intervention.
-
-**PowerShell Command (Simulating Negative Feedback):**
-```powershell
-Invoke-RestMethod -Uri "http://localhost:5678/webhook-test/collect-feedback" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"email": "chiara.rossi@example.it", "rating": 2, "comments": "The verification page timed out during photo upload.", "would_recommend": false}'
-```
-
-**Bash/Curl Command (Simulating Positive Feedback):**
-```bash
-curl -X POST http://localhost:5678/webhook-test/collect-feedback \
-  -H "Content-Type: application/json" \
-  -d '{"email": "chinedu@eki-marketplace.com", "rating": 5, "comments": "Excellent onboarding. Fast vendor response!", "would_recommend": true}'
-```
-
----
-
-## 2. Checklists for Cron/Scheduled Workflows
-
-### Workflow 01: AI Content Generation (Cron daily at 9:00 AM)
-1.  Verify the `Content Calendar` sheet contains at least 1 row with `status` as `Scheduled`.
-2.  Click **Test step** on the schedule trigger or mock input data to trigger.
-3.  Ensure OpenAI executes without quota errors.
-4.  Confirm a new row with `status` `Pending` is appended to the `Content Drafts` tab.
-5.  Check your Telegram group chat for the approval request message showing post options.
-
-### Workflow 02: Content Approval Callback (Webhook)
-1.  Send `/approve` or reply to the Telegram message generated in Workflow 01.
-2.  Ensure n8n receives the webhook.
-3.  Confirm the row status in `Content Drafts` updates from `Pending` to `Approved`.
-
-### Workflow 06: Engagement Follow-up (Cron daily at 10:00 AM)
-1.  Verify your `Leads` sheet contains a lead with `status` = `Welcome Sent` and `last_contacted` timestamp older than 7 days.
-2.  Trigger the workflow.
-3.  Confirm a follow-up email is sent via Resend API.
-4.  Confirm the status in Google Sheets changes to `Followup Sent`.
-
-### Workflow 09: Weekly Analytics Report (Cron weekly Mondays at 9:00 AM)
-1.  Populate mock rows in `Leads` (various signup dates), `Feedback` (various ratings), and `Content Drafts`.
-2.  Trigger the workflow.
-3.  Confirm an HTML email containing KPI metrics and visual tables is delivered to your inbox.
-4.  Verify the Telegram chat group receives the text summary snapshot.
-5.  Confirm a summary snapshot is appended to the `Analytics` spreadsheet tab.
-
-### Workflow 10: Social Post Scheduler (Cron every 2 hours)
-1.  Mark a row in the `Content Drafts` sheet as `Approved` (with `published` status empty).
-2.  Trigger the workflow.
-3.  Ensure it pulls the oldest approved row.
-4.  Verify it posts to Twitter/X (if API active) or sends a Telegram manual post alert.
-5.  Verify the sheet row status changes to `Published` or `Notification Sent`.
+Use `/webhook/…` (production) for real callers; `/webhook-test/…` only while the editor is listening.

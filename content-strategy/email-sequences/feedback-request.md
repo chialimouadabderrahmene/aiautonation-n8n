@@ -1,3 +1,5 @@
+> **DRAFT copy - not wired to any workflow.** Links use the canonical domain but the paths (`/dashboard`, `/directory`, `/login`, `/verify`, `/feedback`, `/signup`) are illustrative: replace them with real Eki routes, and verify every claim (e.g. commission offers) before sending. Never put personal data in link query strings.
+
 # Eki Feedback Request Email Template
 
 This email is triggered by the feedback collection workflow 7 days after signup to request usability ratings and feature comments.
@@ -40,7 +42,7 @@ This email is triggered by the feedback collection workflow 7 days after signup 
     <p>Please click the link below to share your thoughts:</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/feedback-form?email={{email}}&name={{name}}" class="button" target="_blank">Start Feedback Survey</a>
+      <a href="https://culinarytales.app/feedback" class="button" target="_blank">Start Feedback Survey</a>
     </div>
     
     <p>We read every single submission personally.</p>

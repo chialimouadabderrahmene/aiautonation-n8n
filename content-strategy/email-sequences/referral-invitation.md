@@ -1,3 +1,5 @@
+> **DRAFT copy - not wired to any workflow.** Links use the canonical domain but the paths (`/dashboard`, `/directory`, `/login`, `/verify`, `/feedback`, `/signup`) are illustrative: replace them with real Eki routes, and verify every claim (e.g. commission offers) before sending. Never put personal data in link query strings.
+
 # Eki Referral Invitation Email Template
 
 This email is sent to active users to encourage them to invite their network of vendors, exporters, and buyers to Eki in exchange for transaction fee waivers.
@@ -37,7 +39,7 @@ This email is sent to active users to encourage them to invite their network of 
     
     <div class="referral-box">
       Your Referral Link:<br>
-      <span style="color: #1e1e1e; font-size: 16px; font-family: monospace;">https://eki-marketplace.com/signup?ref={{referral_code}}</span>
+      <span style="color: #1e1e1e; font-size: 16px; font-family: monospace;">https://culinarytales.app/signup?ref={{referral_code}}</span>
     </div>
     
     <h3 class="milestones">🎁 Referral Rewards & Milestones:</h3>
@@ -50,7 +52,7 @@ This email is sent to active users to encourage them to invite their network of 
     <p>Simply copy your link above and share it on WhatsApp, LinkedIn, or directly with your trading partners.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/dashboard/referrals" class="button" target="_blank">Track My Referrals</a>
+      <a href="https://culinarytales.app/dashboard/referrals" class="button" target="_blank">Track My Referrals</a>
     </div>
     
     <p>Thank you for helping us grow Eki safely!</p>

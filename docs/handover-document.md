@@ -1,156 +1,59 @@
-# Handover Document — Eki launch automation system
+# Handover — Eki n8n launch automation
 
-This document summarizes the final delivery of the Eki launch automation and organic user acquisition system. It outlines what is automated, how data flows, operational instructions for the marketing and tech teams, and recommendations for future enhancements.
+## 1. What this is
+An **n8n 2.40.7** automation (22 workflow files) around the Eki marketplace launch: AI-assisted content with human approval, lead capture, template-compliant WhatsApp funnels, waitlist and referrals, feedback, reporting, and optional social posting. Data lives in Google Sheets. It is separate from the Eki app's own in-app lifecycle automations (push/in-app, run by the backend) — see [business-flows.md](business-flows.md).
 
----
+**Readiness:** verified in a local staging n8n against mocked providers; **not** verified against real Meta/Google/Resend/Buffer/X/Apify/ManyChat accounts. Gates and limitations: [production-readiness-report.md](production-readiness-report.md).
 
-## 1. System Summary
+## 2. Inventory
+| # | Workflow | Trigger |
+|---|---|---|
+| 00 | Global Error Handler | any workflow error (must be active) |
+| 01 | AI Content Generation | daily 09:00 |
+| 02 | Content Approval Handler | Telegram webhook (secret token) |
+| 03 | Lead Capture | POST `lead-capture` |
+| 04 | Waitlist Management | POST `join-waitlist` |
+| 05 | WhatsApp Welcome Sequence | daily 09:00 |
+| 06 | WhatsApp Engagement Follow-up | daily 10:00 |
+| 07 | Referral Campaign Tracker | POST `track-referral` |
+| 08 | Feedback Collection & Routing | daily 11:00 + POST `collect-feedback` |
+| 09 | Weekly Analytics Report | Mondays 09:00 |
+| 10 | Social Post Scheduler | every 2 h, 10:00-20:00 |
+| 12 | AI Social Autopilot | daily 09:00 |
+| 13 | WhatsApp Lead Funnel | Meta webhook (HMAC) |
+| 14 | Autopilot Controller (report + kill-switch alert) | daily 08:00 |
+| 15 | Viral Intelligence Engine | every 6 h |
+| 16 | Pain Discovery Engine | daily 06:00 |
+| 17 | ManyChat Comment Funnel | POST `manychat-comment` |
+| 18 | Content Multiplication Engine | POST `content-multiply` |
+| 19 | WhatsApp Nurture Sequences | daily 08:00 |
+| 20 | A/B Testing Engine | every 72 h |
+| 21 | Social Proof Engine | POST `social-proof` |
+| 22 | Performance Analyst Agent | Mondays 09:30 |
 
-The **Eki AI Acquisition Machine** is built on **n8n** with **Google Sheets** as database, **WhatsApp Cloud API** for all lead communication, **OpenAI** for content generation, and **Telegram** for alerts and approvals.
+There is **no workflow 11**: the numbering skips it (earlier docs said 22 workflows; 21 existed; the 22nd file is the new error handler, numbered 00 to avoid pretending an 11th existed). All times are Africa/Lagos.
 
-This system is designed specifically for **Eki** — a foodstuff marketplace connecting African vendors and exporters with global buyers. It automates:
-- Target market lead capture and categorization.
-- Early-access waitlist positions and custom referral loops.
-- **WhatsApp-only** multi-day onboarding and nurture sequences (no email).
-- Daily content generation with human-in-the-loop approvals.
-- Comment-to-DM-to-WhatsApp conversion funnels via ManyChat.
-- Viral trend intelligence and pain point discovery (self-improving).
-- A/B testing and content optimization every 72 hours.
-- Social proof generation from marketplace milestones.
-- Weekly performance reporting with AI recommendations.
+Other assets: `content-strategy/` (launch copy; **contains unverified statistics — review before publishing**), `schemas/` + `sheet-templates/`, `staging/` (test stack), `tools/` (validator, generators).
 
----
+## 3. Behaviour changes made during the production audit (know these before comparing with older notes)
+- Invalid node types (`cronTrigger`, `webhookTrigger`, `openAi@2`, `telegram@2`), malformed nodes and wrong Google-Sheets parameter shapes fixed — the original files could not import/run.
+- Email nodes that had been corrupted by a search-and-replace (email payloads posted to non-existent WhatsApp and Telegram "email" endpoints) restored to Resend.
+- **WhatsApp compliance:** business-initiated messages are now approved templates only (previously free-form text to cold leads, forbidden by Meta outside 24 h); missing template = blocked + alert.
+- **Opt-out** persisted on the lead row and honoured by every sender (previously STOP appended a second row and old rows stayed eligible).
+- **Webhook security:** WhatsApp HMAC verification; shared-secret header on every other webhook; Telegram secret token + chat allow-list on 02.
+- **No duplicate sends:** bulk senders loop one lead at a time (n8n retry re-runs the whole node).
+- Overlapping workflows deconflicted: 14 no longer posts or messages customers (10/12 own posting; 05/06/13/19 own WhatsApp); 05/19 use distinct statuses (`new` vs `lead_captured`).
+- Wrong brand copy (Eki described as an AI/business-automation product instead of an African foodstuff marketplace) replaced everywhere; invented testimonials/stats and non-existent URLs removed from messages; all links come from `APP_DOWNLOAD_LINK` / `APP_VENDOR_LINK`.
+- One AI configuration (`AI_API_KEY`/`AI_API_BASE_URL`/`AI_MODEL`, Groq default, OpenAI supported); one timezone (Africa/Lagos).
+- Removed unverifiable integrations (Metricool, Meta Graph feed and TikTok posting from workflow 14; a call to n8n's internal REST API in 22; a call to a non-existent `request-review` webhook in 08).
+- Removed promises the system cannot honour (promo code `EKIFEEDBACK`, "premium status"): feedback rewards are now `FEEDBACK_REWARD_TEXT`, empty by default.
 
-## 2. Inventory of Delivered Assets
+## 4. Operations
+See [setup-instructions.md](setup-instructions.md) §10-12 and [RAILWAY_N8N_DEPLOYMENT.md](../RAILWAY_N8N_DEPLOYMENT.md). Daily: read the 08:00 controller report and any `n8n workflow error` alert. Weekly: failed executions, Resend/Meta quality dashboards. Monthly: workflow export + backup restore test. Upgrade n8n only after re-running `staging/` on the new tag.
 
-The project contains the following components:
-
-### A. n8n Workflows (`n8n-workflows/`) — 21 workflows
-1.  `01-ai-content-generation.json`: Chronologically generates drafts from calendar topics daily, pushes to sheets, and requests Telegram approval.
-2.  `02-content-approval.json`: Receives Telegram bot command buttons (`/approve`, `/reject`, `/edit`), updates sheets, and calls OpenAI to refine drafts.
-3.  `03-lead-capture-webhook.json`: De-duplicates incoming leads, appends to Sheets, sends **WhatsApp welcome message** via Cloud API, and fires alerts on high-intent candidates.
-4.  `04-waitlist-management.json`: Captures waitlist signups, increments positioning, generates unique referral codes, and fires confirmations via WhatsApp.
-5.  `05-whatsapp-welcome-sequence.json`: 3-part WhatsApp sequence (Day 1 Welcome, Day 2 Social Proof, Day 3 CTA) sent via Cloud API.
-6.  `06-whatsapp-engagement-followup.json`: Scans leads daily, detects inactive states, sends 7/14/21-day WhatsApp re-engagement messages.
-7.  `07-referral-campaign.json`: Credits referring accounts, triggers Resend reward notifications on point milestones (3 & 5 referrals).
-8.  `08-feedback-collection.json`: Collects survey rating hook callbacks. Routes ratings >=4 to App Store review requests and <=2 to urgent Telegram alerts.
-9.  `09-weekly-analytics-report.json`: Monday cron aggregating weekly signups, leads count, posts created, and NPS rating into a weekly HTML email report.
-10. `10-social-post-scheduler.json`: Scans approved drafts every 2 hours, triggers direct Twitter/X posts, queues Buffer API items, or alerts team for manual post fallback.
-
-### B. Content Strategy Assets (`content-strategy/`)
-- `30-day-content-calendar.md`: Pre-seeded calendar structure including target dates, platforms, pillars, hooks, captions, and CTAs.
-- `content-pillars.md`: 5 strategy pillars (Behind the Scenes, Problem Awareness, Educational Value, Social Proof, Community), platform guidelines, hooks library, video script templates, and referral campaigns.
-- `launch-announcement-sequence.md`: Pre-written 7-step sequence counting down from pre-launch teaser (T-7) to launch day and post-launch milestone.
-- **Email Copy Templates** (`content-strategy/email-sequences/`):
-  - `welcome-sequence.md`: 3-part onboarding html email copies.
-  - `follow-up-sequence.md`: 3-part re-engagement html email copies.
-  - `referral-invitation.md`: Referral explanation copy.
-  - `feedback-request.md`: 7-day feedback request html copy.
-  - `app-review-request.md`: NPS promoter review request email.
-
-### C. Database Schemas (`schemas/`)
-- `google-sheets-schema.md`: 6 sheets schemas defining columns, types, and relationships.
-- `airtable-schema.md`: Airtable schema mapping with field types and linked records if migrating to Airtable.
-
-### D. Documentation (`docs/`)
-- `setup-instructions.md`: Deployment manual.
-- `api-keys-required.md`: Directory of API credentials.
-- `workflow-diagram.md`: Mermaid flow charts.
-- `testing-checklist.md`: Simulation payloads and curl instructions.
-
----
-
-## 3. Operational Guidelines
-
-### Daily Content Flow
-1.  **AI Generation**: At 9:00 AM Africa/Lagos timezone, workflow 01 runs. It picks the day's topic, creates drafts, and posts them to your team Telegram group chat.
-2.  **Approval Step**: A manager reviews the draft.
-    - Click **Approve** (via bot interface buttons) -> Post queue.
-    - Click **Reject** -> Sent back to OpenAI for a clean rewrite.
-3.  **Posting**: Every 2 hours, workflow 10 checks for approved posts.
-    - Twitter/X: Auto-posted.
-    - Facebook/Instagram/LinkedIn: Auto-queued via Buffer.
-    - TikTok/Reddit: Pushed to Telegram as a copy-paste warning. Manually upload video/text on target app.
-
-### Handling Errors & Outages
-- **n8n Executions log**: Periodically check n8n's Execution History. Filter by "Failed" to verify if any HTTP request timed out.
-- **Rate Limits**: Resend limits free accounts to 100 emails/day. If signup velocity spikes, upgrade your Resend subscription. OpenAI rate limits can be avoided by maintaining API account balances.
-
----
-
-## 4. Next Phase Recommendations
-
-1.  **Direct API Posting**: Upgrade manual TikTok/Reels posting using the official TikTok Content Posting API and Meta Graph API once Eki obtains verified developer organization status.
-2.  **Interactive AI Agent**: Set up an n8n AI Agent node (using OpenAI Assistants or LangChain memory nodes) to handle custom incoming customer queries from Typeform/Tally webhooks dynamically before routing to manual support.
-3.  **CRM Syncing**: Integrate HubSpot or ActiveCampaign nodes alongside Google Sheets to track vendor lead lifecycles through pipeline deals.
-
----
-
-## 5. Advanced Workflows (New — Acquisition Machine)
-
-### 15. Viral Intelligence Engine
-- **Schedule**: Every 6 hours
-- **Function**: Scrapes Instagram/TikTok/competitor trends via Apify, analyzes with GPT-4o, extracts hook patterns/emotional triggers/content formats
-- **Output**: Updates Intelligence DB, sends Telegram summary
-- **Triggers**: Content Engine (provides fresh patterns)
-
-### 16. Pain Discovery Engine
-- **Schedule**: Daily at 6:00 AM
-- **Function**: Scrapes Reddit/Facebook for audience pain points, GPT-4o categorizes by persona/intensity
-- **Output**: Populates PainPoints DB with tagged entries
-
-### 17. ManyChat Comment Funnel
-- **Trigger**: Webhook (ManyChat sends comment data)
-- **Function**: Detects keyword from Instagram comment → routes to vendor/buyer journey → sends WhatsApp link via DM
-- **Output**: Logs lead, alerts Telegram for high-intent
-- **Setup**: Requires ManyChat Pro ($15-45/mo) connected to Instagram Business accounts
-
-### 18. Content Multiplication Engine
-- **Trigger**: Webhook (on content approval)
-- **Function**: Takes 1 core idea → expands to 15-25 format variations (reel, TikTok, carousel, story, FB post, caption variants)
-- **Output**: Queues all variations to ContentQueue sheet
-
-### 19. WhatsApp Nurture Sequences
-- **Schedule**: Daily at 8:00 AM
-- **Function**: Sends personalized 14-day vendor sequence (Welcome→Proof→How It Works→Demo→Objections→CTA→Final Push) and 7-day buyer sequence (Trust→Proof→Browse→Incentive→Nudge)
-- **Output**: Sends WhatsApp messages via Cloud API, tracks nurture day in Leads sheet
-
-### 20. A/B Testing Engine
-- **Schedule**: Every 72 hours
-- **Function**: Scores posted content by engagement, identifies winners/losers, GPT-4o analyzes patterns
-- **Output**: Updates Hook Library with winning patterns, sends Telegram briefing
-
-### 21. Social Proof Engine
-- **Trigger**: Webhook (from Eki backend events)
-- **Function**: Detects milestones (1st order, 50th order, new country, positive review) → GPT-4o generates proof content → queues for review
-- **Output**: SocialProof DB entries, Telegram notification
-
-### 22. Performance Analyst Agent
-- **Schedule**: Every Monday at 9:00 AM
-- **Function**: Aggregates all system data (leads, content, engagement), GPT-4o deep analysis, generates recommendations
-- **Output**: Weekly report logged to Analytics, emailed via Resend, Telegram summary
-
----
-
-## 6. New Database Tables in Google Sheets / Airtable
-
-Add these sheets/tables to your existing database:
-
-| Table | Populated By | Purpose |
-|-------|-------------|---------|
-| `Intelligence` | Workflow 15 | Viral patterns, hooks, emotions |
-| `PainPoints` | Workflow 16 | Audience pain points |
-| `ContentQueue` | Workflow 18 | Multiplied content awaiting approval |
-| `SocialProof` | Workflow 21 | Auto-generated proof content |
-
-### Intelligence Columns:
-`type | content | source | emotion | engagement_score | date_discovered`
-
-### PainPoints Columns:
-`pain_statement | persona | category | intensity | source | keywords | usage_count`
-
-### ContentQueue Columns:
-`format | content | hook_variant | status | source_idea | created_at`
-
-### SocialProof Columns:
-`event_type | vendor_name | metric | content_json | status | created_at`
+## 5. Recommendations (not done)
+1. Move the lead store from Sheets to PostgreSQL (rate limits, concurrent writes).
+2. Wire the Eki backend to `track-referral`, `social-proof` and `lead-capture` (sign-ups) so those flows are event-driven.
+3. Add an executions-based alert for "no workflow ran today" (dead-man switch).
+4. Move the JS task runner to external mode (n8n logs a deprecation for internal mode) before n8n removes it.
+5. Legal review of consent wording and the retention of `WhatsApp Conversations`.

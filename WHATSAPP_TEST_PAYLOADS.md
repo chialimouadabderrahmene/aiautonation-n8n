@@ -1,353 +1,50 @@
-# WhatsApp Funnel Test Payloads
+# WhatsApp webhook — signed test payloads
 
-Use these payloads to test the WhatsApp Lead Funnel workflow without needing a real WhatsApp message.
+Workflow 13 verifies `X-Hub-Signature-256` = `sha256=` + HMAC-SHA256(raw request body, `WHATSAPP_APP_SECRET`). Requests without a valid signature get **401**. Use **dedicated test numbers** (your own, or fictional numbers in staging) — never customer data.
 
----
-
-## Webhook URL
-
-```
-POST https://n8n-production-c3b7.up.railway.app/webhook/whatsapp-webhook
-```
-
-For testing in n8n editor (test mode):
-```
-POST https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook
-```
-
----
-
-## Test 1: New User Says Hello
-
-Simulates a first-time user messaging the bot.
-
-### PowerShell:
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "contacts": [{
-            "profile": { "name": "Mouad Test" },
-            "wa_id": "2348012345678"
-          }],
-          "messages": [{
-            "from": "2348012345678",
-            "id": "wamid.test001",
-            "timestamp": "1716364800",
-            "type": "text",
-            "text": { "body": "Hello" }
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
-```
-
-### curl:
+Set once (bash):
 ```bash
-curl -X POST "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "contacts": [{
-            "profile": { "name": "Mouad Test" },
-            "wa_id": "2348012345678"
-          }],
-          "messages": [{
-            "from": "2348012345678",
-            "id": "wamid.test001",
-            "timestamp": "1716364800",
-            "type": "text",
-            "text": { "body": "Hello" }
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
+N8N="https://<your-n8n-domain>/webhook"      # staging: http://127.0.0.1:5678/webhook
+SECRET="<WHATSAPP_APP_SECRET>"                # staging: staging-app-secret-not-real
 ```
 
-**Expected:** Bot replies asking "Are you a Buyer or Vendor?"
-
----
-
-## Test 2: User Says "Vendor"
-
-Simulates a user identifying as a vendor (high-intent).
-
-### PowerShell:
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "contacts": [{
-            "profile": { "name": "Mouad Test" },
-            "wa_id": "2348012345678"
-          }],
-          "messages": [{
-            "from": "2348012345678",
-            "id": "wamid.test002",
-            "timestamp": "1716364860",
-            "type": "text",
-            "text": { "body": "Vendor" }
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
-```
-
-**Expected:**
-- Bot replies: "Great! You're interested as a Vendor. What's your full name?"
-- Lead saved with `user_type: vendor`, `intent_level: high`
-- Telegram notification sent (high-intent vendor)
-
----
-
-## Test 3: User Says "Buyer"
-
-### PowerShell:
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "contacts": [{
-            "profile": { "name": "Luigi Rossi" },
-            "wa_id": "393331234567"
-          }],
-          "messages": [{
-            "from": "393331234567",
-            "id": "wamid.test003",
-            "timestamp": "1716364920",
-            "type": "text",
-            "text": { "body": "Buyer" }
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
-```
-
-**Expected:**
-- Bot replies: "Great! You're interested as a Buyer. What's your full name?"
-- Lead saved with `user_type: buyer`, `intent_level: medium`
-
----
-
-## Test 4: User Says STOP
-
-### PowerShell:
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "contacts": [{
-            "profile": { "name": "Mouad Test" },
-            "wa_id": "2348012345678"
-          }],
-          "messages": [{
-            "from": "2348012345678",
-            "id": "wamid.test004",
-            "timestamp": "1716365000",
-            "type": "text",
-            "text": { "body": "STOP" }
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
-```
-
-**Expected:**
-- Bot replies: "You have been unsubscribed..."
-- Lead status updated to `unsubscribed`
-- Logged in Automation Logs
-
----
-
-## Test 5: Webhook Verification (GET)
-
-Meta sends this to verify your webhook during setup.
-
-### PowerShell:
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=YOUR_VERIFY_TOKEN&hub.challenge=challenge_string_123" `
-  -Method GET
-```
-
-### curl:
+## 1. Verification handshake (GET)
 ```bash
-curl "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=YOUR_VERIFY_TOKEN&hub.challenge=challenge_string_123"
+curl -s "$N8N/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=<WHATSAPP_VERIFY_TOKEN>&hub.challenge=424242"   # -> 424242
+curl -s -o /dev/null -w "%{http_code}\n" "$N8N/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1"   # -> 403
 ```
 
-**Expected:** Returns `challenge_string_123` with status 200 (if token matches).
-
----
-
-## Test 6: Status Update (Should Be Ignored)
-
-Meta sends status updates (delivered, read) — workflow should ignore these.
-
-### PowerShell:
+## 2. Incoming message (POST, signed)
+```bash
+BODY='{"object":"whatsapp_business_account","entry":[{"id":"1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"15550100000","phone_number_id":"100000000000001"},"contacts":[{"profile":{"name":"QA User"},"wa_id":"15550100999"}],"messages":[{"from":"15550100999","id":"wamid.QA1","timestamp":"1790000000","type":"text","text":{"body":"BUYER"}}]}}]}]}'
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$N8N/whatsapp-webhook" -H "Content-Type: application/json" -H "X-Hub-Signature-256: $SIG" --data-binary "$BODY"    # -> 200
+```
+PowerShell:
 ```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "statuses": [{
-            "id": "wamid.test001",
-            "status": "delivered",
-            "timestamp": "1716364810",
-            "recipient_id": "2348012345678"
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
+$body = '{"object":"whatsapp_business_account","entry":[{"id":"1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","contacts":[{"profile":{"name":"QA User"},"wa_id":"15550100999"}],"messages":[{"from":"15550100999","id":"wamid.QA1","timestamp":"1790000000","type":"text","text":{"body":"BUYER"}}]}}]}]}'
+$bytes = [Text.Encoding]::UTF8.GetBytes($body)
+$h = New-Object Security.Cryptography.HMACSHA256; $h.Key = [Text.Encoding]::UTF8.GetBytes($env:WHATSAPP_APP_SECRET)
+$sig = 'sha256=' + (([BitConverter]::ToString($h.ComputeHash($bytes))) -replace '-','').ToLower()
+Invoke-WebRequest -Uri "$env:N8N/whatsapp-webhook" -Method Post -ContentType 'application/json' -Headers @{ 'X-Hub-Signature-256' = $sig } -Body $bytes
 ```
+Sign **exactly the bytes you send** (no re-formatting). Against the *real* number the reply is a session message and is allowed only within 24 h of the customer's message — for a test number that never wrote to you the send fails with 131047 (expected; the lead is still saved).
 
-**Expected:** Workflow processes but takes no action (no messages array = invalid).
+## 3. Cases to try
+| Body text | Expected |
+|---|---|
+| `hi` | greeting reply, lead row created (`status=new`) |
+| `BUYER` / `VENDOR` | type reply; `opt_in=yes`, `status=lead_captured`; vendor → Telegram high-intent alert |
+| `STOP` | unsubscribe confirmation; row: `status=unsubscribed`, `opt_in=no`, `opt_out_at` set |
+| any text afterwards | **no reply** |
+| `START` | re-subscribed (`status=new`, `opt_in=yes`, `opt_out_at` empty) |
+| signature missing / wrong / body altered after signing | HTTP 401, nothing stored |
+| a `statuses` (delivery receipt) payload | HTTP 200, ignored |
+| text with accents/emoji (e.g. `Ciao è un piacere 🌍`) | processed (signature is over raw UTF-8 bytes) |
 
----
-
-## Test 7: Data Collection (Name/Country)
-
-### PowerShell:
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "object": "whatsapp_business_account",
-    "entry": [{
-      "id": "BUSINESS_ACCOUNT_ID",
-      "changes": [{
-        "value": {
-          "messaging_product": "whatsapp",
-          "metadata": {
-            "display_phone_number": "2348001234567",
-            "phone_number_id": "PHONE_NUMBER_ID"
-          },
-          "contacts": [{
-            "profile": { "name": "Mouad Chiali" },
-            "wa_id": "2348012345678"
-          }],
-          "messages": [{
-            "from": "2348012345678",
-            "id": "wamid.test005",
-            "timestamp": "1716365100",
-            "type": "text",
-            "text": { "body": "My name is Mouad, I am from Morocco" }
-          }]
-        },
-        "field": "messages"
-      }]
-    }]
-  }'
+## 4. Other webhooks (shared secret)
+```bash
+curl -s -X POST "$N8N/lead-capture" -H "Content-Type: application/json" -H "X-Eki-Webhook-Secret: <secret>" \
+  -d '{"name":"QA Lead","phone":"15550100301","email":"qa@example.invalid","source":"manual-test","user_type":"vendor","consent":true}'
 ```
-
-**Expected:**
-- Bot replies with follow-up questions + app download link
-- Conversation step saved as `data_collected`
-
----
-
-## Verification Checklist
-
-After running tests, verify:
-
-- [ ] Google Sheets "Leads" tab has new/updated rows
-- [ ] Google Sheets "WhatsApp Conversations" tab has message logs
-- [ ] Google Sheets "Automation Logs" tab has action entries
-- [ ] Telegram received high-intent notification (Test 2)
-- [ ] STOP test updated lead status to `unsubscribed`
-- [ ] Status update (Test 6) did NOT create any lead or reply
-- [ ] n8n execution log shows successful runs
-
----
-
-## Common Issues
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| Webhook returns 404 | Workflow not active | Toggle workflow ON |
-| Verification fails | Token mismatch | Check `WHATSAPP_VERIFY_TOKEN` matches Meta config |
-| Reply not sent | Invalid access token | Regenerate token in Meta Business Settings |
-| "Message failed to send" | 24-hour window expired | Use message templates for follow-ups |
-| Duplicate processing | Meta retries on timeout | Workflow acknowledges 200 immediately |
-| No Telegram alert | Wrong chat ID | Verify with @userinfobot on Telegram |
+Without the header → 403. `consent:false` (or missing) → lead stored with `opt_in=no`, nothing sent. Full request list per workflow: [docs/testing-checklist.md](docs/testing-checklist.md).

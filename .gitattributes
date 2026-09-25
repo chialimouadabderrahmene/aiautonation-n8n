@@ -1,0 +1,9 @@
+# Keep LF endings: shell scripts run inside Git Bash/Linux containers and JSON files are byte-compared in tests.
+* text=auto
+*.sh text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.csv text eol=lf
+*.pdf binary

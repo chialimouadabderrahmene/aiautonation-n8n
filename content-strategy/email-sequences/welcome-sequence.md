@@ -1,3 +1,5 @@
+> **DRAFT copy - not wired to any workflow.** Links use the canonical domain but the paths (`/dashboard`, `/directory`, `/login`, `/verify`, `/feedback`, `/signup`) are illustrative: replace them with real Eki routes, and verify every claim (e.g. commission offers) before sending. Never put personal data in link query strings.
+
 # Eki Welcome Email Sequence (3-Email Series)
 
 These templates are configured to be sent via the Resend API. The automation workflow will trigger them immediately, 24 hours, and 72 hours after signup.
@@ -50,7 +52,7 @@ These templates are configured to be sent via the Resend API. The automation wor
     <p><strong>Your next step:</strong> Log in to your dashboard to complete your profile verification so you can start trading.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/verify?email={{email}}" class="button" target="_blank">Complete Profile Setup</a>
+      <a href="https://culinarytales.app/verify" class="button" target="_blank">Complete Profile Setup</a>
     </div>
     
     <p>Welcome aboard,</p>
@@ -109,7 +111,7 @@ These templates are configured to be sent via the Resend API. The automation wor
     <p>No scams. No stress. You can now focus entirely on sourcing quality foodstuff and growing your business.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/dashboard" class="button" target="_blank">Access Your Dashboard</a>
+      <a href="https://culinarytales.app/dashboard" class="button" target="_blank">Access Your Dashboard</a>
     </div>
     
     <p>Best regards,</p>
@@ -161,7 +163,7 @@ These templates are configured to be sent via the Resend API. The automation wor
     Browse our verified directory. Filter by country of origin, product type, and exporter rating. You can place direct requests or initiate secure escrow deposits in a few clicks.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/directory" class="button" target="_blank">Start Trading on Eki</a>
+      <a href="https://culinarytales.app/directory" class="button" target="_blank">Start Trading on Eki</a>
     </div>
     
     <p>P.S. Need help with customs regulations or shipping logistics? Contact our support desk directly through the dashboard chat.</p>

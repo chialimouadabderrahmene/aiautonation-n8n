@@ -1,3 +1,5 @@
+> **Review before publishing.** This launch copy was written before the production audit. Statistics and claims in it (e.g. vendor counts, trade volumes, "0% commission", escrow/verification promises) are **not verified by this repository** - get client sign-off on every number and promise before it is posted. Domains/links must come from `APP_DOWNLOAD_LINK`.
+
 # Eki Marketplace Launch — 30-Day Content Calendar
 
 This calendar is divided into three strategic phases:

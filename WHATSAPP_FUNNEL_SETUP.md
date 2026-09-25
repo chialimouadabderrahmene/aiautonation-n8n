@@ -1,221 +1,42 @@
-# WhatsApp Lead Funnel Setup Guide
+# WhatsApp lead funnel — how the workflows fit together
 
-Complete setup guide for the WhatsApp Lead Funnel workflow (13-whatsapp-lead-funnel.json).
+Five workflows share one lead record (`Leads` tab, key `lead_id`). Only the **opted-in** are ever contacted, and only with approved templates (or, inside the 24 h window, a session reply from workflow 13).
 
----
+## Entry points
+| Entry | Workflow | Result on the lead row |
+|---|---|---|
+| Landing page / form POST (`lead-capture`) with `consent:true` | 03 | `status=new`, `opt_in=yes (web_form)`; welcome template `WELCOME_D1` sent immediately (`wa_day=1`) |
+| Form without consent | 03 | `status=new`, `opt_in=no` — saved, never messaged |
+| Waitlist signup (`join-waitlist`) | 04 | waitlist row + email (+ WhatsApp template if consent) — not a `Leads` row |
+| Person messages the WhatsApp number | 13 | row created (`source=whatsapp`); replying `BUYER` / `VENDOR` / `START` sets `opt_in=yes (inbound_whatsapp)`; `BUYER`/`VENDOR` → `status=lead_captured` |
+| Instagram comment (ManyChat) | 17 | `source=instagram`, `opt_in=no` (Instagram comment ≠ WhatsApp consent) |
 
-## Overview
-
-This workflow creates an automated WhatsApp onboarding funnel for Eki using the Meta WhatsApp Cloud API. When someone messages your WhatsApp Business number, the bot:
-
-1. Asks if they're a Buyer or Vendor
-2. Collects name, country, and interest
-3. Saves them as a lead
-4. Sends the app download link
-5. Notifies you on Telegram for high-intent leads
-6. Respects STOP/unsubscribe requests
-
----
-
-## Prerequisites
-
-- Meta Business Account (verified)
-- WhatsApp Business API access
-- A phone number registered with WhatsApp Business
-- n8n instance with public webhook URL (Railway deployment)
-- Google Sheets with required tabs
-- Telegram Bot for notifications
-
----
-
-## Step 1: Meta Developer App Setup
-
-1. Go to [developers.facebook.com](https://developers.facebook.com).
-2. Click **My Apps** → **Create App**.
-3. Select **Business** type → Next.
-4. Name it (e.g., "Eki WhatsApp Bot") → Select your Business Account.
-5. On the app dashboard, click **Add Product** → **WhatsApp** → **Set Up**.
-
----
-
-## Step 2: WhatsApp Business API Configuration
-
-### Get your credentials:
-
-1. In the Meta App Dashboard → **WhatsApp** → **API Setup**.
-2. Note these values:
-   - **Phone Number ID** → `WHATSAPP_PHONE_NUMBER_ID`
-   - **Temporary Access Token** → `WHATSAPP_ACCESS_TOKEN` (for testing)
-3. For production, generate a **Permanent Token**:
-   - Go to **Business Settings** → **System Users**.
-   - Create a system user with `whatsapp_business_messaging` permission.
-   - Generate a token → this is your permanent `WHATSAPP_ACCESS_TOKEN`.
-
-### Register your phone number:
-
-1. In **WhatsApp** → **API Setup** → **Add Phone Number**.
-2. Verify via SMS or voice call.
-3. The verified number's ID becomes your `WHATSAPP_PHONE_NUMBER_ID`.
-
----
-
-## Step 3: Webhook Configuration
-
-### Your webhook URL:
-
+## Lifecycle
 ```
-https://n8n-production-c3b7.up.railway.app/webhook/whatsapp-webhook
+new ──05 (welcome D1→D2→D3)──▶ nurturing ──06 (re-engage 7/14/21 days)──▶ churned
+lead_captured ──19 (vendor 1/2/3/7/14 · buyer 1/3/5)──▶ nurturing
+any ──STOP──▶ unsubscribed (terminal; START re-subscribes)      converted (set by a human) = never messaged
 ```
+Any inbound WhatsApp message sets `last_message`, resets `reengage_step` and revives a `churned` lead to `nurturing`.
 
-### Configure in Meta:
+## Conversation logic in workflow 13 (session replies only)
+| Incoming text | Reply | Lead update |
+|---|---|---|
+| `hi`, `hello`, `ciao`, `hey`, `start` | greeting: Eki is a marketplace connecting African foodstuff vendors with buyers worldwide — "Buyer or Vendor?" | `START` also opts in |
+| contains `buyer`, `buy`, `acquirente`, `comprare`, `customer`, `shopping` | asks for full name and country | `user_type=buyer`, `intent=medium`, opt-in, `lead_captured` |
+| contains `vendor`, `sell`, `venditore`, `vendere`, `seller`, `business`, `shop owner` | asks for name, country and what they sell | `user_type=vendor`, `intent=high`, opt-in, `lead_captured`, **Telegram high-intent alert** |
+| anything else | "Thanks for the info! A member of the Eki team will follow up." (+ app link) | `intent` raised to medium |
+| `stop`, `unsubscribe`, `quit`, `cancel`, `opt out`, `optout`, `basta`, `stop all` | confirmation; **no further messages** | `status=unsubscribed`, `opt_in=no`, `opt_out_at` |
+| any text from an unsubscribed lead (except `START`) | **no reply** | last_message only |
 
-1. Go to **WhatsApp** → **Configuration** → **Webhook**.
-2. Click **Edit** (or **Subscribe**).
-3. Enter:
-   - **Callback URL**: `https://n8n-production-c3b7.up.railway.app/webhook/whatsapp-webhook`
-   - **Verify Token**: Your `WHATSAPP_VERIFY_TOKEN` value (any string you choose)
-4. Click **Verify and Save**.
-5. Subscribe to webhook fields:
-   - ✅ `messages`
-   - ✅ `messaging_postbacks` (optional)
+Every reply also ends with "Reply STOP anytime to opt out." Each processed message appends a row to `WhatsApp Conversations` and `Automation Logs`.
 
-### Important:
-- The n8n workflow must be **ACTIVE** before you verify the webhook.
-- The GET webhook handler responds to Meta's verification challenge automatically.
+## Setup order
+1. Sheet + credentials + variables ([docs/setup-instructions.md](docs/setup-instructions.md)).
+2. Meta app, webhook, app secret ([WHATSAPP_CLOUD_API_SETUP.md](WHATSAPP_CLOUD_API_SETUP.md)).
+3. Templates approved ([docs/whatsapp-templates.md](docs/whatsapp-templates.md)) → `WA_TPL_*`.
+4. Publish 13, then 03/04, then the schedules 05, 06, 19 (each stays inert until its templates are configured).
+5. Watch the 08:00 controller report on Telegram: it lists missing templates and the opted-in / unsubscribed counts.
 
----
-
-## Step 4: Environment Variables
-
-Add these to your Railway n8n service:
-
-```env
-# WhatsApp Cloud API
-WHATSAPP_ACCESS_TOKEN=EAAxxxxxxx...        # Permanent system user token
-WHATSAPP_PHONE_NUMBER_ID=1234567890        # From API Setup page
-WHATSAPP_VERIFY_TOKEN=my-secret-verify-123 # Any string you choose
-WHATSAPP_APP_SECRET=abcdef123456           # App Settings → Basic → App Secret
-
-# App link sent to users
-APP_DOWNLOAD_LINK=https://eki.app/download
-
-# Telegram notifications
-TELEGRAM_CHAT_ID=your-chat-id
-```
-
----
-
-## Step 5: Google Sheets Setup
-
-### Tab: Leads
-
-Required columns:
-```
-phone | name | country | user_type | interest | intent_level | source | status | first_contact | last_message
-```
-
-### Tab: WhatsApp Conversations
-
-Required columns:
-```
-timestamp | phone | direction | message_text | reply_sent | conversation_step | user_type | intent_level
-```
-
-### Tab: Automation Logs
-
-Required columns:
-```
-timestamp | workflow | action | platform | status | phone | conversation_step | error | details
-```
-
----
-
-## Step 6: Import & Activate Workflow
-
-1. Open n8n → **Workflows** → **Import from File**.
-2. Select `n8n-workflows/13-whatsapp-lead-funnel.json`.
-3. Link credentials:
-   - All Google Sheets nodes → your Google Sheets OAuth2 credential
-   - Telegram node → your Telegram Bot credential
-4. Update the `documentId` in all Google Sheets nodes to your spreadsheet ID.
-5. **Activate the workflow** (toggle ON) — required before Meta webhook verification.
-6. Go back to Meta and verify the webhook.
-
----
-
-## Step 7: Test the Integration
-
-### Quick test from Meta:
-
-1. In Meta App Dashboard → **WhatsApp** → **API Setup**.
-2. Use the **Send Test Message** feature to send a message TO your bot number.
-3. Or message your WhatsApp Business number from any personal WhatsApp.
-
-### Test with curl (simulating Meta webhook):
-
-See `WHATSAPP_TEST_PAYLOADS.md` for full test payloads.
-
----
-
-## Safety & Compliance Rules
-
-| Rule | Implementation |
-|------|---------------|
-| Only reply to opt-in users | Bot only responds to incoming messages |
-| No cold messaging | No outbound initiation without user message first |
-| Respect STOP | STOP/unsubscribe/quit immediately halts messaging |
-| No spam | One reply per incoming message, no loops |
-| Token security | Token stored in env vars, never in workflow JSON |
-| 24-hour window | WhatsApp requires template messages after 24h (handled by follow-up logic) |
-
----
-
-## Architecture
-
-```
-[User sends WhatsApp message]
-         │
-         ▼
-[Meta Cloud API Webhook] ──► POST to n8n
-         │
-         ▼
-[Parse Message] → [Valid?] → No → (ignore)
-         │
-        Yes
-         │
-         ▼
-[Check STOP] ──► Yes → [Confirm + Unsubscribe + Log]
-         │
-        No
-         │
-         ▼
-[Conversation Router]
-  - greeting → ask Buyer/Vendor
-  - type_collected → ask name
-  - data_collected → send app link
-         │
-         ▼
-[Send WhatsApp Reply via Cloud API]
-         │
-         ▼
-[Save Lead to Sheets] → [Save Conversation]
-         │
-         ▼
-[High Intent?] ──► Yes → [Telegram Alert]
-         │
-         ▼
-[Log to Automation Logs]
-```
-
----
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Webhook verification fails | Ensure workflow is ACTIVE and `WHATSAPP_VERIFY_TOKEN` matches |
-| Messages not received | Check Meta webhook subscriptions (must include `messages`) |
-| Reply not sent | Verify `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` |
-| 24-hour window expired | Use approved message templates for follow-ups |
-| Duplicate messages | Meta may retry; workflow handles idempotently via phone key |
-| Token expired | Regenerate permanent token from System User |
+## Guarantees checked in staging
+Unsubscribed, opted-out, non-opted-in and terminal-status leads are never selected by 05/06/19 even when every other eligibility rule is satisfied; a persistent failure for one lead never re-sends the others; free-form text is never sent to a number that has not written within 24 h (the mock rejects it with 131047 and the suite asserts zero violations).

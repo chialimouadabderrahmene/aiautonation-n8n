@@ -1,3 +1,5 @@
+> **DRAFT copy - not wired to any workflow.** Links use the canonical domain but the paths (`/dashboard`, `/directory`, `/login`, `/verify`, `/feedback`, `/signup`) are illustrative: replace them with real Eki routes, and verify every claim (e.g. commission offers) before sending. Never put personal data in link query strings.
+
 # Eki App Store Review Request Email Template
 
 This email is triggered by the feedback workflow when a user submits a positive rating (4 or 5 stars). It asks for an honest review on public app stores.

@@ -1,98 +1,50 @@
-# Eki Marketplace Launch Automation System
+# Eki Launch Automation (n8n)
 
-Eki is a digital marketplace connecting African foodstuff vendors with global buyers. 
+Eki is a digital marketplace connecting African foodstuff vendors with buyers worldwide (public site / app: `https://culinarytales.app`). This repository is the **n8n acquisition and lead-nurture automation** around it: content generation with human approval, lead capture, WhatsApp funnels (template-compliant), waitlist/referrals, feedback, reporting and social-post preparation.
 
-This repository contains the end-to-end **n8n AI-powered acquisition machine** — 22 automated workflows that research, create, distribute, and optimize organic content while funneling all leads through WhatsApp for conversion.
+> **Status:** all 22 workflow files import and execute in a **local staging n8n 2.40.7 against a mock of every external provider** (see [docs/staging-test-report.md](docs/staging-test-report.md)). That proves the logic, wiring, security checks and failure handling. It does **not** prove that Meta, Google, Resend, Telegram, Buffer/X, Apify or ManyChat accept the requests — those need real accounts. The go-live gates are in [docs/production-readiness-report.md](docs/production-readiness-report.md). **Do not call this production-ready until they are closed.**
+>
+> The Eki app itself (backend, mobile, admin) lives in sibling folders and has its own automations (push / in-app lifecycle messages) documented in [docs/business-flows.md](docs/business-flows.md) §B; it does not use n8n.
 
----
-
-## 📂 Project Structure
+## Repository layout
 
 ```
-ai automation italy/
-├── n8n-workflows/                 # 22 Importable JSON n8n workflows
-│   ├── 01-ai-content-generation.json
-│   ├── 02-content-approval.json
-│   ├── 03-lead-capture-webhook.json
-│   ├── 04-waitlist-management.json
-│   ├── 05-whatsapp-welcome-sequence.json
-│   ├── 06-whatsapp-engagement-followup.json
-│   ├── 07-referral-campaign.json
-│   ├── 08-feedback-collection.json
-│   ├── 09-weekly-analytics-report.json
-│   ├── 10-social-post-scheduler.json
-│   ├── 12-ai-social-autopilot.json
-│   ├── 13-whatsapp-lead-funnel.json
-│   ├── 14-autopilot-controller.json
-│   ├── 15-viral-intelligence-engine.json
-│   ├── 16-pain-discovery-engine.json
-│   ├── 17-manychat-comment-funnel.json
-│   ├── 18-content-multiplication-engine.json
-│   ├── 19-whatsapp-nurture-sequences.json
-│   ├── 20-ab-testing-engine.json
-│   ├── 21-social-proof-engine.json
-│   └── 22-performance-analyst-agent.json
-├── content-strategy/              # Pre-seeded launch copy and calendar content
-│   ├── 30-day-content-calendar.md # Complete daily post schedules with copy
-│   ├── content-pillars.md         # Video script formats, hooks, pillars definitions
-│   ├── launch-announcement-sequence.md # Announcement sequence T-7 to T+3
-│   └── email-sequences/           # HTML-styled onboarding, follow-up, referral, feedback emails
-│       ├── welcome-sequence.md
-│       ├── follow-up-sequence.md
-│       ├── referral-invitation.md
-│       ├── feedback-request.md
-│       └── app-review-request.md
-├── schemas/                       # Database structures
-│   ├── google-sheets-schema.md    # Specifications for 6 database tabs (Primary)
-│   └── airtable-schema.md         # Alternative Airtable schema map
-├── docs/                          # Detailed guides and manuals
-│   ├── setup-instructions.md      # Deployment walkthrough
-│   ├── api-keys-required.md       # Directory of required credentials
-│   ├── workflow-diagram.md        # Mermaid flow charts of data mapping
-│   ├── testing-checklist.md       # Curl/PowerShell test payloads
-│   └── handover-document.md       # Operational log & recommendations
-└── README.md                      # Main project guide
+n8n-workflows/        22 importable workflows: 00 global error handler + 01-10, 12-22 (there is NO workflow 11)
+schemas/              google-sheets-schema.md (16 tabs) + sheet-columns.json (machine-readable) + legacy Airtable note
+sheet-templates/      header-only CSVs for every tab (import into the Google Sheet)
+docs/                 setup, env vars, WhatsApp templates, business flows, testing, staging report, readiness report
+staging/              local staging stack: docker-compose (n8n 2.40.7 + provider mock), test harness and 9 test suites
+tools/                validate-workflows.js (static checks), node catalog builder, sheet-template generator
+content-strategy/     launch copy: 30-day calendar, pillars, announcement sequence, email copy drafts (not wired to workflows)
+.env.railway.example  every environment variable the workflows read
 ```
 
----
+## Quick start — staging (needs Docker + Node 20+)
 
-## ⚡ Quick Start
+```bash
+bash staging/scripts/up.sh                 # fresh n8n + mock, imports credentials and all 22 workflows
+node staging/run-tests.js                  # suites t1-t4 (workflows 00-22)
+bash staging/scripts/stage.sh posting-on && node staging/run-tests.js t5   # guarded social-posting branch
+bash staging/scripts/stage.sh stop-on    && node staging/run-tests.js t6   # AUTOPILOT_STOP kill switch
+bash staging/scripts/stage.sh default    && node staging/run-tests.js t9   # real schedule triggers + activation
+node tools/validate-workflows.js           # static validation (no Docker needed)
+```
+Staging uses only dummy data (`staging/staging.env`, `.invalid` emails, fictional +1-555-01xx numbers). Nothing reaches the internet.
 
-### 1. Database Setup
-1. Create a Google Sheet named `Eki Launch Database` with six tabs: `Leads`, `Waitlist`, `Content Calendar`, `Content Drafts`, `Feedback`, and `Analytics`.
-2. Add column headers to each tab as detailed in the [Google Sheets Schema](file:///c:/Users/PC SOFT/Desktop/ai automation italy/schemas/google-sheets-schema.md).
+## Quick start — production
+1. Follow [docs/setup-instructions.md](docs/setup-instructions.md) (Google Sheet from `sheet-templates/`, Telegram bot, Meta WhatsApp, Resend, AI key, Railway).
+2. Fill the variables in [.env.railway.example](.env.railway.example) — reference: [docs/env-vars.md](docs/env-vars.md).
+3. Create the WhatsApp templates ([docs/whatsapp-templates.md](docs/whatsapp-templates.md)) — until they are approved, leave `WA_TPL_*` empty: nothing is sent to cold leads.
+4. Import with the CLI so workflow/credential ids are preserved: `n8n import:credentials …` then `n8n import:workflow --separate --input=n8n-workflows`.
+5. Publish **00 (error handler) first**, then the webhook workflows, then the scheduled ones — one at a time, watching Telegram. Keep `AUTOPILOT_SOCIAL_POSTING=false` until a full week of human-reviewed output has passed.
 
-### 2. Infrastructure Setup
-1. Deploy your n8n instance and set the timezone parameter to `Africa/Lagos`.
-2. Generate API credentials for **WhatsApp Cloud API**, **OpenAI** (post drafting), and **Telegram Bot** (approvals/alerts). Get your required credentials ready using the [API Keys Required Guide](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/api-keys-required.md).
+## Documentation
+- [Setup instructions](docs/setup-instructions.md) · [API keys & credentials](docs/api-keys-required.md) · [Environment variables](docs/env-vars.md)
+- [Railway deployment](RAILWAY_N8N_DEPLOYMENT.md) · [WhatsApp Cloud API setup](WHATSAPP_CLOUD_API_SETUP.md) · [WhatsApp templates](docs/whatsapp-templates.md) · [WhatsApp funnel](WHATSAPP_FUNNEL_SETUP.md) · [WhatsApp test payloads](WHATSAPP_TEST_PAYLOADS.md)
+- [Business flows (trigger → outcome)](docs/business-flows.md) · [Workflow diagrams](docs/workflow-diagram.md)
+- [Testing checklist](docs/testing-checklist.md) · [Staging test report](docs/staging-test-report.md) · [Production readiness report](docs/production-readiness-report.md)
+- [Autopilot controller](AUTOPILOT_CONTROLLER_GUIDE.md) · [Autopilot testing](AUTOPILOT_TESTING_GUIDE.md) · [Social autopilot rollout](SOCIAL_AUTOPILOT_TESTING.md) · [Buffer setup](BUFFER_SETUP.md) · [Sheets template](GOOGLE_SHEETS_TEMPLATE.md)
+- [Handover document](docs/handover-document.md) · [Setup checklist](SETUP_TODO.md)
 
-### 3. Workflow Deployment
-1. Import all 22 workflow JSON files from `n8n-workflows/` into n8n.
-2. In each workflow, configure the corresponding credentials and substitute the placeholder strings (e.g. `EKI_SPREADSHEET_ID_PLACEHOLDER`, `WHATSAPP_ACCESS_TOKEN`, `YOUR_TELEGRAM_CHAT_ID`) with your active keys and URLs.
-3. Turn on the workflows (switch to Active).
-
-### 4. Integration & Testing
-1. Configure webhooks from your landing page form, waitlist page, and feedback surveys (Tally/Typeform) to point to n8n's webhook URL.
-2. Simulate registration payloads using the [Testing Checklist](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/testing-checklist.md) to verify that leads populate the sheet, WhatsApp welcome messages send, and Telegram notifications trigger correctly.
-
----
-
-## 🛠️ Technology Stack
-
-*   **Automation Platform:** [n8n](https://n8n.io/)
-*   **Database / Storage:** [Google Sheets](https://www.google.com/sheets/about/) (Airtable schema provided as alternative)
-*   **AI Translation / Drafting:** [OpenAI API (GPT-4o)](https://openai.com/)
-*   **WhatsApp Cloud API:** [Meta WhatsApp API](https://developers.facebook.com/)
-*   **Lead Conversion:** ManyChat + WhatsApp Cloud API
-*   **Notifications / Manual Approvals:** [Telegram Bot API](https://core.telegram.org/bots)
-*   **Social Schedulers:** [Twitter/X API](https://developer.twitter.com/) & [Buffer API](https://buffer.com/)
-
----
-
-## 📘 Documentation Directory
-
-- For detailed deployment steps: [Setup Instructions](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/setup-instructions.md)
-- For API key formats and links: [API Keys Required](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/api-keys-required.md)
-- For system diagrams and flows: [n8n Workflow Diagrams](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/workflow-diagram.md)
-- For testing procedures and commands: [Testing Checklist](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/testing-checklist.md)
-- For general handover & future milestones: [Handover Document](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/handover-document.md)
+## Technology
+n8n 2.40.7 (pinned) · Google Sheets (data) · one OpenAI-compatible AI endpoint (Groq default, OpenAI supported via `AI_API_BASE_URL`) · WhatsApp Cloud API (templates + session replies) · Resend (email) · Telegram (approvals, alerts, error workflow) · ManyChat (Instagram comment → DM reply) · Buffer / X API (optional, off by default) · Apify (optional trend data).

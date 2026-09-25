@@ -1,136 +1,59 @@
-# Setup Instructions — Eki Automation System
+# Setup instructions — Eki n8n automation
 
-This document provides step-by-step instructions to deploy, configure, and connect the end-to-end launch automation system for **Eki** (connecting African foodstuff vendors, exporters, and international buyers).
+End-to-end runbook for a fresh production (or shared staging) deployment. Items marked **EXTERNAL DEPENDENCY** need an account/approval that this repo cannot create. Rehearse everything locally first with [`staging/`](../staging) (see [testing-checklist.md](testing-checklist.md)).
 
----
+## 0. Prerequisites
+Google account · Telegram account · verified Meta Business account with a WhatsApp Business number (EXTERNAL) · Resend account with a verified domain (EXTERNAL) · Groq or OpenAI API key · Railway account (or any host for `docker.n8n.io/n8nio/n8n:2.40.7` + PostgreSQL) · optional: ManyChat Pro, Buffer, Apify.
 
-## Prerequisites
+## 1. Google Sheet
+1. Create the spreadsheet **Eki Launch Database**.
+2. For every file in [`sheet-templates/`](../sheet-templates) import it as a new tab named exactly like the schema ([schemas/google-sheets-schema.md](../schemas/google-sheets-schema.md)): `Leads, Waitlist, Referrals, Content Calendar, Content Drafts, Feedback, Analytics, Agent Reports, Intelligence, PainPoints, ContentQueue, SocialProof, Social Posts, Automation Logs, WhatsApp Conversations, PublishedContent`.
+3. Fill `Content Calendar` days 1-30 from `content-strategy/30-day-content-calendar.md` (review claims/statistics before use).
+4. Copy the spreadsheet id from the URL into `GOOGLE_SHEETS_ID`.
 
-Before starting, ensure you have:
-1. An **n8n** instance (self-hosted Docker, n8n Cloud, or desktop app).
-2. A **Google Account** (for Google Sheets database).
-3. A **Telegram** account (for team alerts and manual approvals).
-4. A **WhatsApp Business API** account (WATI or 360dialog) — all lead communication goes through WhatsApp.
-5. An **OpenAI API Key** (for AI content generation and analysis).
-6. A **ManyChat Pro** account ($15-45/mo) — for Instagram comment-to-DM automation.
-7. An **Apify** account ($45/mo) — for social media scraping (trend intelligence).
-8. Optional: **Buffer API Token** (for automated social media scheduling).
+## 2. Telegram
+1. @BotFather → `/newbot` → token → n8n credential **Eki Telegram Bot**.
+2. Add the bot to the team group; send a message; open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the group's `chat.id` (negative number) into `TELEGRAM_CHAT_ID`.
+3. After workflow 02 is published, register the bot webhook **with a secret token** so only Telegram can call it:
+   `https://api.telegram.org/bot<TOKEN>/setWebhook?url=<N8N_WEBHOOK_URL>webhook/content-approval&secret_token=<TELEGRAM_WEBHOOK_SECRET>`
+   and create the n8n credential **Eki Telegram Webhook Secret** (Header Auth, name `X-Telegram-Bot-Api-Secret-Token`, value = that secret).
 
----
+## 3. WhatsApp Cloud API (EXTERNAL DEPENDENCY)
+Follow [WHATSAPP_CLOUD_API_SETUP.md](../WHATSAPP_CLOUD_API_SETUP.md): credentials, webhook (with signature verification), and the **15 message templates** in [whatsapp-templates.md](whatsapp-templates.md). Until templates are approved leave `WA_TPL_*` empty.
 
-## Step 1: Set Up Google Sheets Database
+## 4. Email (Resend)
+Verify your domain; set `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `TEAM_EMAIL`.
 
-1. Open Google Sheets and create a new spreadsheet named `Eki Launch Database`.
-2. Create **six (6) tabs** with the exact names below. Add the headers in row 1 of each tab:
+## 5. AI provider
+Set `AI_API_KEY` (and `AI_API_BASE_URL` / `AI_MODEL` unless you use the Groq defaults).
 
-### 1. `Leads`
-*Used to track landing page and sign-up leads.*
-- **Headers:** `email`, `name`, `source`, `intent_level`, `status`, `referral_code`, `signup_date`, `last_contacted`, `feedback_requested_date`, `feedback_received_date`, `last_feedback_rating`, `notes`
+## 6. ManyChat (optional, EXTERNAL DEPENDENCY)
+Connect the Instagram business accounts; build the comment automation (keywords `VENDOR`, `SELL`, `INFO`, `JOIN`, `BUY`) with an **External Request** to `<N8N_WEBHOOK_URL>webhook/manychat-comment`, header `X-Eki-Webhook-Secret: <secret>`, body `{"name":"{{first_name}}","username":"{{ig_username}}","keyword":"{{last_input_text}}"}`, and let ManyChat send the response as the DM (workflow 17 answers in ManyChat's v2 dynamic-block format).
 
-### 2. `Waitlist`
-*Tracks users queued up for early access prior to public launch.*
-- **Headers:** `email`, `name`, `position`, `referral_code`, `referrals_count`, `user_type`, `signup_date`
+## 7. Deploy n8n
+Follow [RAILWAY_N8N_DEPLOYMENT.md](../RAILWAY_N8N_DEPLOYMENT.md). Set every variable from [`.env.railway.example`](../.env.railway.example), including `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`.
 
-### 3. `Content Calendar`
-*Pre-populated list of content ideas, hooks, and strategy pillars (mapped to the 30-Day Content Calendar).*
-- **Headers:** `day`, `platform`, `pillar`, `topic`, `hook`, `caption`, `hashtags`, `video_script`, `status`, `target_date`
+## 8. n8n credentials
+Create these **with the exact names** (workflow files reference them by id/name — [env-vars.md](env-vars.md#n8n-credentials-created-inside-n8n-not-env-vars)): `Eki Google Sheets`, `Eki Telegram Bot`, `Eki Webhook Shared Secret`, `Eki Telegram Webhook Secret`, and (only if posting to X) `Eki Twitter X OAuth2`.
+Preferred: import a credentials file with the CLI so the ids match (`n8n import:credentials --input=credentials.json`; see `staging/credentials.staging.json` for the exact shape — never commit real values). After a UI-only setup, open each workflow and re-select the credential on every node that shows a warning.
 
-### 4. `Content Drafts`
-*Generated post drafts awaiting review, edit, approval, or publishing.*
-- **Headers:** `date`, `platform`, `caption`, `hashtags`, `video_script`, `status`, `created_date`, `approved_by`, `approved_date`, `publish_date`, `publish_time`, `row_number`, `published`
+## 9. Import workflows (keeps ids, so the Error Workflow link works)
+```bash
+n8n import:workflow --separate --input=n8n-workflows
+```
+(Importing through the UI creates new ids: then open each workflow → Settings → **Error Workflow** and select "Eki - 00 Global Error Handler".)
 
-### 5. `Feedback`
-*Tracks client/vendor ratings and survey comments.*
-- **Headers:** `email`, `rating`, `comments`, `would_recommend`, `timestamp`, `rating_category`
+## 10. Publish in this order — watching Telegram after each step
+1. **00 Global Error Handler** (must be active for n8n to call it).
+2. Webhook workflows: 02, 03, 04, 07, 08, 13, 17, 18, 21. Register the Telegram and Meta webhooks only after their workflow is active. Point your landing page / forms / backend at the production URLs with the `X-Eki-Webhook-Secret` header.
+3. Scheduled workflows: 14, 09, 22, 01, 05, 06, 19, 10, 12, 15, 16, 20. Each also has a **Manual Run** trigger for on-demand runs from the editor.
+4. Keep `AUTOPILOT_SOCIAL_POSTING=false`.
 
-### 6. `Analytics`
-*Stores weekly snapshots of system growth and KPIs.*
-- **Headers:** `report_date`, `week_start`, `total_leads`, `new_leads`, `conversion_rate`, `content_published`, `avg_feedback_rating`, `waitlist_size`, `total_referrals`, `wow_growth`
+## 11. Smoke test (real accounts, dedicated test data)
+See [testing-checklist.md](testing-checklist.md) §3. Use your own phone number and a `.test` email; delete the test rows afterwards. Expect: lead appears in `Leads`, Telegram shows the alert, and a WhatsApp **template** arrives only when the template is approved and `consent:true` was sent.
 
-*Note: Copy the full URL of your spreadsheet. You will need it as `EKI_SPREADSHEET_ID_PLACEHOLDER` or sheet URL in the workflows.*
-
----
-
-## Step 2: Configure Telegram Bot
-
-1. Open Telegram and search for [@BotFather](https://t.me/BotFather).
-2. Send `/newbot` and follow instructions to create a bot named `Eki Launch Assistant`.
-3. Save the **HTTP API Token** (e.g. `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`).
-4. To get your team Chat ID:
-   - Create a group in Telegram containing your team members and the bot.
-   - Send a message in the group: `test`.
-   - Open your browser and go to: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
-   - Find the chat object in the JSON output and copy the `id` (usually a negative number starting with `-100`, e.g. `-100123456789`). This is your `YOUR_TELEGRAM_CHAT_ID`.
-
----
-
-## Step 3: Setup WhatsApp Cloud API
-
-1. Go to [Meta Developers](https://developers.facebook.com) and create a Business app.
-2. Add the **WhatsApp** product and get your **Phone Number ID** from API Setup.
-3. Generate a **Permanent Access Token** via Business Settings → System Users.
-4. Set these env vars in Railway/n8n:
-   - `WHATSAPP_ACCESS_TOKEN` — your permanent token
-   - `WHATSAPP_PHONE_NUMBER_ID` — from API Setup page
-   - `WHATSAPP_VERIFY_TOKEN` — any secret string for webhook verification
-5. Configure the webhook in Meta dashboard to point to: `https://your-n8n-domain.com/webhook/whatsapp-webhook`
-
-> **IMPORTANT**: All lead communication goes through WhatsApp. No email is used for nurture sequences.
-
-For detailed WhatsApp setup, see [WHATSAPP_CLOUD_API_SETUP.md](../WHATSAPP_CLOUD_API_SETUP.md).
-
----
-
-## Step 4: Setup ManyChat (Comment Funnel)
-
-1. Subscribe to [ManyChat Pro](https://manychat.com) ($15-45/mo for Instagram).
-2. Connect your Instagram Business accounts (@eki.vendors, @eki.buyers, @eki.market).
-3. Set up the **Comment Funnel** automation:
-   - Trigger: User comments keyword (VENDOR/SELL/BUY/INFO/JOIN)
-   - Action: Send auto-DM with WhatsApp link
-4. Configure ManyChat to POST webhook data to: `https://your-n8n-domain.com/webhook/manychat-comment`
-
-> The ManyChat webhook triggers Workflow 17 which routes keywords to the correct WhatsApp journey.
-
----
-
-## Step 5: Import Workflows into n8n
-
-For each of the 22 JSON files in `n8n-workflows/`:
-1. In n8n, click **Workflows** > **Add Workflow** > **Create from scratch**.
-2. Click the top-right menu (three dots) and select **Import from File**.
-3. Choose the appropriate `.json` file from `n8n-workflows/`.
-4. Replace placeholder parameters in the nodes:
-   - **Google Sheet ID**: Set via `GOOGLE_SHEETS_ID` env var.
-   - **Credentials**: Set up OAuth for Google Sheets and OpenAI API.
-   - **Telegram Credentials**: Create a Telegram Bot credential in n8n with your Bot Token.
-   - **WhatsApp API**: The workflows use `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` env vars automatically.
-5. Click **Save** and click the toggle to **Active** (for webhook and cron triggers).
-
----
-
-## Step 6: Connect Forms and Webhooks
-
-To receive lead and waitlist signups automatically:
-1. In n8n, open workflow `03-lead-capture-webhook` and click the **Webhook Trigger** node.
-2. Copy the **Production Webhook URL**.
-3. In your landing page software, Typeform, or Tally, configure webhook integrations to POST data to that URL.
-4. Ensure the JSON payload matches expected properties:
-   - Phone: `phone` (primary identifier — all leads need a phone for WhatsApp)
-   - Name: `name`
-   - Source: `source`
-   - User Type: `user_type` (vendor/buyer)
-5. Repeat for ManyChat webhook pointing to Workflow 17 (`manychat-comment` path).
-
----
-
-## Step 7: Verify and Run a Test
-
-1. Add a dummy content row to your `Content Calendar` sheet.
-2. Manually trigger the `01-ai-content-generation` workflow by clicking "Test step" on the trigger.
-3. Check if a Telegram message is sent requesting approval.
-4. Click `/approve` to confirm.
-5. Simulate a lead: POST to the lead-capture webhook with a phone number → verify WhatsApp welcome message arrives.
-6. Check the new `Intelligence`, `PainPoints`, `ContentQueue`, and `SocialProof` sheets are being populated by the new workflows.
-
-For granular testing procedures, see the [Testing Checklist](file:///c:/Users/PC SOFT/Desktop/ai automation italy/docs/testing-checklist.md).
+## 12. Operations
+- Daily: read the 08:00 controller report on Telegram (config health, opted-in/unsubscribed counts, missing templates).
+- Watch for `n8n workflow error` alerts (workflow 00) — they contain workflow, node and message only.
+- Kill switch: `AUTOPILOT_STOP=true` (restart n8n) halts social generation/posting (10, 12) — customer WhatsApp sequences are governed by their templates and opt-out state, not by this switch: to stop them, unpublish 05/06/19.
+- Backups: Railway Postgres backups + an export of the workflows (`n8n export:workflow --backup --output=backup/`); keep `N8N_ENCRYPTION_KEY` in a vault.

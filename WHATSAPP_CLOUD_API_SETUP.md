@@ -1,212 +1,61 @@
-# WhatsApp Cloud API Setup
+# WhatsApp Cloud API setup (EXTERNAL DEPENDENCY)
 
-## Overview
+The automation uses Meta's WhatsApp Cloud API for two different things — keep them apart:
 
-The WhatsApp Lead Funnel (workflow 13) uses Meta's WhatsApp Cloud API to receive and send messages for lead onboarding.
+| Message kind | Allowed when | Used by | Format |
+|---|---|---|---|
+| **Session reply** (free-form text) | within 24 h after the *customer* last wrote to you | workflow 13 (replies) | `type: text` |
+| **Business-initiated** (welcome after a form, nurture, re-engagement, waitlist confirmation) | any time, but **only** with an approved template and the person's opt-in | workflows 03, 04, 05, 06, 19 | `type: template` |
 
----
+`tools/validate-workflows.js` fails if any workflow other than 13 builds free-form WhatsApp text. Templates: [docs/whatsapp-templates.md](docs/whatsapp-templates.md).
 
-## Environment Variables
+## Variables (Railway → n8n service)
+`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_GRAPH_VERSION` (default `v23.0` — check Meta's changelog for supported versions), `WA_TEMPLATE_LANG`, `WA_MAX_PER_RUN`, `WA_TPL_*`, `APP_DOWNLOAD_LINK`, `APP_VENDOR_LINK`. See [docs/env-vars.md](docs/env-vars.md).
 
-```env
-WHATSAPP_ACCESS_TOKEN=your-permanent-system-user-token
-WHATSAPP_PHONE_NUMBER_ID=your-phone-number-id
-WHATSAPP_VERIFY_TOKEN=any-secret-string-you-choose
-WHATSAPP_APP_SECRET=your-app-secret-for-hmac
-APP_DOWNLOAD_LINK=https://eki.app/download
-```
+## Step 1 — Meta app
+developers.facebook.com → My Apps → Create App → **Business** → add the **WhatsApp** product. You need a **verified Meta Business account** and a phone number registered with WhatsApp Business (not already used in the consumer app).
 
-Set these in Railway → n8n service → Variables tab.
+## Step 2 — credentials
+- **Phone number id**: WhatsApp → API Setup.
+- **Permanent token**: Business Settings → System users → (Admin) → add the app → permissions `whatsapp_business_messaging`, `whatsapp_business_management` → Generate token. Temporary tokens expire in 24 h.
+- **App secret**: App → Settings → Basic → *App secret*. It signs every webhook call; workflow 13 verifies `X-Hub-Signature-256` (HMAC-SHA256 of the raw body) and answers **401** if it is missing/wrong. If `WHATSAPP_APP_SECRET` is empty, *all* incoming messages are rejected (fail closed).
+- **Verify token**: any random string, same value in Meta and in `WHATSAPP_VERIFY_TOKEN`.
 
----
+## Step 3 — webhook
+1. Publish workflow **13** first (Meta verifies immediately).
+2. WhatsApp → Configuration → Webhook → **Edit**: Callback URL `<N8N_WEBHOOK_URL>webhook/whatsapp-webhook`, Verify token = `WHATSAPP_VERIFY_TOKEN` → Verify and save.
+3. Subscribe to the `messages` field.
+Use the **production** URL (`/webhook/…`), not `/webhook-test/…`.
 
-## Step 1: Meta Developer App
+Verification handshake (GET): Meta calls `…/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=…&hub.challenge=…`; the workflow echoes the challenge only when the token matches, otherwise 403.
 
-1. Go to [developers.facebook.com](https://developers.facebook.com).
-2. **My Apps** → **Create App** → **Business** type.
-3. Name: "Eki WhatsApp Bot" → select your Business Account.
-4. On dashboard → **Add Product** → **WhatsApp** → **Set Up**.
+## Step 4 — templates
+Create and get approved the 15 templates in [docs/whatsapp-templates.md](docs/whatsapp-templates.md), then set the `WA_TPL_*` variables. Until then keep them empty: no business-initiated message is sent.
 
----
+## What the workflows send
+Session reply (13): `POST /{version}/{phone_number_id}/messages` with `{ "messaging_product":"whatsapp", "recipient_type":"individual", "to":"<digits>", "type":"text", "text":{ "preview_url":false, "body":"…" } }`.
+Template (03, 04, 05, 06, 19): see the payload in [docs/whatsapp-templates.md](docs/whatsapp-templates.md).
 
-## Step 2: Get Credentials
-
-### Phone Number ID
-
-1. Meta App Dashboard → **WhatsApp** → **API Setup**.
-2. Under "From" phone number, note the **Phone Number ID**.
-3. This is your `WHATSAPP_PHONE_NUMBER_ID`.
-
-### Access Token (Permanent)
-
-Temporary tokens expire in 24h. For production:
-
-1. Go to **Business Settings** → **System Users**.
-2. Create a system user (Admin role).
-3. Add the WhatsApp app to the system user.
-4. Grant permission: `whatsapp_business_messaging`, `whatsapp_business_management`.
-5. **Generate Token** → select your app → copy token.
-6. This is your permanent `WHATSAPP_ACCESS_TOKEN`.
-
-### App Secret
-
-1. Meta App Dashboard → **Settings** → **Basic**.
-2. Copy **App Secret**.
-3. This is your `WHATSAPP_APP_SECRET` (used for webhook HMAC verification).
-
-### Verify Token
-
-Choose any random string. This is shared between your n8n webhook and Meta's webhook config. Example: `eki-wa-verify-2025`
-
----
-
-## Step 3: Configure Webhook
-
-### Your webhook URL:
-
-```
-https://n8n-production-c3b7.up.railway.app/webhook/whatsapp-webhook
-```
-
-### In Meta Developer Dashboard:
-
-1. **WhatsApp** → **Configuration** → **Webhook**.
-2. Click **Edit** or **Subscribe to Webhook**.
-3. Enter:
-   - **Callback URL**: `https://n8n-production-c3b7.up.railway.app/webhook/whatsapp-webhook`
-   - **Verify Token**: same value as your `WHATSAPP_VERIFY_TOKEN` env var
-4. Click **Verify and Save**.
-5. Subscribe to fields:
-   - ✅ `messages`
-
-### CRITICAL: The n8n workflow MUST be active (toggled ON) before you verify.
-
----
-
-## Step 4: Webhook Verification Flow
-
-When Meta verifies your webhook, it sends:
-
-```
-GET /webhook/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=RANDOM_STRING
-```
-
-The workflow:
-1. Receives the GET request.
-2. Compares `hub.verify_token` with `$env.WHATSAPP_VERIFY_TOKEN`.
-3. If match → returns `hub.challenge` with 200.
-4. If no match → returns 403.
-
----
-
-## Step 5: Message Flow
-
-### Incoming message payload from Meta:
-
-```json
-{
-  "object": "whatsapp_business_account",
-  "entry": [{
-    "id": "BUSINESS_ID",
-    "changes": [{
-      "value": {
-        "messaging_product": "whatsapp",
-        "metadata": { "display_phone_number": "...", "phone_number_id": "..." },
-        "contacts": [{ "profile": { "name": "User Name" }, "wa_id": "PHONE" }],
-        "messages": [{
-          "from": "PHONE_NUMBER",
-          "id": "wamid.xxx",
-          "timestamp": "1716364800",
-          "type": "text",
-          "text": { "body": "Hello" }
-        }]
-      },
-      "field": "messages"
-    }]
-  }]
-}
-```
-
-### Outgoing message format (Send Reply):
-
-```json
-POST https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages
-Authorization: Bearer {ACCESS_TOKEN}
-Content-Type: application/json
-
-{
-  "messaging_product": "whatsapp",
-  "recipient_type": "individual",
-  "to": "RECIPIENT_PHONE",
-  "type": "text",
-  "text": { "preview_url": true, "body": "Your message here" }
-}
-```
-
----
-
-## Safety & Compliance
-
-| Rule | Implementation |
-|------|---------------|
-| Only reply to opt-in users | Bot only responds to incoming messages |
-| No cold messaging | Never initiates conversation |
-| Respect STOP | Immediately stops on STOP/unsubscribe/quit/cancel/basta |
-| 24-hour window | Can only send free-form messages within 24h of last user message |
-| After 24h | Must use approved Message Templates |
-| Token security | Stored in env vars only, never in workflow JSON |
-
----
+## Safety rules implemented
+| Rule | Where |
+|---|---|
+| Only opted-in leads (`opt_in=yes`, no `opt_out_at`) get business-initiated messages | 03, 05, 06, 19 |
+| STOP / unsubscribe / quit / cancel / opt out / optout / basta / stop all → persisted opt-out on the lead row + one confirmation | 13 |
+| An unsubscribed lead who writes again is not answered (unless START) | 13 |
+| No free-form text outside the 24 h window; template missing → blocked + Telegram alert | 03, 04, 05, 06, 19 |
+| Per-lead send loop: a failure never re-sends other leads' messages | 05, 06, 19 |
+| Signature verification, fail closed | 13 |
 
 ## Testing
-
-### Test webhook verification:
-
-```powershell
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook?hub.mode=subscribe&hub.verify_token=YOUR_VERIFY_TOKEN&hub.challenge=test123" `
-  -Method GET
-```
-
-Expected: returns `test123`
-
-### Test incoming message:
-
-```powershell
-$payload = @'
-{
-  "object": "whatsapp_business_account",
-  "entry": [{
-    "id": "BIZ_ID",
-    "changes": [{
-      "value": {
-        "messaging_product": "whatsapp",
-        "metadata": { "display_phone_number": "1234567890", "phone_number_id": "PH_ID" },
-        "contacts": [{ "profile": { "name": "Test User" }, "wa_id": "2348012345678" }],
-        "messages": [{ "from": "2348012345678", "id": "wamid.test1", "timestamp": "1716364800", "type": "text", "text": { "body": "Hello" } }]
-      },
-      "field": "messages"
-    }]
-  }]
-}
-'@
-
-Invoke-RestMethod `
-  -Uri "https://n8n-production-c3b7.up.railway.app/webhook-test/whatsapp-webhook" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body $payload
-```
-
----
+Signed example requests and a step-by-step checklist: [WHATSAPP_TEST_PAYLOADS.md](WHATSAPP_TEST_PAYLOADS.md). Local end-to-end run against a Meta-rule mock: `staging/` (suite t3).
 
 ## Troubleshooting
-
 | Issue | Fix |
-|-------|-----|
-| Webhook verification fails | Ensure workflow is ACTIVE and verify token matches |
-| Messages not arriving | Check Meta webhook subscriptions include `messages` |
-| Reply not sent | Check access token validity and phone number ID |
-| 131030 error | 24-hour window expired, use message templates |
-| 131047 error | Re-register phone number |
-| Rate limited | Meta allows 80 messages/second for business tier |
+|---|---|
+| Webhook verification fails | workflow 13 not published, or token mismatch |
+| 401 from the webhook | wrong/missing `WHATSAPP_APP_SECRET`, or a proxy re-serialised the JSON body (the signature is over the exact raw bytes) |
+| Nothing arrives | `messages` field not subscribed; wrong callback URL |
+| Error 131047 | free-form message outside the 24 h window → use a template (the automation never does this) |
+| Error 132001 / 132000 | template name/language/parameters do not match the approved template |
+| Error 131026 | recipient cannot receive the message (not on WhatsApp / blocked) |
+| Rate limits | the workflows cap sends per run (`WA_MAX_PER_RUN`); Meta enforces messaging-tier limits per number |

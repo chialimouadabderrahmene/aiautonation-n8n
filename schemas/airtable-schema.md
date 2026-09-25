@@ -1,3 +1,5 @@
+> **Legacy / not maintained.** Google Sheets is the supported store (see `google-sheets-schema.md` and `sheet-columns.json`, 16 tabs). This Airtable mapping was written for an earlier, smaller data model and has NOT been updated or tested against the current workflows.
+
 # Eki Marketplace Launch — Airtable Schema
 
 For teams using Airtable as their relational database instead of Google Sheets, this document outlines the exact field types, tables, relationships, and views required. Airtable provides strong relational links and built-in Kanban/Calendar views.

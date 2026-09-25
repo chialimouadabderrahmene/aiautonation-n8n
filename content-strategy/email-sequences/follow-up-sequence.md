@@ -1,3 +1,5 @@
+> **DRAFT copy - not wired to any workflow.** Links use the canonical domain but the paths (`/dashboard`, `/directory`, `/login`, `/verify`, `/feedback`, `/signup`) are illustrative: replace them with real Eki routes, and verify every claim (e.g. commission offers) before sending. Never put personal data in link query strings.
+
 # Eki Inactive User Follow-Up Sequence (3-Email Series)
 
 These templates are triggered by the engagement workflow when a user has been inactive for 7, 14, and 21 days respectively.
@@ -35,7 +37,7 @@ These templates are triggered by the engagement workflow when a user has been in
     <p><strong>Want a quick shortcut?</strong> You can schedule a free 10-minute onboarding call with our customer success team, or log in now to chat with support.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/dashboard?support=true" class="button" target="_blank">Chat with Support Now</a>
+      <a href="https://culinarytales.app/dashboard?support=true" class="button" target="_blank">Chat with Support Now</a>
     </div>
     
     <p>Let's get your business moving!</p>
@@ -91,7 +93,7 @@ These templates are triggered by the engagement workflow when a user has been in
     <p>Log in today to see current buying requests, check out new listings, and update your trading preferences.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/directory" class="button" target="_blank">View Market Directory</a>
+      <a href="https://culinarytales.app/directory" class="button" target="_blank">View Market Directory</a>
     </div>
     
     <p>Don't miss out on securing your next trade partner.</p>
@@ -144,7 +146,7 @@ These templates are triggered by the engagement workflow when a user has been in
     <p>All you need to do is log in, list a product or place a buying request, and the discount will be applied automatically at checkout.</p>
     
     <div class="button-container">
-      <a href="https://eki-marketplace.com/login" class="button" target="_blank">Activate My 0% Commission Trade</a>
+      <a href="https://culinarytales.app/login" class="button" target="_blank">Activate My 0% Commission Trade</a>
     </div>
     
     <p>If you no longer wish to use Eki, no action is needed—your profile will be marked inactive automatically.</p>
