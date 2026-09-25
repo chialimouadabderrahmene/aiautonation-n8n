@@ -1,0 +1,266 @@
+{
+  "name": "13 - WhatsApp Lead Funnel",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-get",
+      "name": "WA Webhook Verify (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 160],
+      "webhookId": "wa-verify"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'];\nif (mode === 'subscribe' && token === $env.WHATSAPP_VERIFY_TOKEN) {\n  return [{ json: { response_code: 200, response_body: challenge } }];\n}\nreturn [{ json: { response_code: 403, response_body: 'Forbidden' } }];"
+      },
+      "id": "verify-logic",
+      "name": "Verify Token Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.response_body }}",
+        "options": { "responseCode": "={{ $json.response_code }}" }
+      },
+      "id": "verify-respond",
+      "name": "Respond Verification",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [700, 160]
+    },
+    {
+      "parameters": { "httpMethod": "POST", "path": "whatsapp-webhook", "responseMode": "responseNode", "options": {} },
+      "id": "webhook-post",
+      "name": "WA Incoming (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 440],
+      "webhookId": "wa-incoming"
+    },
+    {
+      "parameters": { "respondWith": "noData", "options": { "responseCode": 200 } },
+      "id": "ack-200",
+      "name": "ACK 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nif (!body || !body.entry || !body.entry[0] || !body.entry[0].changes) {\n  return [{ json: { valid: false, reason: 'invalid' } }];\n}\nconst value = body.entry[0].changes[0].value;\nif (!value.messages || value.messages.length === 0) {\n  return [{ json: { valid: false, reason: 'no_messages' } }];\n}\nconst msg = value.messages[0];\nconst contact = value.contacts ? value.contacts[0] : {};\nreturn [{ json: { valid: true, phone: msg.from, message_id: msg.id, timestamp: new Date(parseInt(msg.timestamp)*1000).toISOString(), type: msg.type, text: msg.type === 'text' ? msg.text.body : '', sender_name: contact.profile ? contact.profile.name : '', wa_id: contact.wa_id || msg.from } }];"
+      },
+      "id": "parse-msg",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 520]
+    },
+    {
+      "parameters": { "conditions": { "conditions": [{ "id": "v", "leftValue": "={{ $json.valid }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }] } },
+      "id": "is-valid",
+      "name": "Valid Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst text = (item.text || '').toLowerCase().trim();\nconst stopWords = ['stop','unsubscribe','quit','cancel','opt out','optout','basta'];\nreturn [{ json: { ...item, is_stop: stopWords.includes(text) } }];"
+      },
+      "id": "detect-stop",
+      "name": "Detect STOP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 520]
+    },
+    {
+      "parameters": { "conditions": { "conditions": [{ "id": "s", "leftValue": "={{ $json.is_stop }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }] } },
+      "id": "if-stop",
+      "name": "Is STOP?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1180, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{ json: { phone: item.phone, sender_name: item.sender_name, reply_text: 'You have been unsubscribed from Eki messages. Reply START anytime to re-subscribe. \\u{1F44B}', status: 'unsubscribed', action: 'stop', timestamp: item.timestamp } }];"
+      },
+      "id": "handle-stop",
+      "name": "Handle STOP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst text = (item.text || '').toLowerCase().trim();\nconst buyerWords = ['buyer','buy','acquirente','comprare','customer','shopping'];\nconst vendorWords = ['vendor','sell','venditore','vendere','seller','business','shop owner'];\nlet step='unknown', userType='unknown', intentLevel='low', reply='';\nif (text==='start'||text==='hi'||text==='hello'||text==='ciao'||text==='hey') {\n  step='greeting'; reply='Welcome to Eki! \\u{1F680}\\n\\nWe help businesses automate with AI.\\n\\nAre you a *Buyer* or a *Vendor*?\\n\\nReply: BUYER or VENDOR';\n} else if (buyerWords.some(w=>text.includes(w))) {\n  step='type_identified'; userType='buyer'; intentLevel='medium'; reply='Great! You are interested as a Buyer \\u{1F6D2}\\n\\nWhat is your full name and country?';\n} else if (vendorWords.some(w=>text.includes(w))) {\n  step='type_identified'; userType='vendor'; intentLevel='high'; reply='Awesome! You are a Vendor \\u{1F3EA}\\n\\nWhat is your full name, country, and what do you sell?';\n} else {\n  step='info_provided'; intentLevel='medium';\n  reply='Thanks for the info! \\u{1F4DD}\\n\\nDownload the Eki app: '+($env.APP_DOWNLOAD_LINK||'https://eki.app')+'\\n\\nReply STOP to unsubscribe.';\n}\nreturn [{ json: { phone: item.phone, sender_name: item.sender_name, wa_id: item.wa_id, original_text: item.text, conversation_step: step, user_type: userType, intent_level: intentLevel, reply_text: reply, timestamp: item.timestamp } }];"
+      },
+      "id": "conv-router",
+      "name": "Conversation Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 620]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}" }, { "name": "Content-Type", "value": "application/json" }] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.phone, type: 'text', text: { preview_url: true, body: $json.reply_text } }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "send-reply",
+      "name": "Send WA Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 620],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}" }, { "name": "Content-Type", "value": "application/json" }] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.phone, type: 'text', text: { body: $json.reply_text } }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "send-stop-msg",
+      "name": "Send STOP Confirm",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 380],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Leads" },
+        "columns": { "mappingMode": "defineBelow", "value": { "phone": "={{ $('Conversation Router').first().json.phone }}", "name": "={{ $('Conversation Router').first().json.sender_name }}", "country": "", "user_type": "={{ $('Conversation Router').first().json.user_type || 'unknown' }}", "interest": "", "intent_level": "={{ $('Conversation Router').first().json.intent_level }}", "source": "whatsapp", "status": "={{ $('Conversation Router').first().json.status || 'new' }}", "first_contact": "={{ $('Conversation Router').first().json.timestamp }}", "last_message": "={{ $('Conversation Router').first().json.timestamp }}" } },
+        "options": {}
+      },
+      "id": "save-lead",
+      "name": "Save Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1960, 620],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "WhatsApp Conversations" },
+        "columns": { "mappingMode": "defineBelow", "value": { "timestamp": "={{ $('Conversation Router').first().json.timestamp }}", "phone": "={{ $('Conversation Router').first().json.phone }}", "direction": "inbound", "message_text": "={{ $('Conversation Router').first().json.original_text }}", "reply_sent": "={{ $('Conversation Router').first().json.reply_text }}", "conversation_step": "={{ $('Conversation Router').first().json.conversation_step }}", "user_type": "={{ $('Conversation Router').first().json.user_type }}", "intent_level": "={{ $('Conversation Router').first().json.intent_level }}" } },
+        "options": {}
+      },
+      "id": "save-convo",
+      "name": "Save Conversation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2200, 620],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": { "conditions": { "conditions": [{ "id": "h", "leftValue": "={{ $('Conversation Router').first().json.intent_level }}", "rightValue": "high", "operator": { "type": "string", "operation": "equals" } }] } },
+      "id": "is-high",
+      "name": "High Intent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 620]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=\ud83d\udd25 *HIGH-INTENT LEAD via WhatsApp*\n\n\ud83d\udcf1 Phone: `{{ $('Conversation Router').first().json.phone }}`\n\ud83d\udc64 Name: {{ $('Conversation Router').first().json.sender_name || 'Unknown' }}\n\ud83c\udff7\ufe0f Type: *{{ ($('Conversation Router').first().json.user_type || 'unknown').toUpperCase() }}*\n\ud83d\udcca Intent: HIGH\n\ud83d\udcac Said: \"{{ $('Conversation Router').first().json.original_text }}\"\n\u23f0 {{ $('Conversation Router').first().json.timestamp }}\n\n\u27a1\ufe0f Follow up ASAP!",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "tg-high",
+      "name": "Telegram High Intent",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2680, 540],
+      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Automation Logs" },
+        "columns": { "mappingMode": "defineBelow", "value": { "timestamp": "={{ new Date().toISOString() }}", "workflow": "13-whatsapp-lead-funnel", "action": "=message_processed", "platform": "whatsapp", "status": "=completed", "details": "=Phone: {{ $('Conversation Router').first().json.phone }} | Step: {{ $('Conversation Router').first().json.conversation_step }} | Type: {{ $('Conversation Router').first().json.user_type }}", "error": "" } },
+        "options": {}
+      },
+      "id": "log-action",
+      "name": "Log Action",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2920, 620],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Leads" },
+        "columns": { "mappingMode": "defineBelow", "value": { "phone": "={{ $('Handle STOP').first().json.phone }}", "name": "={{ $('Handle STOP').first().json.sender_name }}", "status": "unsubscribed", "last_message": "={{ $('Handle STOP').first().json.timestamp }}" } },
+        "options": {}
+      },
+      "id": "mark-unsub",
+      "name": "Mark Unsubscribed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1960, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Automation Logs" },
+        "columns": { "mappingMode": "defineBelow", "value": { "timestamp": "={{ new Date().toISOString() }}", "workflow": "13-whatsapp-lead-funnel", "action": "user_unsubscribed", "platform": "whatsapp", "status": "unsubscribed", "details": "=User {{ $('Handle STOP').first().json.phone }} requested STOP", "error": "" } },
+        "options": {}
+      },
+      "id": "log-stop",
+      "name": "Log STOP",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2200, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    }
+  ],
+  "connections": {
+    "WA Webhook Verify (GET)": { "main": [[{ "node": "Verify Token Logic", "type": "main", "index": 0 }]] },
+    "Verify Token Logic": { "main": [[{ "node": "Respond Verification", "type": "main", "index": 0 }]] },
+    "WA Incoming (POST)": { "main": [[{ "node": "ACK 200", "type": "main", "index": 0 }, { "node": "Parse Message", "type": "main", "index": 0 }]] },
+    "Parse Message": { "main": [[{ "node": "Valid Message?", "type": "main", "index": 0 }]] },
+    "Valid Message?": { "main": [[{ "node": "Detect STOP", "type": "main", "index": 0 }], []] },
+    "Detect STOP": { "main": [[{ "node": "Is STOP?", "type": "main", "index": 0 }]] },
+    "Is STOP?": { "main": [[{ "node": "Handle STOP", "type": "main", "index": 0 }], [{ "node": "Conversation Router", "type": "main", "index": 0 }]] },
+    "Handle STOP": { "main": [[{ "node": "Send STOP Confirm", "type": "main", "index": 0 }]] },
+    "Send STOP Confirm": { "main": [[{ "node": "Mark Unsubscribed", "type": "main", "index": 0 }]] },
+    "Mark Unsubscribed": { "main": [[{ "node": "Log STOP", "type": "main", "index": 0 }]] },
+    "Conversation Router": { "main": [[{ "node": "Send WA Reply", "type": "main", "index": 0 }]] },
+    "Send WA Reply": { "main": [[{ "node": "Save Lead", "type": "main", "index": 0 }]] },
+    "Save Lead": { "main": [[{ "node": "Save Conversation", "type": "main", "index": 0 }]] },
+    "Save Conversation": { "main": [[{ "node": "High Intent?", "type": "main", "index": 0 }]] },
+    "High Intent?": { "main": [[{ "node": "Telegram High Intent", "type": "main", "index": 0 }], [{ "node": "Log Action", "type": "main", "index": 0 }]] },
+    "Telegram High Intent": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Lagos", "saveExecutionProgress": true, "saveManualExecutions": true },
+  "staticData": null,
+  "tags": [{ "name": "whatsapp" }, { "name": "lead-funnel" }, { "name": "production" }],
+  "active": false
+}

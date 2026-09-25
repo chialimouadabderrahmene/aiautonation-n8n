@@ -1,0 +1,241 @@
+{
+  "name": "Eki - 01 AI Content Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "e0b11b51-512c-473d-9d41-26c71c4c1a2e",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Content Calendar!A:H",
+        "options": {}
+      },
+      "id": "c0e64c23-2895-4eb4-b91c-b17441584cfb",
+      "name": "Read Content Calendar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\n// Format date as YYYY-MM-DD or find the Day Number to post\n// E.g., Day 1 to 30 based on launch offset\n// Here we extract the day_number matching the calendar sheet\nconst launchDate = new Date('2026-05-22'); // Set launch date\nconst timeDiff = today.getTime() - launchDate.getTime();\nconst dayDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1;\n\nconst activeDay = (dayDiff > 0 && dayDiff <= 30) ? dayDiff : 1;\n\n// Filter calendar rows for the matching day\nconst matchingRow = $input.all().find(row => parseInt(row.json.day_number) === activeDay);\n\nif (!matchingRow) {\n  throw new Error(`No content found in calendar for day number: ${activeDay}`);\n}\n\nreturn matchingRow.json;"
+      },
+      "id": "2bc35cd3-1254-4a2a-bf39-441bf1bf1a62",
+      "name": "Filter Today's Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a professional social media content creator and copywriter for Eki, a digital marketplace connecting West African foodstuff vendors with global buyers.\n\nGenerate structured content outputs based on the topics provided. Return output strictly in JSON format matching this structure:\n{\n  \"hook\": \"One scroll-stopping sentence\",\n  \"caption\": \"Engagement caption (50-150 words) with emojis\",\n  \"hashtags\": \"#Hashtags #RelatedToTopic #EkiMarket\",\n  \"video_script\": \"Short-form 30-sec script with visual cues in brackets, e.g. [Visual: Exporter sealing bag] followed by audio text.\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "=Today's Content Plan:\nPlatform: {{ $json.suggested_platform }}\nPillar: {{ $json.pillar }}\nTopic: {{ $json.topic_brief }}\nSuggested Hook: {{ $json.suggested_hook }}\nCTA: {{ $json.cta }}\nTarget Audience: {{ $json.target_audience }}"
+            }
+          ]
+        },
+        "options": {
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "90e3cd3d-1cf1-45df-bbbe-426b6452f10b",
+      "name": "OpenAI Content Gen",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [
+        740,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = JSON.parse($input.first().json.choices[0].message.content);\nreturn {\n  day_number: $('Filter Today's Row').item.json.day_number,\n  platform: $('Filter Today's Row').item.json.suggested_platform,\n  hook: aiResponse.hook,\n  caption: aiResponse.caption,\n  hashtags: aiResponse.hashtags,\n  video_script: aiResponse.video_script,\n  status: 'Draft',\n  date: new Date().toISOString().split('T')[0]\n};"
+      },
+      "id": "a90df2cd-5a1e-4507-b2eb-d1cf371a6e9a",
+      "name": "Parse AI Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Content Drafts!A:I",
+        "options": {}
+      },
+      "id": "1ff5d4b8-f10d-4bb1-8b2b-656f7ef0fdb1",
+      "name": "Save to Content Drafts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1180,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
+        "text": "=📝 **New Eki Content Draft Ready for Approval!**\n\n📅 **Date:** {{ $json.date }}\n📱 **Platform:** {{ $json.platform }}\n\n🪝 **Hook:** {{ $json.hook }}\n\n📝 **Caption:**\n{{ $json.caption }}\n\n🏷️ **Hashtags:** {{ $json.hashtags }}\n\n🎬 **Video Script:**\n{{ $json.video_script }}\n\n---\nReply with:\n• `/approve {{ $json.day_number }}`\n• `/reject {{ $json.day_number }}`\n• `/edit {{ $json.day_number }} [your edits]`",
+        "additionalFields": {}
+      },
+      "id": "d04e1bc2-4e4c-473d-9d41-754abf17ad6a",
+      "name": "Telegram Alert Approval",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1400,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### Setup Instructions\n1. Replace `EKI_SPREADSHEET_ID_PLACEHOLDER` with your actual Google Sheet ID.\n2. Configure Google Sheets OAuth, OpenAI, and Telegram Bot credentials.\n3. Make sure the 'Content Calendar' sheet is populated with rows 1 to 30.\n4. Replace `TELEGRAM_CHAT_ID_PLACEHOLDER` with your Telegram channel/group chat ID.\n5. Adjust timezone and launchDate variables in code blocks if needed.",
+        "height": 180,
+        "width": 320
+      },
+      "id": "bb4fe1cc-2781-4bdf-87f5-a8cdb615b1ea",
+      "name": "Sticky Note Setup",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        100,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Content Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Content Calendar": {
+      "main": [
+        [
+          {
+            "node": "Filter Today's Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Today's Row": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Content Gen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Content Gen": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Output": {
+      "main": [
+        [
+          {
+            "node": "Save to Content Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Content Drafts": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "meta": {
+    "instanceId": "eki-launch-automation"
+  }
+}

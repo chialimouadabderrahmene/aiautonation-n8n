@@ -1,0 +1,691 @@
+{
+  "name": "Eki - 19 WhatsApp Nurture Sequences",
+  "nodes": [
+    {
+      "id": "d3c4ca4e-5bc4-4135-8035-411a9c64c315",
+      "name": "Daily 8AM",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "hour": 8
+        }
+      }
+    },
+    {
+      "id": "4e753601-5711-4c3a-b00b-c7c65f86361e",
+      "name": "Get Active Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "operation": "getRows",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "a92f2dd0-eab3-4769-9624-8aee43147402",
+      "name": "Filter for Nurture",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $json.filter(l => \n  l.status === 'lead_captured' && \n  (!l.last_nurture || (Date.now() - new Date(l.last_nurture).getTime()) > 86400000)\n).map(l => ({json: l}));"
+      }
+    },
+    {
+      "id": "4bfe415c-8024-4dca-9eb4-511ab10a6737",
+      "name": "Vendor Sequence",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "dataType": "number",
+        "value1": "={{$json.nurture_day || 1}}",
+        "rules": [
+          {
+            "value": 1
+          },
+          {
+            "value": 2
+          },
+          {
+            "value": 3
+          },
+          {
+            "value": 4
+          },
+          {
+            "value": 5
+          },
+          {
+            "value": 7
+          },
+          {
+            "value": 10
+          },
+          {
+            "value": 14
+          }
+        ]
+      }
+    },
+    {
+      "id": "7885a5c3-c5d6-42b0-bb2d-46029ecbe1c9",
+      "name": "Day 1 - Welcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Welcome {{$json.name}}! We know the chaos of selling on WhatsApp - missed orders, ghost buyers, fake alerts. Eki was built to fix this. Here's a 60s overview: https://eki.app/how-it-works"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "88119f87-588a-4447-9076-76855fd05d67",
+      "name": "Day 2 - Proof",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Vendor success: A seller joined Eki 3 weeks ago. This week she got her 50th order - all from buyers she'd never met. Her store: https://eki.app/store/example"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fef14393-7023-4dea-bb3d-f005c705d807",
+      "name": "Day 3 - How It Works",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Eki gives you: pro storefront, secure payments, order management, buyer discovery. 3 steps: Setup -> Share link -> Get paid. Start: https://eki.app/signup"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b8008b25-11a1-427e-9c93-7cae00ea92ad",
+      "name": "Day 7 - CTA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Ready to set up your store? Takes 15 min. Click: https://eki.app/signup. Need help? Reply HELP and a real person assists you."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c7abb131-4b57-406e-9962-3fd367afabe6",
+      "name": "Day 14 - Final Push",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=You're 1 step from your first Eki sale. Your store is ready - just complete it. Link: https://eki.app/complete. We'll check in weekly now instead of daily."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0b22a0de-1d6c-4bd0-92cf-0bd6bbf7de8b",
+      "name": "Buyer Sequence",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        900,
+        200
+      ],
+      "parameters": {
+        "dataType": "number",
+        "value1": "={{$json.nurture_day || 1}}",
+        "rules": [
+          {
+            "value": 1
+          },
+          {
+            "value": 2
+          },
+          {
+            "value": 3
+          },
+          {
+            "value": 4
+          },
+          {
+            "value": 5
+          },
+          {
+            "value": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": "8af11c4b-e973-4a73-ac1e-32bcdc55982a",
+      "name": "Buyer D1 - Trust",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        1000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Welcome {{$json.name}}! Eki is a verified marketplace for African foodstuff. Every vendor is real, every transaction protected. Browse: https://eki.app/browse"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9c53ba2f-2424-4b89-b563-299fe4200de8",
+      "name": "Buyer D3 - Browse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        1200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=We have vendors across UK, USA, Canada, Europe. Garri, palm oil, spices, dried fish - all in one place. Browse now: https://eki.app/browse"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0e56add4-01c3-4c5b-8d42-b9edc18763a7",
+      "name": "Buyer D5 - Incentive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        1400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=First order comes with buyer protection. Not happy? We handle it. Shop now: https://eki.app/browse"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "49a5f7ec-6e78-4b41-a26c-2e9f2bdaaef4",
+      "name": "Update Progress",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "",
+            "nurture_day": "",
+            "last_nurture": "",
+            "status": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    }
+  ],
+  "connections": {
+    "Daily 8AM": {
+      "main": [
+        [
+          {
+            "node": "Get Active Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter for Nurture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter for Nurture": {
+      "main": [
+        [
+          {
+            "node": "Vendor Sequence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buyer Sequence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vendor Sequence": {
+      "main": [
+        [
+          {
+            "node": "Day 1 - Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 2 - Proof",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 3 - How It Works",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 3 - How It Works",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 3 - How It Works",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 3 - How It Works",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 7 - CTA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Day 14 - Final Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Day 1 - Welcome": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Day 2 - Proof": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Day 3 - How It Works": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Day 7 - CTA": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Day 14 - Final Push": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buyer Sequence": {
+      "main": [
+        [
+          {
+            "node": "Buyer D1 - Trust",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buyer D1 - Trust",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buyer D3 - Browse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buyer D3 - Browse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buyer D5 - Incentive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buyer D5 - Incentive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buyer D1 - Trust": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buyer D3 - Browse": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buyer D5 - Incentive": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "7720f4c5-ce34-42b2-9e72-7df708c2eb70",
+  "active": false,
+  "tags": []
+}

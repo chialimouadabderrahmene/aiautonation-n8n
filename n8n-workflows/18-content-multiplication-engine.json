@@ -1,0 +1,102 @@
+{
+  "name": "Eki - 18 Content Multiplication Engine",
+  "nodes": [
+    {
+      "id": "e736197c-ace9-4e6b-a5e1-4e57df5ad74e",
+      "name": "On Approval",
+      "type": "n8n-nodes-base.webhookTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "content-multiply",
+        "options": {}
+      }
+    },
+    {
+      "id": "40957ce2-db83-4c20-8634-0116050ab867",
+      "name": "GPT-4 Multiply",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=Take this content idea and expand into ALL formats for Eki (African foodstuff marketplace). Return JSON with: reel_script (60s), tiktok_adaptation (45s), carousel (5 slides), story_sequence (3 frames), fb_post, 3 hook_variations, 3 caption_variations (50/150/300 words). Core idea: {{$json.idea}}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "openAiApi": "openAiApi"
+      }
+    },
+    {
+      "id": "b1192490-dd6a-47d6-9e7a-f7ab0db594b3",
+      "name": "Queue to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "ContentQueue",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "format": "",
+            "content": "",
+            "status": "pending",
+            "source": "multiplication",
+            "created": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    }
+  ],
+  "connections": {
+    "On Approval": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Multiply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Multiply": {
+      "main": [
+        [
+          {
+            "node": "Queue to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "36553c37-8e5d-4980-b5a7-334e240a2ac2",
+  "active": false,
+  "tags": []
+}

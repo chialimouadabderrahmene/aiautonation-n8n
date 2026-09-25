@@ -1,0 +1,1481 @@
+Total pages: 42
+
+
+===== PAGE 1 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+ 
+ 
+ 
+ 
+EKI 
+AFRICAN FOODSTUFF COMMERCE INFRASTRUCTURE 
+AI-POWERED ORGANIC ACQUISITION 
+MACHINE 
+Complete Strategic Blueprint 
+ 
+ 
+12 
+Autonomous Systems 
+8 
+AI Agents 
+24/7 
+Autonomous Operation 
+ 
+ 
+Prepared for: Eki | Version 1.0 | Confidential 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 1 
+
+===== PAGE 2 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+EXECUTIVE SUMMARY 
+ 
+MISSION: Design a fully autonomous AI acquisition machine that continuously researches, 
+creates, distributes, and optimises organic content — replacing an entire marketing team 
+— and funnels vendors and buyers into the Eki marketplace 24 hours a day, 7 days a 
+week. 
+ 
+What This Blueprint Delivers 
+This document is not a content calendar. It is a complete engineering specification for an autonomous 
+marketing operating system. When fully implemented, this system will: 
+●​ Research viral trends and audience pain points automatically, without human input 
+●​ Generate 10–20 pieces of content daily, adapted for Instagram, TikTok, and Facebook 
+●​ Test content variations and identify winners scientifically — eliminating guesswork 
+●​ Convert social media comments into WhatsApp leads through automated funnels 
+●​ Nurture both vendors and buyers through personalised WhatsApp sequences 
+●​ Generate compounding referral loops that grow the marketplace without paid ads 
+●​ Produce social proof content automatically from real transactions and milestones 
+●​ Continuously learn and improve, becoming smarter and more effective over time 
+ 
+Why Eki Needs This Now 
+African foodstuff commerce is a fragmented, trust-deficit market. The vendors who will thrive are not 
+necessarily the best sellers — they are the ones who build digital trust fastest. Eki's opportunity is to 
+become the trust infrastructure layer and the primary discovery channel simultaneously. Organic 
+content is the single highest-ROI acquisition channel for this market because: 
+●​ The target audience (diaspora, African vendors) is deeply emotionally connected to food heritage 
+●​ Pain points are universal, intense, and highly shareable — ideal viral conditions 
+●​ Competitors are not running sophisticated content systems — first-mover advantage is available 
+●​ WhatsApp is the dominant commerce channel — a direct bridge from content to transaction 
+ 
+Expected Outcomes 
+Timeframe 
+Expected Outcomes 
+Month 1–2 
+System built, first 500 content pieces published, comment funnels 
+active, 200+ WhatsApp leads captured 
+Month 3–4 
+1,000+ vendors in pipeline, 50+ stores live, buyer acquisition beginning, 
+first referral loops active 
+Eki — African Foodstuff Commerce Infrastructure  Page 2 
+
+===== PAGE 3 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Month 5–6 
+10,000+ content views/day, 500+ active vendors, self-improving content 
+system, social proof engine generating UGC 
+Month 6+ 
+Compounding growth: vendors bring buyers, buyers refer buyers, 
+content improves itself — system largely autonomous 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 3 
+
+===== PAGE 4 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+FULL SYSTEM ARCHITECTURE 
+ 
+The Acquisition Machine — Master Flow 
+The system operates as six interconnected layers. Each layer feeds the next, and the Analytics Engine 
+feeds learnings back to the top, creating a self-improving loop. 
+ 
+LAYER 1: INTELLIGENCE  →  Viral Intelligence Engine + Pain Discovery Engine — runs 24/7 
+LAYER 2: CREATION  →  AI Content Engine + Content Multiplication Engine — generates 20-3 0 
+pieces/day 
+LAYER 3: TESTING  →  Viral Testing Engine + Approval Layer — validates and approves before 
+publishing 
+LAYER 4: DISTRIBUTION  →  Distribution Engine — auto-posts across Instagram, TikTok, 
+Facebook 
+LAYER 5: CONVERSION  →  Comment Funnel → WhatsApp Nurture Engine → App Signup 
+LAYER 6: AMPLIFICATION  →  Marketplace Growth Loop + Social Proof Engine — 
+compounding virality 
+LAYER 7: INTELLIGENCE (RETURN)  →  Analytics + Learning Engine — feeds insights back 
+to Layer 1, improving everything 
+ 
+System Interconnections 
+Connection 
+How They Feed Each Other 
+Intelligence → Creation 
+Viral patterns and pain points feed directly into content prompts 
+and hooks 
+Creation → Testing 
+All content enters the testing queue before approval 
+Testing → Distribution 
+Winners auto-scale; losers are analysed for learning 
+Distribution → Conversion 
+Every post triggers comment funnels and DM automation 
+Eki — African Foodstuff Commerce Infrastructure  Page 4 
+
+===== PAGE 5 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Conversion → 
+Amplification 
+Signed-up users feed referral loops and generate social proof 
+Amplification → 
+Intelligence 
+Social proof and UGC become new content. Engagement data 
+updates viral patterns 
+Analytics → Everything 
+Weekly AI analysis updates content prompts, hooks, and 
+targeting across all systems 
+ 
+Platforms & Priority 
+Platform 
+Strategy & Why 
+Instagram (Priority 1) 
+Reels, Stories, Carousels. ManyChat for comment DM automation. 
+Highest diaspora audience density. 
+TikTok (Priority 2) 
+Short-form video. Algorithm rewards new accounts. Excellent for 
+organic reach with zero followers. 
+Facebook (Priority 3) 
+Groups for vendor communities. Longer posts. Older diaspora 
+audience. WhatsApp integration native. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 5 
+
+===== PAGE 6 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+01 
+VIRAL INTELLIGENCE ENGINE 
+ 
+The Viral Intelligence Engine is the research brain of the acquisition machine. It monitors what is 
+actually working across social media — not what we guess might work — and builds a continuously 
+updated library of winning hooks, emotional triggers, formats, and storytelling structures. 
+ 
+What It Monitors 
+Source 
+What To Extract 
+Instagram Reels 
+Top-performing reels in African food, diaspora lifestyle, small business, 
+commerce/selling niches 
+TikTok 
+Trending videos in African food, vendor success stories, business 
+transformation, diaspora content 
+Facebook Groups 
+African foodstuff seller groups, diaspora community groups, WhatsApp 
+seller communities 
+Competitor 
+Accounts 
+Other African food platforms, foodstuff marketplace competitors, 
+successful vendor accounts 
+Viral Creators 
+Individual creators in the niche who consistently get high engagement 
+— extract their patterns 
+Comments & Replies 
+What the audience says they want, fear, and feel — pure pain point 
+intelligence 
+Trending Audio 
+Music and audio tracks currently boosting reach on TikTok and 
+Instagram 
+ 
+What It Analyses & Extracts 
+Hook Patterns 
+●​ Opening line structure: Question hooks, shock statements, relatability openers, problem-first hooks 
+●​ First 3 seconds: What visual, text, or sound stops the scroll 
+●​ Hook-to-engagement correlation: Which hook types generate most comments vs saves vs shares 
+Emotional Triggers 
+●​ Fear of loss (missed orders, scam risk, no repeat customers) 
+●​ Pride/identity (African roots, authentic ingredients, heritage foods) 
+Eki — African Foodstuff Commerce Infrastructure  Page 6 
+
+===== PAGE 7 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+●​ Aspiration (earning from home, global business, professional storefront) 
+●​ Frustration (WhatsApp chaos, fake payments, time zone problems) 
+●​ Trust (verified sellers, guaranteed delivery, community proof) 
+Content Formats 
+●​ Storytelling structure: Problem → Agitation → Solution (PAS) 
+●​ Transformation format: Before/After with specific numbers ('was getting 5 DMs, now 200 orders') 
+●​ Educational format: 3 things I wish I knew, 5 mistakes vendors make 
+●​ Social proof format: Customer testimonial, vendor success milestone 
+●​ Trend hijack: Viral format applied to Eki's niche 
+ 
+Database Output — The Intelligence Library 
+Database 
+What's Stored 
+Hook Library 
+500+ tested hook formats tagged by emotion, format, engagement 
+type (comment/share/save) 
+Creator Intelligence 
+Top 50 creators in niche tracked weekly: content themes, posting 
+frequency, engagement patterns 
+Emotional Trigger Map 
+Emotions ranked by performance: which triggers drive signups vs 
+which drive shares 
+Format Pattern Library 
+Video structures that retain viewers: timestamps, arc, pacing, B-roll 
+patterns 
+Trending Audio Tracker 
+Weekly updated list of trending sounds relevant to the niche 
+Competitor Intelligence 
+What competitors post, what performs, gaps they are missing 
+ 
+Automation Implementation 
+Tools Required 
+●​ Apify — scrape Instagram Reels metadata, TikTok trending videos, Facebook group posts 
+●​ n8n — orchestrate scraping schedules, send data to AI analysis, update Airtable 
+●​ GPT-4 — analyse content, extract patterns, tag emotional triggers, generate hook templates 
+●​ Airtable — store and query all intelligence data 
+Trigger Cadence 
+●​ Every 6 hours: Pull new trending content from Instagram and TikTok 
+●​ Every 24 hours: Analyse top performers from previous day, extract patterns 
+●​ Every 7 days: Generate weekly intelligence report, update hook library, brief content agents 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 7 
+
+===== PAGE 8 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+02 
+PAIN DISCOVERY ENGINE 
+ 
+Great content doesn't start with creativity — it starts with pain. The Pain Discovery Engine 
+systematically collects, categorises, and prioritises the exact frustrations of vendors and buyers so that 
+every piece of content speaks directly to something the audience already feels deeply. 
+ 
+Monitoring Sources 
+Source 
+What to Monitor 
+Reddit 
+r/Nigeria, r/Naija, r/AfricanFood, r/smallbusiness, r/diaspora — search 
+for recurring complaints 
+Facebook Groups 
+African foodstuff seller groups, Nigerian/Ghanaian diaspora groups, 
+vendor communities 
+YouTube Comments 
+Comments on foodstuff videos, diaspora cooking channels, African 
+grocery hauls 
+Twitter / X 
+Search: 'foodstuff vendor problems', 'WhatsApp business chaos', 
+'African grocery abroad' 
+Instagram 
+Comments 
+Comment sections on competitor posts — raw, unfiltered audience 
+frustrations 
+Direct Surveys 
+Periodic WhatsApp surveys sent to captured leads: 'What's your 
+biggest selling problem?' 
+ 
+Vendor Pain Categories 
+Pain Category 
+Exact Expression & Impact 
+DM Chaos 
+'Too many DMs, I can't manage them' — inability to convert enquiries to 
+orders at scale 
+Payment Fraud 
+Fake payment alerts destroying trust, especially for cash-on-delivery or 
+bank transfer sellers 
+No Repeat Buyers 
+One-time transactions, buyers don't come back — no retention system 
+Eki — African Foodstuff Commerce Infrastructure  Page 8 
+
+===== PAGE 9 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Order Management 
+Missed orders, forgotten DMs, no inventory visibility, manual tracking 
+Export Confusion 
+Customs, documentation, shipping complexity for exporters — 
+overwhelm and fear 
+No Professional 
+Presence 
+Selling on personal Instagram with no business credibility or trust 
+signals 
+Price Enquiries That 
+Go Cold 
+'Customer asks price then disappears' — the most common frustration 
+Time Zone Problems 
+International buyers enquiring while vendor is asleep — lost orders 
+No Customer 
+Database 
+Can't find old customers, can't run promotions, no customer history 
+Instagram 
+Dependency 
+Platform bans, algorithm changes, zero ownership of their audience 
+ 
+Buyer Pain Categories 
+Pain Category 
+Exact Expression & Impact 
+Scam Fear 
+'I'm afraid to send money to someone I don't know' — the single biggest 
+buyer barrier 
+Authenticity 
+Concern 
+Buying palm oil or egusi from an unknown seller — is it real? Is it fresh? 
+Finding Trusted 
+Vendors 
+Discovering reliable foodstuff suppliers abroad is a word-of-mouth 
+process only 
+Shipping Uncertainty 
+Will it arrive? Will it be damaged? Who handles disputes? 
+Price Comparison 
+No central place to compare prices — currently requires messaging 
+multiple sellers individually 
+Ingredient 
+Availability 
+Specific items (bitter leaf, dawadawa, ukazi) hard to find from one 
+trusted source 
+ 
+Pain Database Structure 
+Eki — African Foodstuff Commerce Infrastructure  Page 9 
+
+===== PAGE 10 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Each pain point is stored in Airtable with the following fields, enabling AI to search and retrieve the most 
+emotionally resonant pain for any given content piece: 
+●​ Pain statement (verbatim from source) 
+●​ Persona: Vendor or Buyer 
+●​ Category: DM Chaos, Payment Fraud, Scam Fear, etc. 
+●​ Emotional intensity score: 1–10 (based on upvotes/reactions/frequency) 
+●​ Source: Reddit/Facebook/YouTube/Instagram 
+●​ Keywords: Exact words the audience uses (critical for headline writing) 
+●​ Content idea count: How many times this pain has been used in content 
+●​ Engagement outcome: What content pieces using this pain achieved 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 10 
+
+===== PAGE 11 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+03 
+AI VIRAL CONTENT ENGINE 
+ 
+The AI Content Engine takes inputs from the Intelligence Library and Pain Database and generates 
+high-converting, emotionally resonant content at scale. It is not a generic content generator — it is a 
+precision instrument trained on what already works for this specific audience. 
+ 
+Content Generation Process 
+1 
+INPUT SELECTION  →  System selects top pain point + matching hook from intelligence 
+library based on performance data 
+2 
+PROMPT CONSTRUCTION  →  n8n builds dynamic AI prompt combining: pain, hook 
+structure, emotional trigger, platform format, CTA type 
+3 
+GPT-4 GENERATION  →  Generates: hook (3 variations), reel script, caption (3 
+variations), CTA (2 variations), hashtag sets 
+4 
+QUALITY SCORING  →  AI self-scores each output: hook strength, emotional 
+resonance, clarity, CTA strength, pain alignment 
+5 
+VARIATION CREATION  →  Content Multiplication Engine expands to Instagram, TikTok, 
+Facebook, Carousel, Story formats 
+6 
+QUEUE ENTRY  →  All variations enter approval queue in Notion with performance 
+predictions 
+ 
+Content Types Generated 
+Content Type 
+Specification 
+Reel Scripts 
+(Instagram/TikTok) 
+60–90 second scripts with hook, problem section, solution reveal, 
+emotional payoff, CTA. Formatted with B-roll directions. 
+Carousel Slides 
+5–8 slide outlines with headline, body text, visual direction. 
+Designed for saves and shares. 
+Instagram Stories 
+3–5 story sequence with poll, question sticker, or swipe-up. 
+Drives DMs. 
+Eki — African Foodstuff Commerce Infrastructure  Page 11 
+
+===== PAGE 12 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Facebook Posts 
+Long-form storytelling post. More context, more emotional depth. 
+Drives comments. 
+Captions 
+3 variations per content piece: short/punchy, 
+medium/story-driven, long/educational. 
+Hooks 
+3–5 hook variations per content idea to A/B test what stops the 
+scroll. 
+CTAs 
+2–3 CTA variations testing different trigger words: VENDOR, 
+SELL, JOIN, INFO, BUY. 
+Hashtag Sets 
+3 sets per post: broad reach, niche targeting, branded — rotated 
+to test algorithm response. 
+ 
+Critical Content Rules 
+RULE 1 — Pain Before Product: Never lead with Eki's features. Always lead with the 
+audience's pain. The product is the resolution, not the hook. 
+ 
+RULE 2 — Specificity Over Generality: Not 'you lose customers' but 'you spent 2 hours 
+answering DMs and made zero sales.' Specific details are more emotionally resonant and 
+more shareable. 
+ 
+RULE 3 — Metrics That Matter: Optimise for comments, saves, and DMs — not likes. 
+These signals drive the funnel. Content that gets 200 comments beats content that gets 
+10,000 likes. 
+ 
+AI Prompt Architecture 
+Every content generation request uses a structured prompt template that injects live data from the 
+intelligence and pain databases: 
+●​ Persona: [Vendor/Buyer] in [Location/Context] 
+●​ Core Pain: [Exact pain from Pain DB with verbatim language] 
+●​ Hook Format: [Hook type from Intelligence Library with example] 
+●​ Emotional Trigger: [Primary emotion from trigger map] 
+●​ Platform: [Instagram Reel / TikTok / Facebook / Carousel] 
+●​ CTA Keyword: [VENDOR / BUY / SELL / JOIN] 
+●​ Previous Winners: [Top 3 performing pieces for reference] 
+Eki — African Foodstuff Commerce Infrastructure  Page 12 
+
+===== PAGE 13 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+●​ Avoid: [Bottom performers and formats to exclude] 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 13 
+
+===== PAGE 14 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+04 
+VIRAL TESTING ENGINE 
+ 
+Virality is not luck — it is engineered through systematic testing. The Viral Testing Engine runs 
+continuous A/B tests across every content variable, identifies statistical winners, and automatically 
+scales what works while retiring what doesn't. Over time, the system's hit rate compounds. 
+ 
+What Gets Tested 
+Test Variable 
+Method 
+Hook Testing 
+3 versions of the opening 3 seconds posted across different 
+accounts. Same body, different opening. 
+Caption Testing 
+Same video, 3 different captions. Short vs medium vs long. 
+Story-driven vs pain-led vs educational. 
+CTA Testing 
+Comment 'VENDOR' vs comment 'SELL' vs comment 'INFO' — 
+which drives more comment-to-DM conversions. 
+Format Testing 
+Talking-head vs B-roll with voiceover vs text-on-screen vs carousel. 
+Same content, different format. 
+Emotion Testing 
+Fear-based hook vs aspiration hook vs identity hook. Which 
+emotion drives more saves vs comments. 
+Posting Time Testing 
+7am vs 12pm vs 8pm. Weekday vs weekend. Identify peak 
+engagement windows for each platform. 
+Hashtag Testing 
+3 hashtag set variants per post to identify which combinations drive 
+the most non-follower reach. 
+ 
+Testing Architecture 
+Account Strategy for Testing 
+●​ Run 3–5 Instagram accounts with distinct focuses: vendor pain, buyer pain, general Eki brand 
+●​ Post hook variations across accounts simultaneously (same day, 4 hours apart) 
+●​ Each account builds authentic niche authority — not spam accounts 
+●​ Winners identified within 48–72 hours based on engagement signals 
+Winner Identification Criteria 
+Eki — African Foodstuff Commerce Infrastructure  Page 14 
+
+===== PAGE 15 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Metric 
+Threshold 
+Primary Signal 
+Comments with CTA keyword (VENDOR/BUY/SELL) — indicates 
+funnel activation 
+Secondary Signal 
+Saves-to-views ratio above 5% — indicates strong educational or 
+emotional value 
+Tertiary Signal 
+Share rate above 2% — indicates strong identity or pain resonance 
+Disqualify On 
+High views, zero CTA comments — vanity reach not driving the 
+funnel 
+Scaling Winners 
+●​ Winner hook → feed back into Content Engine as new template 
+●​ Winning caption structure → become new caption format in library 
+●​ Winning emotion → increase content weight for that trigger this week 
+●​ Winner → post on all accounts, boost into more content variations 
+ 
+Automation Workflow 
+The n8n automation runs the following sequence every 72 hours after each content batch: 
+1.​ Pull engagement data for all content posted in past 72 hours via Instagram/TikTok API 
+2.​ Score each piece: views, engagement rate, CTA comment count, saves, shares 
+3.​ GPT-4 analyses patterns: what hook / emotion / format / CTA scored highest 
+4.​ Update intelligence library with new winning patterns 
+5.​ Generate briefing note: 'This week's winners — here's what to do more of next week' 
+6.​ Automatically queue 3x more content using winning formats 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 15 
+
+===== PAGE 16 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+05 
+CONTENT MULTIPLICATION ENGINE 
+ 
+One content idea becomes 15–25 publishable pieces in under 10 minutes. The Multiplication Engine 
+transforms a single core insight into every format needed across every platform, eliminating the need to 
+'start from scratch' for each post. 
+ 
+The 1-to-Many Workflow 
+1 
+CORE IDEA  →  AI identifies a pain + hook + emotion combination from databases 
+2 
+REEL SCRIPT  →  Full 60-second Instagram Reel script with B-roll directions and 
+voiceover notes 
+3 
+TIKTOK ADAPTATION  →  Same content, re-paced for TikTok rhythm — faster cuts, 
+trending audio suggestion, first-person POV 
+4 
+FACEBOOK POST  →  Long-form storytelling version — more context, more emotional 
+depth, community-focused 
+5 
+CAROUSEL  →  5-8 slide carousel with headline per slide, visual direction, 
+save-optimised structure 
+6 
+STORY SEQUENCE  →  3-5 story frames with interactive elements (poll, question, CTA 
+sticker) 
+7 
+HOOK VARIATIONS  →  3-5 alternative opening hooks for the same content piece — 
+A/B test ready 
+8 
+CAPTION VARIATIONS  →  3 caption variants: 50 words, 150 words, 300+ words — 
+different audiences respond differently 
+ 
+Target Output Volume 
+Content Type 
+MVP Target / Day 
+Scale Target / Day 
+Video Scripts (Reels/TikTok) 
+3–5 
+20–30 
+Carousel Outlines 
+2–3 
+5–8 
+Eki — African Foodstuff Commerce Infrastructure  Page 16 
+
+===== PAGE 17 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Story Sequences 
+1–2 
+4–6 
+Caption Variations 
+9–15 
+30–60 
+Hook Variations 
+9–15 
+30–60 
+Facebook Posts 
+1–2 
+3–5 
+TOTAL PIECES QUEUED 
+25–40 
+80–150 
+ 
+AI Video Production Pipeline (Advanced) 
+For teams ready to automate video creation beyond scripting: 
+●​ ElevenLabs — AI voiceover from script (Nigerian English, British-African accent options) 
+●​ Runway / Kling AI — AI-generated B-roll visuals for food content 
+●​ CapCut API / Creatomate — Auto-assemble video: voiceover + visuals + captions + music 
+●​ Canva API — Auto-generate carousel slides from Airtable data 
+●​ Output: Ready-to-post video file, directly to distribution queue 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 17 
+
+===== PAGE 18 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+06 
+APPROVAL LAYER 
+ 
+The Approval Layer is the single human checkpoint in the system. Every piece of content passes 
+through human review before publishing. This is not bureaucracy — it is quality control that ensures the 
+AI's output meets brand standards, cultural sensitivity, and strategic alignment. 
+ 
+Approval Interface 
+Notion Content Queue Board 
+Every generated content piece creates a Notion card containing: 
+●​ Hook (highlighted — this is what gets reviewed first) 
+●​ Full script or carousel slide content 
+●​ All caption variations 
+●​ Target platform and format 
+●​ Target persona: Vendor or Buyer 
+●​ AI performance prediction score 
+●​ Suggested posting time and account 
+●​ Status: Pending Review → Approved / Rejected / Needs Edit 
+ 
+Slack Notification Integration 
+●​ When content queue reaches 10+ pieces: Slack notification to reviewer 
+●​ Reviewer opens Notion board on phone and approves in batch (target: 20 minutes/day) 
+●​ Approved pieces auto-move to Buffer/Later scheduling queue 
+●​ Rejected pieces: reviewer adds feedback note → n8n sends to regeneration queue 
+ 
+Approval Decision Framework 
+Decision 
+Criteria 
+APPROVE 
+Content hits a real pain, hook is strong, CTA is clear, culturally 
+appropriate, no factual claims about Eki that aren't accurate 
+APPROVE WITH 
+EDIT 
+Good content but requires minor word change, hook tweak, or caption 
+adjustment — edit inline in Notion 
+REJECT + BRIEF 
+Doesn't resonate, missed the pain, feels generic — add specific 
+feedback for regeneration 
+Eki — African Foodstuff Commerce Infrastructure  Page 18 
+
+===== PAGE 19 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+HOLD 
+Good content but wrong timing (save for specific event, holiday, or 
+campaign period) 
+ 
+What Humans Are NOT Doing 
+IMPORTANT: The Approval Layer is the only regular manual step. Humans are NOT 
+researching trends, NOT writing scripts, NOT scheduling posts, NOT responding to 
+comment DMs, NOT managing WhatsApp sequences, NOT generating reports. All of that 
+is automated. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 19 
+
+===== PAGE 20 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+07 
+DISTRIBUTION ENGINE 
+ 
+Approved content auto-distributes across all platforms on optimised schedules. The Distribution Engine 
+manages multiple accounts, platform-specific formatting, and posting times without manual intervention. 
+ 
+Account Architecture 
+Account 
+Purpose & CTA Strategy 
+@eki.vendors 
+Instagram — Vendor-focused. Pain content: DM chaos, lost orders, 
+fake payments. CTA: 'Comment SELL' 
+@eki.buyers 
+Instagram — Buyer-focused. Trust content: authentic products, 
+verified sellers. CTA: 'Comment BUY' 
+@eki.market 
+Instagram — Marketplace brand. Success stories, vendor 
+milestones, social proof. 
+@eki_official 
+TikTok — Primary presence. Trending-format content. Fastest 
+organic reach for new accounts. 
+Eki Foodstuff 
+Community 
+Facebook — Group page. Longer posts, vendor education, 
+community building. 
+ 
+Optimal Posting Schedule 
+Time Window 
+Content Type & Rationale 
+7:00 – 8:30 AM 
+Morning commute window. Diaspora audience checking phones. 
+Educational carousels perform well. 
+12:00 – 1:30 PM 
+Lunch break. Higher engagement. Emotional pain-based Reels perform 
+best. 
+7:00 – 10:00 PM 
+Evening prime time. Highest audience online. Best for viral Reels and 
+Stories. 
+Saturday Afternoon 
+Weekend browsing. Best for long-form Facebook posts and carousel 
+saves. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 20 
+
+===== PAGE 21 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Tools & Workflow 
+●​ Buffer or Later — schedule and publish approved content across all accounts 
+●​ n8n — watches Notion 'Approved' list → pushes to Buffer queue automatically 
+●​ Each platform gets format-specific version (aspect ratio, caption length, hashtags) 
+●​ Posting confirmation logged in Airtable with timestamp and account 
+●​ Performance tracking begins immediately after posting (triggers analytics workflow) 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 21 
+
+===== PAGE 22 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+08 
+COMMENT FUNNEL ENGINE 
+ 
+The Comment Funnel is the critical bridge between content and conversion. Every piece of content 
+ends with a keyword CTA. When a viewer comments that keyword, an automated system captures 
+them, sends a DM, and moves them into the WhatsApp nurture sequence. This turns passive viewers 
+into active leads at scale. 
+ 
+The Comment → Conversion Architecture 
+1 
+CONTENT CTA  →  Video or caption ends: 'Comment VENDOR below and I'll send you 
+everything you need to get started' 
+2 
+KEYWORD DETECTION  →  ManyChat monitors all comments on the post for trigger 
+keywords in real-time 
+3 
+AUTO-DM  →  Within 60 seconds: ManyChat sends personalised DM to the commenter 
+4 
+WHATSAPP HANDOFF  →  DM contains WhatsApp link with pre-filled message: 'Hi Eki, 
+I commented VENDOR on your post' 
+5 
+LEAD CAPTURED  →  User is now in WhatsApp — name, platform, pain point, and 
+entry keyword all logged 
+6 
+NURTURE BEGINS  →  Automated WhatsApp sequence activates based on keyword: 
+Vendor journey or Buyer journey 
+7 
+CONVERSION  →  Sequence drives to: store setup (vendors) or first purchase (buyers) 
+ 
+Keyword-to-Journey Mapping 
+Keyword 
+Journey Triggered 
+VENDOR 
+Vendor selling journey — store setup, stop DM chaos, professional 
+storefront 
+SELL 
+Same as VENDOR — alternate trigger word for A/B testing 
+Eki — African Foodstuff Commerce Infrastructure  Page 22 
+
+===== PAGE 23 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+BUY / BUYING 
+Buyer journey — trusted marketplace, authentic products, verified 
+sellers 
+INFO 
+General information — sends overview of Eki with options to self-select: 
+I'm a vendor / I'm a buyer 
+JOIN 
+Urgent interest signal — fast-track to onboarding with urgency 
+messaging 
+YES 
+Affirmation response to a specific Story CTA — triggers immediate DM 
+ 
+DM Message Templates 
+Vendor DM: Hey [Name]! 👋 You commented on our post — that tells me you're probably 
+dealing with the chaos of selling on WhatsApp or Instagram. I'd love to show you what Eki 
+does for vendors like you. Click here to chat with us on WhatsApp: [LINK] It's free to set up. 
+See you there! 
+ 
+Buyer DM: Hey [Name]! 👋 You commented on our post — that tells me you're looking for 
+a trusted place to buy African foodstuff. Eki is exactly that. Come chat with us here: [LINK] 
+— we'll help you find exactly what you need from verified sellers. 
+ 
+Technical Implementation 
+●​ ManyChat (Instagram plan, $15–45/month) — the primary tool for comment-to-DM automation 
+●​ Instagram Business Account required for all accounts running this funnel 
+●​ Each DM contains UTM-tracked WhatsApp link to identify which post drove the lead 
+●​ n8n logs all comment captures into the Lead Database in Airtable 
+●​ Performance tracked: comment rate → DM open rate → WhatsApp click rate → signup rate 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 23 
+
+===== PAGE 24 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+09 
+WHATSAPP NURTURE ENGINE 
+ 
+WhatsApp is where African commerce happens. The Nurture Engine is not a broadcast list — it is a 
+personalised, behaviour-triggered conversation sequence that builds trust, addresses objections, 
+delivers proof, and converts leads into active users without requiring manual responses at scale. 
+ 
+Technology Stack 
+●​ WATI or 360dialog — WhatsApp Business API for proper, compliant automation 
+●​ Or ManyChat WhatsApp — simpler, lower cost for MVP stage 
+●​ n8n — triggers sequences based on lead source and keyword 
+●​ Airtable — stores lead status, sequence stage, and behaviour data 
+ 
+Vendor Nurture Sequence (14 Days) 
+Day 
+Theme 
+Message Content & Goal 
+1 
+Welcome + Pain 
+Acknowledgment 
+Welcome! We know the chaos of selling on WhatsApp — missed 
+orders, price ghost buyers, fake alerts. This is exactly what Eki was 
+built to fix. Here's a 60-second overview... 
+2 
+Social Proof 
+A vendor named [Name] from Lagos joined Eki 3 weeks ago. This 
+week she got her 50th order — all from buyers she'd never met 
+before. Her store link: [URL] 
+3 
+How Eki Works 
+Eki gives you: a professional storefront, secure payments, order 
+management, and buyer discovery. 3 steps: Set up → Share your 
+link → Get paid. That's it. 
+4 
+Demo / Visual 
+Walkthrough 
+Here's a 2-minute screen recording of what your Eki store looks like 
+[video]. No DM chaos. No fake alerts. Just orders. 
+5 
+Objection 
+Handling 
+You might be thinking: 'Is it free?' Yes, free to set up. 'What about 
+shipping?' We guide you through it. 'Will buyers trust me?' Your 
+verified badge handles that. 
+7 
+Store Setup CTA 
+Ready to set up your store? It takes 15 minutes. Click here → [LINK]. 
+If you get stuck, reply HELP and a real person will assist you. 
+10 
+First Sale 
+Checklist 
+Vendors who make their first sale within 14 days do these 3 things: 
+(1) Complete profile, (2) Add 5 products with photos, (3) Share their 
+store link once. Want to try? 
+Eki — African Foodstuff Commerce Infrastructure  Page 24 
+
+===== PAGE 25 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+14 
+Final Activation 
+Push 
+You're 1 step away from your first Eki sale. Your store is ready — it 
+just needs you to complete it. Here's your direct link: [URL]. After 
+today, we'll check in weekly instead of daily. 
+ 
+Buyer Nurture Sequence (7 Days) 
+Stage 
+Message Content 
+Day 1 — Trust 
+Foundation 
+Welcome! Eki is a verified marketplace for African foodstuff. Every 
+vendor is real, every transaction is protected. Here's what that means 
+for you... 
+Day 2 — Proof of 
+Authenticity 
+Meet [Vendor Name] — they sell the same egusi your grandmother 
+would recognise. Verified, genuine, shipped to your door. Browse their 
+store: [LINK] 
+Day 3 — Browse 
+Invitation 
+We have [X] vendors across the UK, USA, Canada, and Europe. Garri, 
+palm oil, dried fish, spices — all in one place. Browse now: [LINK] 
+Day 4 — Featured 
+Vendors 
+This week's top vendors: [List 3 vendors with their speciality and store 
+links]. All verified. All with reviews. 
+Day 5 — First Order 
+Incentive 
+Your first Eki order comes with buyer protection. Not happy? We handle 
+it. Ready to order? Here are today's best sellers: [LINK] 
+Day 7 — Final Nudge 
+Still browsing? That's OK. But [Vendor Name] just restocked their 
+[product] and it sells out fast. Here's the direct link: [LINK] 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 25 
+
+===== PAGE 26 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+10 
+MARKETPLACE GROWTH LOOP 
+ 
+The Growth Loop is what transforms linear acquisition into compounding growth. Once enough vendors 
+and buyers are in the marketplace, each new participant brings more participants. This system 
+engineers and accelerates that loop from day one. 
+ 
+The Core Growth Loop 
+1 
+VENDOR JOINS EKI  →  Sets up store, uploads products 
+2 
+VENDOR IMPORTS CUSTOMERS  →  Dashboard prompts: 'Import your existing 
+WhatsApp customers to Eki' — unique import link generated 
+3 
+IMPORTED BUYERS ACTIVATED  →  Eki sends each imported buyer a WhatsApp 
+welcome: 'Your supplier [Name] now has a verified store on Eki' 
+4 
+BUYER MAKES PURCHASE  →  Transaction complete — vendor gets notification, 
+buyer gets receipt 
+5 
+VENDOR CELEBRATES  →  Auto-generated: 'You just got your [5th/10th/50th] order on 
+Eki!' — vendor shares on social media (pre-designed story template) 
+6 
+SOCIAL PROOF GENERATED  →  Vendor's post creates new content for Eki's social 
+proof engine — feeds back to System 1 
+7 
+BUYER TELLS FRIENDS  →  Post-purchase: 'Found a trusted [egusi/palm oil] supplier 
+on Eki — here's their link' — buyers share naturally 
+8 
+NEW BUYERS & VENDORS JOIN  →  Referred buyers become Eki users; some 
+referred users become vendors — loop compounds 
+ 
+Referral Mechanics 
+Referral Type 
+Mechanism 
+Vendor → Buyer Import 
+Every vendor gets a unique import link to share with existing 
+customers. Automated onboarding of imported buyers. 
+Eki — African Foodstuff Commerce Infrastructure  Page 26 
+
+===== PAGE 27 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Vendor → Vendor 
+Referral 
+Vendors invite other vendors in their network. Both get a small 
+benefit (featured placement, priority support). 
+Buyer → Buyer Referral 
+Post-purchase prompt: 'Know someone who needs [product type]? 
+Share your vendor's link.' Pre-drafted WhatsApp message 
+generated. 
+Milestone Sharing 
+Auto-triggered: vendor milestone cards (designed, branded) sent to 
+vendor on WhatsApp to share on social media. 
+ 
+Growth Loop Acceleration 
+●​ Every vendor who joins represents 20–200 potential buyers (their existing customer base) 
+●​ Every buyer who joins represents 2–5 potential referrals (friends with same food needs) 
+●​ Every transaction generates a social proof asset that becomes new acquisition content 
+●​ Each new country a vendor ships to becomes a PR and content opportunity 
+KEY INSIGHT: At 100 active vendors, the system becomes partially self-sustaining. 
+Vendor-to-buyer import alone can generate 2,000–20,000 buyer signups without a single 
+additional content piece. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 27 
+
+===== PAGE 28 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+11 
+SOCIAL PROOF ENGINE 
+ 
+Social proof is the most powerful conversion mechanism in trust-deficit markets. The Social Proof 
+Engine automatically converts every transaction, milestone, and success story into distributable content 
+— creating a flywheel where real activity generates acquisition content. 
+ 
+Trigger Events → Content Generated 
+Trigger Event 
+Auto-Generated Content 
+Vendor's 1st Order 
+Auto: 'A new vendor just made their first sale on Eki!' → Story 
+template + Reel script 
+Vendor 10th/50th/100th 
+Order 
+Auto: Milestone card generated → WhatsApp to vendor → 
+vendor shares on social media 
+New Country Added 
+Auto: 'Eki now ships to X countries' → Infographic carousel + 
+caption 
+Positive Review Submitted 
+Auto: Review extracted → Designed quote card → Carousel 
+slide + Story 
+Total Order Milestone 
+Auto: '1,000 orders fulfilled on Eki' → Celebration Reel script + 
+carousel 
+Vendor Success Story 
+Submitted 
+Human: review → Reel script generated → Carousel designed → 
+Full content piece 
+Buyer Repeat Purchase 
+Data: buyer orders 3x → auto-DM asking for testimonial → 
+testimonial → content 
+ 
+Social Proof Content Formats 
+●​ Quote cards: Clean, branded, sharable — vendor/buyer testimonial with name and location 
+●​ Milestone carousels: '0 to 500 orders' story told in slides — designed via Canva API 
+●​ Country maps: Visual showing where Eki delivers — updated automatically as new countries added 
+●​ Before/After: Vendor's situation before Eki vs after (with permission and real numbers) 
+●​ Video testimonials: Script generated by AI, recorded by vendor, assembled by CapCut/Creatomate 
+ 
+Testimonial Collection System 
+Eki — African Foodstuff Commerce Infrastructure  Page 28 
+
+===== PAGE 29 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+7.​ Post-purchase: auto-WhatsApp to buyer asking for 1-line review (friction-free) 
+8.​ Milestone: auto-WhatsApp to vendor asking 'Would you share your story?' with simple form link 
+9.​ Story submissions go to Airtable → reviewed by human → approved → content engine generates 
+full piece 
+10.​Best testimonials prioritised by: specificity (numbers), emotion, and relatability to target audience 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 29 
+
+===== PAGE 30 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+12 
+ANALYTICS + LEARNING ENGINE 
+ 
+The Analytics Engine closes the loop. It tracks every metric across every stage of the funnel, identifies 
+patterns in what works, and automatically updates the content generation system to produce stronger 
+output each week. This is what makes the machine self-improving rather than static. 
+ 
+Metrics Tracked 
+Layer 
+Primary Metrics 
+Why It Matters 
+Content 
+Views, engagement rate, saves, 
+shares, CTA comment count 
+Identifies which content drives funnel 
+activity vs vanity metrics 
+Comment Funnel 
+Comment rate, DM open rate, 
+WhatsApp click rate, lead capture rate 
+Measures conversion efficiency from 
+viewer to lead 
+WhatsApp 
+Nurture 
+Message open rates, reply rate, link 
+click rate, sequence completion rate 
+Identifies which nurture messages 
+drive action vs are ignored 
+Signup 
+Vendor store setups, buyer accounts 
+created, time-to-first-action 
+Core conversion metric — content to 
+registered user 
+Transactions 
+Orders per vendor, GMV, repeat order 
+rate, buyer retention 
+Ultimate success metric — acquisition 
+driving real commerce 
+Referral 
+Referral links shared, buyers 
+imported, referred signups 
+Measures compounding growth loop 
+health 
+ 
+AI Weekly Learning Protocol 
+11.​Pull all content performance data from past 7 days via API (Instagram Insights, TikTok Analytics) 
+12.​GPT-4 Analysis: 'Of this week's content, what were the top 3 performers and why? What patterns 
+do they share?' 
+13.​Update Hook Library: remove bottom-quartile hooks, elevate top performers 
+14.​Generate weekly content brief: 'Next week focus on [emotion], use [hook format], target [persona] 
+pain [X]' 
+15.​Update content generation prompts in n8n with new learnings 
+16.​Generate weekly performance report → Slack/email to team 
+17.​Identify test hypotheses for next week: 'We think [new hook format] will outperform [current format] 
+because...' 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 30 
+
+===== PAGE 31 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Dashboard 
+●​ Retool or Metabase dashboard (self-hosted, low cost) 
+●​ Live view: content posted today, leads captured, WhatsApp conversations active, signups this week 
+●​ Trend view: week-over-week performance across all funnel stages 
+●​ Content performance leaderboard: top 10 pieces by funnel impact (not vanity metrics) 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 31 
+
+===== PAGE 32 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+AI AGENTS SPECIFICATION 
+The following 8 AI agents form the intelligence layer of the acquisition machine. Each agent has a 
+specific role, a defined set of tools, and a regular execution schedule. 
+ 
+Agent 
+Full Specification 
+1. Trend Scout Agent 
+Role: Monitors social media for viral content in relevant niches. Tools: 
+Apify scraper, GPT-4 analysis, Airtable write. Schedule: Every 6 
+hours. Output: New entries in Hook Library and Format Pattern 
+Library. 
+2. Pain Harvester 
+Agent 
+Role: Mines online communities for audience pain points. Tools: Apify 
+Reddit/Facebook scraper, GPT-4 categorisation, Airtable write. 
+Schedule: Daily. Output: New pain point entries tagged by persona 
+and emotional intensity. 
+3. Content Creator 
+Agent 
+Role: Generates content using intelligence and pain databases. 
+Tools: GPT-4 with dynamic prompts, Airtable read (pain + hooks), 
+Notion write. Schedule: 3x per day. Output: 10–15 content pieces per 
+run in approval queue. 
+4. Content Multiplier 
+Agent 
+Role: Transforms approved core scripts into all platform formats. 
+Tools: GPT-4 format adaptation, Canva API (carousels), ElevenLabs 
+(voiceover). Schedule: Triggered on content approval. Output: 
+Platform-ready versions of each approved piece. 
+5. Hook Optimizer 
+Agent 
+Role: Analyses A/B test results and updates hook library. Tools: 
+Instagram/TikTok API (performance data), GPT-4 pattern analysis, 
+Airtable update. Schedule: Every 72 hours. Output: Updated hook 
+templates, performance insights. 
+6. Nurture 
+Personalisation Agent 
+Role: Customises WhatsApp messages based on lead behaviour. 
+Tools: WhatsApp API data, GPT-4, WATI/ManyChat. Schedule: 
+Triggered by user behaviour (link click, no response after 48h). 
+Output: Personalised follow-up messages. 
+7. Social Proof Agent 
+Role: Detects milestone events and generates social proof content. 
+Tools: Eki backend API, GPT-4, Canva API, Airtable write. Schedule: 
+Real-time event triggers. Output: Milestone cards, testimonial-based 
+content pieces. 
+8. Performance 
+Analyst Agent 
+Role: Weekly deep analysis of all system performance. Tools: All 
+analytics APIs, GPT-4 analysis, Slack/email. Schedule: Every 
+Eki — African Foodstuff Commerce Infrastructure  Page 32 
+
+===== PAGE 33 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+Monday morning. Output: Weekly report, updated content briefs, 
+system recommendations. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 33 
+
+===== PAGE 34 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+DATABASES REQUIRED 
+All databases are built in Airtable (low cost, accessible, n8n-compatible). Airtable serves as the central 
+data layer connecting all agents and automation workflows. 
+ 
+Database 
+Structure & Contents 
+1. Viral Intelligence 
+DB 
+Tables: Hooks (text, type, emotion, engagement score), Creators 
+(handle, niche, follower count, avg engagement), Formats (name, 
+structure, best platform, example), Trending Audio (name, weeks 
+trending, platform). Updated: every 6 hours. 
+2. Pain & Audience 
+DB 
+Tables: Pain Points (statement, persona, category, intensity, source, 
+keywords, usage count), Objections (objection text, response, 
+persona), Audience Segments (profile, language style, top pains). 
+Updated: daily. 
+3. Content Library 
+DB 
+Tables: Content Queue (script, caption variants, hook variants, format, 
+persona, status, AI score, scheduled time), Published Content (all 
+posted pieces with engagement data), Rejected Content (with feedback 
+for regeneration). Updated: continuously. 
+4. Lead & CRM DB 
+Tables: Social Leads (username, platform, post, keyword, timestamp), 
+WhatsApp Leads (number, persona, journey stage, last message, 
+activity), Converted Users (Eki user ID, signup date, source, first action 
+date). Updated: real-time. 
+5. Performance DB 
+Tables: Content Performance (piece ID, platform, views, engagement, 
+saves, comments, CTA triggers, DM opens), Funnel Performance 
+(weekly conversion rates per stage), A/B Test Results (variant, winner, 
+learning extracted). Updated: daily. 
+6. Social Proof DB 
+Tables: Testimonials (text, persona, rating, source, approval status), 
+Milestones (event, vendor, date, content generated), Success Stories 
+(vendor ID, story, metrics, content status). Updated: event-triggered. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 34 
+
+===== PAGE 35 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+MVP vs ADVANCED IMPLEMENTATION 
+ 
+Lowest-Cost MVP (Month 1–3) 
+The MVP focuses on the highest-impact systems first: content generation, comment funnels, and 
+WhatsApp nurture. Everything else is added progressively. 
+MVP COST ESTIMATE: £130–250/month total. This replaces the equivalent of a 3–5 
+person marketing team. 
+ 
+Tool 
+Role & Cost 
+n8n (cloud) 
+Core automation orchestrator. £20/month. Free self-hosted option 
+available. 
+Airtable (Free/Plus) 
+All databases. Free tier works for MVP. Plus plan £20/month when 
+scaling. 
+OpenAI GPT-4o 
+Content generation, analysis. Approx £30–60/month at MVP volume. 
+ManyChat (Instagram) 
+Comment DM automation. £15/month. Critical — implement from day 
+1. 
+WATI (WhatsApp API) 
+WhatsApp nurture sequences. £40–80/month. Or use ManyChat 
+WhatsApp at £15/month. 
+Buffer (Essentials) 
+Social scheduling. £15/month for 3 channels. Or Later at £16/month. 
+Apify (Starter) 
+Web scraping for trend intelligence. £45/month. Scale up later. 
+Canva Pro 
+Carousel and graphic creation. £13/month. 
+ 
+MVP Systems Priority Order 
+18.​Comment Funnel (ManyChat) — implement first. Starts capturing leads from existing content 
+immediately. 
+19.​WhatsApp Nurture Engine — implement second. Converts captured leads without manual work. 
+20.​AI Content Engine (n8n + GPT-4) — implement third. Begins generating content at volume. 
+21.​Approval Layer (Notion) — implement alongside content engine. One human checkpoint. 
+22.​Distribution Engine (Buffer) — implement fourth. Starts automated posting. 
+23.​Viral Intelligence Engine (Apify) — implement fifth. Makes content smarter over time. 
+24.​Pain Discovery Engine — implement sixth. Deepens content targeting. 
+Eki — African Foodstuff Commerce Infrastructure  Page 35 
+
+===== PAGE 36 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+25.​Analytics Engine — implement from the start, but expand as data grows. 
+ 
+Scalable Advanced Version (Month 4–12) 
+Once the MVP is validated and generating leads, layer in the following to scale volume, improve quality, 
+and increase automation: 
+Addition 
+What It Unlocks 
+AI Video Production 
+ElevenLabs + Runway + Creatomate. Fully automated video 
+assembly. Moves from scripted to produced content. 
+Fine-tuned Content 
+Model 
+Fine-tune GPT-4 on Eki's top-performing content. Significantly 
+improves content quality and brand voice. 
+Proper WhatsApp API 
+(360dialog) 
+Full API access for more sophisticated branching sequences and 
+compliance at scale. 
+Retool Dashboard 
+Custom internal dashboard replacing manual Airtable views. Full 
+funnel visibility. 
+Multi-Account Testing 
+Infrastructure 
+5+ Instagram accounts, 3+ TikTok accounts running parallel A/B 
+tests continuously. 
+Marketplace API 
+Integration 
+Social Proof Engine connects directly to Eki's transaction database 
+for real-time milestone content. 
+Predictive Content 
+Scoring 
+ML model trained on performance data predicts content 
+performance before posting. 
+International Expansion 
+Content adapted for UK, US, Canada diaspora — localised pain 
+points and creator references. 
+ADVANCED COST 
+ESTIMATE: 
+£500–1,500/month 
+depending on AI video 
+production volume. At 
+this stage, the system 
+is generating 
+thousands of leads per 
+month and the ROI 
+justifies the investment. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 36 
+
+===== PAGE 37 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+HUMAN INVOLVEMENT REQUIRED 
+ 
+The system is designed to minimise human involvement, not eliminate it entirely. Humans add 
+judgment, cultural intelligence, and quality control. Everything else is automated. 
+ 
+Task 
+Time Required 
+Content Approval 
+20–30 min/day — review and approve content queue in Notion. 
+Highest-impact human role. 
+Complex DM Responses 
+30 min/day — respond to edge cases that automation can't handle 
+(unusual questions, high-value leads). 
+Weekly Strategy Review 
+1 hour/week — review Analytics Agent report, adjust content 
+themes and strategic priorities. 
+Social Proof Curation 
+2 hours/week — identify the best vendor stories, conduct 
+WhatsApp interviews, approve testimonials. 
+Trend Context 
+30 min/week — brief the AI on cultural events, Nigerian/African 
+news, diaspora moments to incorporate. 
+System Maintenance 
+1 hour/week — check n8n workflows, fix any automation failures, 
+update API connections. 
+ 
+TOTAL HUMAN TIME: Approximately 3–5 hours/day in Month 1–2 (while building and 
+calibrating). Reduces to 10–15 hours/week by Month 3. Further reduces to 5–8 hours/week 
+by Month 6 as the system becomes self-calibrating. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 37 
+
+===== PAGE 38 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+WEEKLY OPERATING PROCESS 
+ 
+Period 
+Activities 
+MONDAY — Strategy 
+Review Analytics Agent weekly report (auto-delivered). Identify top 
+performers. Update content priorities for the week. Brief the AI on any 
+cultural moments, events, or news to incorporate. 60 minutes. 
+TUESDAY–THURSD
+AY — Execution 
+Daily: check content approval queue in Notion (20 minutes). Approve 
+30–50 pieces for the week. Monitor comment funnel health in 
+ManyChat dashboard. Check WhatsApp lead volume in Airtable. 
+FRIDAY — Growth 
+Review vendor and buyer onboarding numbers. Identify top-converting 
+WhatsApp leads to personally engage. Curate 1–2 social proof stories 
+for the following week. Update Social Proof DB. 
+SATURDAY–SUNDA
+Y — Automated 
+System runs entirely autonomously. Content posts on schedule. 
+Comments captured. Nurture sequences continue. No human 
+involvement needed. Review Monday morning. 
+MONTHLY — System 
+Review 
+Full funnel audit: which systems are underperforming? Which tools 
+need updating? What new pain points has the audience surfaced? 
+What new content formats are trending? Update everything. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 38 
+
+===== PAGE 39 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+RISKS & FAILURE POINTS 
+ 
+Risk 
+Severity 
+Mitigation 
+Instagram account restriction 
+HIGH 
+Never operate from a single account. Warm 
+up accounts gradually (post 5x before 
+automating). Keep one 'safe' account 
+manual only. 
+ManyChat DM automation ban 
+HIGH 
+Stay within Meta's automation policies. 
+Never auto-DM without comment trigger. 
+Monitor policy updates monthly. 
+WhatsApp API compliance 
+violation 
+HIGH 
+Use official API only (WATI/360dialog). 
+Follow opt-in rules. Never send unsolicited 
+messages. 
+AI content feels robotic or 
+generic 
+MEDIUM 
+Human review catches this. Fine-tune 
+prompts with Eki-specific examples. Curate 
+real vendor stories to inject authenticity. 
+Apify scraping blocked 
+MEDIUM 
+Multiple scraping tools as backup. Some 
+data collection can be manual (10 
+trends/week researched by human). 
+Approval bottleneck 
+MEDIUM 
+Keep approval simple — yes/no decisions 
+only. Train a second person to approve. Set 
+minimum batch approval: 30 pieces per 
+session. 
+n8n workflow failure 
+MEDIUM 
+Set up error notifications immediately. Test 
+all workflows before going live. Weekly 
+workflow health check. 
+Content misaligns with cultural 
+context 
+MEDIUM 
+Human reviewer must be culturally aware of 
+Nigerian/African diaspora context. Brief AI 
+weekly on cultural nuances. 
+Competitor copies the system 
+LOW 
+Data moat: your pain database, vendor 
+stories, and performance learnings are 
+unique to Eki. System becomes harder to 
+copy as data accumulates. 
+Low vendor activation after 
+signup 
+MEDIUM 
+First 48 hours are critical. Trigger immediate 
+WhatsApp check-in on signup. Offer live 
+setup assistance for first 100 vendors. 
+Eki — African Foodstuff Commerce Infrastructure  Page 39 
+
+===== PAGE 40 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 40 
+
+===== PAGE 41 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+RECOMMENDED TECH STACK 
+ 
+Core Infrastructure 
+Tool 
+Role 
+n8n 
+Workflow automation backbone. Orchestrates all agents, triggers, and 
+data flows. Self-hosted or cloud. Primary tool — everything connects 
+through n8n. 
+Airtable 
+Central database. All intelligence, pain points, content, leads, and 
+performance data. n8n-native integration. Replaceable with Supabase 
+(PostgreSQL) at scale. 
+OpenAI GPT-4o 
+Primary AI model for content generation, pattern analysis, and weekly 
+insights. Cost-efficient at scale. Replaceable with Claude API for 
+specific tasks. 
+ 
+Content Creation 
+Tool 
+Role 
+Canva API 
+Auto-generate carousels and graphics from templates. 
+Brand-consistent at scale. 
+ElevenLabs 
+(Advanced) 
+AI voiceover for video content. Nigerian English voice options available. 
+Runway / Kling AI 
+(Advanced) 
+AI B-roll video generation for food content. 
+Creatomate 
+(Advanced) 
+Auto-assemble final videos: voiceover + visuals + captions + music → 
+export-ready file. 
+ 
+Distribution & Automation 
+Tool 
+Role 
+Buffer / Later 
+Social media scheduling. Connects to n8n. Posts to Instagram, TikTok, 
+Facebook on schedule. 
+Eki — African Foodstuff Commerce Infrastructure  Page 41 
+
+===== PAGE 42 =====
+EKI — AI-Powered Organic Acquisition MachineCONFIDENTIAL 
+ManyChat 
+Instagram comment-to-DM automation. Core funnel trigger. Critical 
+from day 1. 
+WATI / 360dialog 
+WhatsApp Business API for compliant, scalable nurture sequences. 
+Apify 
+Web scraping for trend intelligence (Instagram, TikTok, Reddit, 
+Facebook). 
+ 
+Analytics & Dashboard 
+Tool 
+Role 
+Retool (Advanced) 
+Custom internal dashboard. Visualises full funnel performance. 
+Replaces manual Airtable views. 
+Metabase 
+(Alternative) 
+Open-source BI tool. Self-hosted. Lower cost than Retool. 
+Instagram Insights 
+API 
+Pull post-level performance data into Airtable for analysis. 
+TikTok Analytics API 
+Pull video performance data for testing engine. 
+Slack 
+Internal alerts — content approval notifications, weekly performance 
+reports, system errors. 
+ 
+STACK PHILOSOPHY: Every tool choice prioritises: low cost, n8n compatibility, and 
+replaceability. The system is not locked into any single vendor. Each component can be 
+swapped without rebuilding the architecture. 
+ 
+ 
+This system is not a content strategy. 
+It is an autonomous acquisition department. 
+Build it once. It runs indefinitely. 
+ 
+Eki — African Foodstuff Commerce Infrastructure  Page 42 

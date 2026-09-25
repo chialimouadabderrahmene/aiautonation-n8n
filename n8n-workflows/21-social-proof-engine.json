@@ -1,0 +1,150 @@
+{
+  "name": "Eki - 21 Social Proof Engine",
+  "nodes": [
+    {
+      "id": "fc4f0947-2927-437e-832d-7d18403dba92",
+      "name": "Event Webhook",
+      "type": "n8n-nodes-base.webhookTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "social-proof",
+        "options": {}
+      }
+    },
+    {
+      "id": "b0cea248-3eed-4b5d-b9f0-fc61bed76216",
+      "name": "Parse Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const e = $json;\nreturn [{json:{\n  event_type: e.event || 'milestone',\n  vendor_name: e.vendor || 'Vendor',\n  metric: e.metric || 'first_sale',\n  value: e.value || 1,\n  timestamp: new Date().toISOString()\n}}];"
+      }
+    },
+    {
+      "id": "cb8c8551-56cb-4276-bb44-629dfdbff81e",
+      "name": "GPT-4 Generate Proof",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=Generate social proof content for this Eki milestone. Return JSON: {reel_script, carousel_slides[5], caption, quote_card_text, hashtags}. Event: {{$json.event_type}} - {{$json.vendor_name}} achieved {{$json.metric}}: {{$json.value}}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "openAiApi": "openAiApi"
+      }
+    },
+    {
+      "id": "a37e16aa-e944-4d59-9c89-8dc9e1b79e90",
+      "name": "Queue Content",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "SocialProof",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event": "",
+            "vendor": "",
+            "content": "",
+            "status": "pending",
+            "created": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "d81b79af-deb0-472e-bec4-9f352788fa9a",
+      "name": "Notify Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\ud83c\udfc6 Social Proof Generated!\n{{$json.vendor_name}} - {{$json.event_type}}\nContent queued for approval.\nPreview: {{$node[\"GPT-4 Generate Proof\"].json.output.quote_card_text}}"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    }
+  ],
+  "connections": {
+    "Event Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Event": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Generate Proof",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Generate Proof": {
+      "main": [
+        [
+          {
+            "node": "Queue Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "2e137917-3299-493a-971a-bd40e8fbfb74",
+  "active": false,
+  "tags": []
+}

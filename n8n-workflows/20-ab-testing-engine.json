@@ -1,0 +1,181 @@
+{
+  "name": "Eki - 20 A/B Testing Engine",
+  "nodes": [
+    {
+      "id": "05ed9300-74e1-4b23-9d51-9fe6a60c4226",
+      "name": "Every 72h",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "hour": 9,
+          "minute": 0
+        }
+      }
+    },
+    {
+      "id": "079c8706-9980-4277-9343-a9550f6f87c3",
+      "name": "Get Performance",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "operation": "getRows",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "PublishedContent"
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "b10bdd56-0a20-4614-ab7b-9c9f043308b1",
+      "name": "Analyze Winners",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const posts = $json;\nconst scored = posts.map(p => ({\n  ...p,\n  engagement_score: (parseInt(p.comments||0)*3 + parseInt(p.saves||0)*2 + parseInt(p.shares||0)*4)\n}));\nscored.sort((a,b) => b.engagement_score - a.engagement_score);\nconst winners = scored.slice(0,3);\nconst losers = scored.slice(-3);\nreturn [\n  {json:{type:'winners', data:winners}},\n  {json:{type:'losers', data:losers}},\n  {json:{type:'insights', summary:`Top hooks: ${winners.map(w=>w.hook).join(', ')}. Top formats: ${winners.map(w=>w.format).join(', ')}`}}\n];"
+      }
+    },
+    {
+      "id": "fdc68f1c-f37e-44aa-81e0-08f0b07ebbe4",
+      "name": "GPT-4 Insights",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=Analyze these winners vs losers from Eki's content. Extract patterns: what hooks, emotions, formats, CTAs drive engagement. Return JSON: {top_hooks[], top_formats[], top_emotions[], recommendations[]}. Data: {{JSON.stringify($json)}}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "openAiApi": "openAiApi"
+      }
+    },
+    {
+      "id": "bc185b34-4eff-48d3-81ef-7bb23bce8845",
+      "name": "Update Hook Library",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Intelligence",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "type": "hook_pattern",
+            "source": "ab_test",
+            "pattern": "",
+            "score": "",
+            "date": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "b30b93cf-0173-46ee-8e00-11496176d1da",
+      "name": "Weekly Briefing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\ud83d\udcca A/B Test Results (72h)\nWinners: {{$node[\"Analyze Winners\"].json[0].data.map(w=>w.hook).join(', ')}}\n\nRecommendations: {{$node[\"GPT-4 Insights\"].json.output.recommendations.join('; ')}}"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    }
+  ],
+  "connections": {
+    "Every 72h": {
+      "main": [
+        [
+          {
+            "node": "Get Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Performance": {
+      "main": [
+        [
+          {
+            "node": "Analyze Winners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Winners": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Insights": {
+      "main": [
+        [
+          {
+            "node": "Update Hook Library",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Weekly Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "b4afa95f-543a-4285-8326-89cf2447a6a7",
+  "active": false,
+  "tags": []
+}

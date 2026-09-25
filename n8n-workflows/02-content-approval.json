@@ -1,0 +1,486 @@
+{
+  "name": "Eki - 02 Content Approval Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "content-approval",
+        "options": {}
+      },
+      "id": "e674b321-4f1b-419b-a010-b6f7924c2560",
+      "name": "Telegram Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const message = $input.first().json.body.message.text;\nconst matches = message.match(/^\\/(approve|reject|edit)\\s+(\\d+)(?:\\s+(.+))?/i);\n\nif (!matches) {\n  return { action: 'ignore', message: 'No valid command found' };\n}\n\nreturn {\n  action: matches[1].toLowerCase(),\n  day_number: parseInt(matches[2]),\n  feedback: matches[3] || ''\n};"
+      },
+      "id": "d0e1ac6b-67a3-41bb-a5a5-c6be98bbfcf2",
+      "name": "Parse Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.action }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "approve"
+            },
+            {
+              "value2": "reject"
+            },
+            {
+              "value2": "edit"
+            }
+          ]
+        }
+      },
+      "id": "90e3cd1c-2234-45aa-bbbe-b97c6452f10b",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Content Drafts!A:J",
+        "matchColumns": [
+          "day_number"
+        ],
+        "columnsToUpdate": [
+          "status",
+          "approval_date"
+        ],
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "status",
+              "value": "Approved"
+            },
+            {
+              "column": "approval_date",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3be5b0cd-562a-4df4-8d41-c741e0a290ab",
+      "name": "Update GSheet Approved",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        150
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
+        "text": "=✅ **Content Approved for Day {{ $json.day_number }}**\n\nThe draft status has been updated in Google Sheets and queued for publishing.",
+        "additionalFields": {}
+      },
+      "id": "80b6b2cd-7f61-419b-a010-c6be98bbfcf2",
+      "name": "Telegram Confirm Approved",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1020,
+        150
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Content Drafts!A:J",
+        "matchColumns": [
+          "day_number"
+        ],
+        "columnsToUpdate": [
+          "status"
+        ],
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "status",
+              "value": "Rejected"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4be5b0cd-562a-4df4-8d41-c741e0a290ac",
+      "name": "Update GSheet Rejected",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
+        "text": "=❌ **Content Rejected for Day {{ $json.day_number }}**\n\nThe draft status has been marked as Rejected in Google Sheets.",
+        "additionalFields": {}
+      },
+      "id": "90b6b2cd-7f61-419b-a010-c6be98bbfcf3",
+      "name": "Telegram Confirm Rejected",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1020,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Content Drafts!A:J",
+        "options": {}
+      },
+      "id": "5be5b0cd-562a-4df4-8d41-c741e0a290ad",
+      "name": "Read Original Draft",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        450
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const originalRow = $input.all().find(row => parseInt(row.json.day_number) === $('Parse Command').first().json.day_number);\nif (!originalRow) {\n  throw new Error('Original draft row not found');\n}\nreturn {\n  original_caption: originalRow.json.caption,\n  original_hook: originalRow.json.hook,\n  original_video_script: originalRow.json.video_script,\n  feedback: $('Parse Command').first().json.feedback,\n  day_number: $('Parse Command').first().json.day_number,\n  platform: originalRow.json.platform\n};"
+      },
+      "id": "1d234cd3-3245-42ea-af39-1234c2672d62",
+      "name": "Merge Original & Feedback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a professional social media content creator for Eki. Revise the provided social post draft based on user feedback. Retain the same output JSON structure:\n{\n  \"hook\": \"One scroll-stopping sentence\",\n  \"caption\": \"Engagement caption (50-150 words) with emojis\",\n  \"hashtags\": \"#Hashtags #EkiMarket\",\n  \"video_script\": \"Short-form 30-sec script with visual cues in brackets\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "=Original Hook: {{ $json.original_hook }}\nOriginal Caption: {{ $json.original_caption }}\nOriginal Video Script: {{ $json.original_video_script }}\n\nFeedback for revision: {{ $json.feedback }}"
+            }
+          ]
+        },
+        "options": {
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "2bc34cd3-3245-42ea-af39-1234c2672d63",
+      "name": "OpenAI Content Revise",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [
+        1180,
+        450
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = JSON.parse($input.first().json.choices[0].message.content);\nreturn {\n  day_number: $('Merge Original & Feedback').first().json.day_number,\n  platform: $('Merge Original & Feedback').first().json.platform,\n  hook: aiResponse.hook,\n  caption: aiResponse.caption,\n  hashtags: aiResponse.hashtags,\n  video_script: aiResponse.video_script,\n  status: 'Draft'\n};"
+      },
+      "id": "3d234cd3-3245-42ea-af39-1234c2672d64",
+      "name": "Parse Revised Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Content Drafts!A:J",
+        "matchColumns": [
+          "day_number"
+        ],
+        "columnsToUpdate": [
+          "hook",
+          "caption",
+          "hashtags",
+          "video_script",
+          "status"
+        ],
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "hook",
+              "value": "={{ $json.hook }}"
+            },
+            {
+              "column": "caption",
+              "value": "={{ $json.caption }}"
+            },
+            {
+              "column": "hashtags",
+              "value": "={{ $json.hashtags }}"
+            },
+            {
+              "column": "video_script",
+              "value": "={{ $json.video_script }}"
+            },
+            {
+              "column": "status",
+              "value": "Draft"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6be5b0cd-562a-4df4-8d41-c741e0a290ae",
+      "name": "Update GSheet Revised",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1580,
+        450
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "TELEGRAM_CHAT_ID_PLACEHOLDER",
+        "text": "=📝 **Revised Eki Content Draft Ready!**\n\n📅 **Day Number:** {{ $json.day_number }}\n📱 **Platform:** {{ $json.platform }}\n\n🪝 **Revised Hook:** {{ $json.hook }}\n\n📝 **Revised Caption:**\n{{ $json.caption }}\n\n🏷️ **Hashtags:** {{ $json.hashtags }}\n\n🎬 **Revised Video Script:**\n{{ $json.video_script }}\n\n---\nReply with:\n• `/approve {{ $json.day_number }}`\n• `/reject {{ $json.day_number }}`\n• `/edit {{ $json.day_number }} [new feedback]`",
+        "additionalFields": {}
+      },
+      "id": "91b6b2cd-7f61-419b-a010-c6be98bbfcf4",
+      "name": "Telegram Alert Revised Draft",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1800,
+        450
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### Connection Setup\n1. Set up a Webhook in Telegram Bot API configuration pointing to this webhook URL.\n2. Commands received format: `/approve 3` or `/reject 3` or `/edit 3 Make the tone more exciting!`.\n3. Make sure sheet columns match the updated fields.",
+        "height": 160,
+        "width": 300
+      },
+      "id": "bb5fe1cc-2781-4bdf-87f5-a8cdb615b1eb",
+      "name": "Sticky Note Setup",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        100,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Update GSheet Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update GSheet Rejected",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Read Original Draft",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Update GSheet Approved": {
+      "main": [
+        [
+          {
+            "node": "Telegram Confirm Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update GSheet Rejected": {
+      "main": [
+        [
+          {
+            "node": "Telegram Confirm Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Original Draft": {
+      "main": [
+        [
+          {
+            "node": "Merge Original & Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Original & Feedback": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Content Revise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Content Revise": {
+      "main": [
+        [
+          {
+            "node": "Parse Revised Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Revised Output": {
+      "main": [
+        [
+          {
+            "node": "Update GSheet Revised",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update GSheet Revised": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert Revised Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "meta": {
+    "instanceId": "eki-launch-automation"
+  }
+}

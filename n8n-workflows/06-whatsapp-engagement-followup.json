@@ -1,0 +1,392 @@
+{
+  "name": "Eki - 06 WhatsApp Engagement Follow-up",
+  "nodes": [
+    {
+      "id": "e30217b3-4d4a-483d-941d-316c24307e83",
+      "name": "Daily 10AM Check",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "hour": 10,
+          "minute": 0,
+          "weekday": [
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "8615b7fc-d29e-4c2e-92a7-8bb7cb3a5b16",
+      "name": "Get All Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "operation": "getRows",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "ac0930ee-d792-42ca-b4f1-38a562704ef7",
+      "name": "Find Inactive Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return ($json || []).filter(l => {\n  const lastContact = l.last_wa ? new Date(l.last_wa).getTime() : 0;\n  const daysSince = (Date.now() - lastContact) / 86400000;\n  return l.status !== 'churned' && l.status !== 'unsubscribed' && daysSince >= 7;\n}).map(l => {\n  const daysSince = Math.floor((Date.now() - new Date(l.last_wa||Date.now()).getTime()) / 86400000);\n  let dayBucket;\n  if(daysSince >= 21) dayBucket = 21;\n  else if(daysSince >= 14) dayBucket = 14;\n  else if(daysSince >= 7) dayBucket = 7;\n  return {json: {...l, followup_day: dayBucket}};\n});"
+      }
+    },
+    {
+      "id": "055cd5b1-d33a-422d-9f1c-56215f45bbb8",
+      "name": "Route by Days",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json.followup_day}}",
+        "rules": [
+          {
+            "value": "7"
+          },
+          {
+            "value": "14"
+          },
+          {
+            "value": "21"
+          }
+        ]
+      }
+    },
+    {
+      "id": "06473d23-e7ba-4ad1-9121-8f23ebec23b0",
+      "name": "WA 7-Day Re-engage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Hey {{$json.name}}! \ud83d\udc4b Just checking in. Eki is helping vendors get more orders and buyers find trusted African foodstuff. No pressure, but your store/profile is waiting: https://eki.app/continue\n\nReply READY to get started or STOP to opt out."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "9c91c3f9-e384-42bb-813c-1e74c10b0a8a",
+      "name": "WA 14-Day Re-engage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Hi {{$json.name}} - we noticed you haven't come back to Eki yet. Here's what you're missing:\n\u2705 Verified buyers looking for your products\n\u2705 Secure payments (no more fake alerts)\n\u2705 Professional storefront in 15 min\n\nLast chance to set up free: https://eki.app/signup\nReply STOP to unsubscribe."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "2e166a71-6d4b-4c32-b32f-7440174e7af4",
+      "name": "WA 21-Day Final",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "={{$json.name}}, this is our last message. Your Eki store is still waiting for you. When you're ready, you can set up in 15 min: https://eki.app/signup\n\nWe won't message again unless you reply. Reply RESTART if you want to begin later."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "59416d28-0736-4e25-9ddc-6ef34d0b7f3c",
+      "name": "Update Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $json.map(l => ({json: {...l, last_wa: new Date().toISOString(), status: l.followup_day >= 21 ? 'churned' : l.status}}));"
+      }
+    },
+    {
+      "id": "f4bd096f-7c47-4aa8-9ea2-22c45568d5b9",
+      "name": "Log Follow-up",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "d30644e2-3307-4434-b227-1a8411abe1ff",
+      "name": "Inactive Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\u26a0\ufe0f Lead inactive {{$json.followup_day}} days\nName: {{$json.name}}\nPhone: {{$json.phone}}\nRe-engagement sent via WhatsApp"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    },
+    [
+      2100,
+      0
+    ]
+  ],
+  "connections": {
+    "Daily 10AM Check": {
+      "main": [
+        [
+          {
+            "node": "Get All Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Leads": {
+      "main": [
+        [
+          {
+            "node": "Find Inactive Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Inactive Leads": {
+      "main": [
+        [
+          {
+            "node": "Route by Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Days": {
+      "main": [
+        [
+          {
+            "node": "WA 7-Day Re-engage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA 14-Day Re-engage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA 21-Day Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA 7-Day Re-engage": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA 14-Day Re-engage": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA 21-Day Final": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status": {
+      "main": [
+        [
+          {
+            "node": "Log Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Inactive Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "97e687a0-0a37-464c-a4c9-d942adb71b3a",
+  "active": false,
+  "tags": []
+}

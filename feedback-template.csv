@@ -1,0 +1,3 @@
+feedback_id,email,user_role,rating,primary_value,pain_point,would_recommend,submitted_date,action_taken
+F-4001,john.doe@example.com,Vendor,5,Secure payment system,Initial cargo inspection took 3 days longer than expected,TRUE,2026-05-20,Resolved
+F-4002,marco.rossi@example.it,Buyer,3,Verified suppliers list,Language barrier when messaging vendors in West Africa who only speak English,FALSE,2026-05-21,Pending Review

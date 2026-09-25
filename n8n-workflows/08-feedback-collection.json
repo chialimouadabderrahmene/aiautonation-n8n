@@ -1,0 +1,570 @@
+{
+  "name": "Feedback Collection & Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 11
+            }
+          ]
+        }
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000801",
+      "name": "Daily 11AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 100]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "YOUR_GOOGLE_SHEET_URL"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "Active"
+            }
+          ]
+        }
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000802",
+      "name": "Read Active Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [260, 100],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter leads who signed up exactly 7 days ago\nconst now = new Date();\nconst items = $input.all();\nconst eligible = [];\n\nfor (const item of items) {\n  const signupDate = new Date(item.json.signup_date);\n  if (isNaN(signupDate.getTime())) continue;\n  \n  const daysSinceSignup = Math.floor((now - signupDate) / (1000 * 60 * 60 * 24));\n  \n  // Send feedback request to users who signed up 7 days ago (± 1 day tolerance)\n  if (daysSinceSignup >= 6 && daysSinceSignup <= 8) {\n    eligible.push({\n      json: {\n        ...item.json,\n        days_since_signup: daysSinceSignup\n      }\n    });\n  }\n}\n\nif (eligible.length === 0) {\n  return [{ json: { empty: true, message: 'No eligible users for feedback request today' } }];\n}\n\nreturn eligible;"
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000803",
+      "name": "Filter 7-Day Users",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/emails",
+        "sendHeaders": true,
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.email }}\"], \"subject\": \"Quick question (takes 30 seconds) 🙏\", \"html\": \"<div style=\\\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\\\">\\n<h2>Hey {{ $json.name }},</h2>\\n<p>You've been using <strong>Eki</strong> for a week now! 🎉</p>\\n<p>We'd love your honest feedback — it helps us build a better product for you.</p>\\n<div style=\\\"text-align: center; margin: 24px 0;\\\">\\n<a href=\\\"[FEEDBACK_FORM_LINK]?email={{ $json.email }}&name={{ $json.name }}\\\" style=\\\"background-color: #6C63FF; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px;\\\">Share Your Feedback 💬</a>\\n</div>\\n<p>It takes less than <strong>30 seconds</strong>.</p>\\n<p>As a thank you, you'll get <strong>exclusive marketplace premium status</strong>.</p>\\n<p>Your opinion truly matters to us.</p>\\n<p>With gratitude,<br>The Eki Team</p>\\n</div>\"}"
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000804",
+      "name": "WhatsApp - Feedback Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 100]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "YOUR_GOOGLE_SHEET_URL"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ $json.email }}",
+            "status": "Feedback Requested",
+            "feedback_requested_date": "={{ new Date().toISOString().split('T')[0] }}"
+          }
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000805",
+      "name": "Update Status - Requested",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1040, 100],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "collect-feedback",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000806",
+      "name": "Webhook - Collect Feedback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 520],
+      "webhookId": "collect-feedback-001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize and validate feedback data\nconst body = $input.first().json.body;\n\nconst email = (body.email || '').trim().toLowerCase();\nconst rating = parseInt(body.rating, 10);\nconst comments = (body.comments || '').trim();\nconst wouldRecommend = body.would_recommend === true || body.would_recommend === 'true' || body.would_recommend === 'yes';\n\nif (!email || isNaN(rating) || rating < 1 || rating > 5) {\n  throw new Error('Invalid feedback data: email and rating (1-5) are required');\n}\n\nreturn [{\n  json: {\n    email,\n    rating,\n    comments,\n    would_recommend: wouldRecommend,\n    timestamp: new Date().toISOString(),\n    rating_category: rating >= 4 ? 'positive' : (rating === 3 ? 'neutral' : 'negative')\n  }\n}];"
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000807",
+      "name": "Validate Feedback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 520]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "YOUR_GOOGLE_SHEET_URL"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Feedback"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ $json.email }}",
+            "rating": "={{ $json.rating }}",
+            "comments": "={{ $json.comments }}",
+            "would_recommend": "={{ $json.would_recommend }}",
+            "timestamp": "={{ $json.timestamp }}",
+            "rating_category": "={{ $json.rating_category }}"
+          }
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000808",
+      "name": "Append to Feedback Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [520, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": ""
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.rating }}",
+                    "rightValue": 4,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Positive (4-5)"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": ""
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.rating }}",
+                    "rightValue": 3,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Neutral (3)"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": ""
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.rating }}",
+                    "rightValue": 3,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Negative (1-2)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000809",
+      "name": "Switch - Route by Rating",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [780, 520]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.N8N_BASE_URL || 'http://localhost:5678' }}/webhook/request-review",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            },
+            {
+              "name": "rating",
+              "value": "={{ $json.rating }}"
+            },
+            {
+              "name": "would_recommend",
+              "value": "={{ $json.would_recommend }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000810",
+      "name": "Request App Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log neutral feedback for product team review\nreturn [{\n  json: {\n    ...($input.first().json),\n    action: 'logged_for_product_team',\n    note: 'Neutral rating — review for product improvement opportunities'\n  }\n}];"
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000811",
+      "name": "Log for Product Team",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 540]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "⚠️ *Low Feedback Rating Alert*\n\nFrom: {{ $json.email }}\nRating: {{ $json.rating }}/5 ⭐\nWould Recommend: {{ $json.would_recommend ? 'Yes' : 'No' }}\n\nComments:\n_{{ $json.comments || 'No comments provided' }}_\n\n🕐 {{ $json.timestamp }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000812",
+      "name": "Telegram - Low Rating Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1040, 700],
+      "credentials": {
+        "telegramApi": {
+          "id": "3",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/emails",
+        "sendHeaders": true,
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.email }}\"], \"subject\": \"Thank you for your feedback! 💜\", \"html\": \"<div style=\\\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\\\">\\n<h2>Thank you, {{ $json.email }}!</h2>\\n<p>We really appreciate you taking the time to share your feedback with us.</p>\\n<p>Your input helps us improve Eki every single day.</p>\\n<p>As promised, here's your reward: <strong>Use code EKIFEEDBACK for 10% off verification fees</strong></p>\\n<p>If you ever have more thoughts, ideas, or concerns — don't hesitate to reply to this email.</p>\\n<p>With appreciation,<br>The Eki Team</p>\\n</div>\"}"
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000813",
+      "name": "WhatsApp - Thank You Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 520]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "YOUR_GOOGLE_SHEET_URL"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ $json.email }}",
+            "status": "Feedback Received",
+            "feedback_received_date": "={{ new Date().toISOString().split('T')[0] }}",
+            "last_feedback_rating": "={{ $json.rating }}"
+          }
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000814",
+      "name": "Update Status - Received",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1560, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🔧 Feedback Collection Setup\n\n### This workflow has TWO trigger flows:\n\n**Flow A — Send Feedback Requests (Scheduled)**\n- Runs daily at 11:00 AM (Europe/Rome)\n- Finds users who signed up ~7 days ago\n- Sends feedback request email with form link\n\n**Flow B — Process Feedback (Webhook)**\n- Receives feedback submissions via POST webhook\n- Routes by rating: positive (4-5), neutral (3), negative (1-2)\n\n### Webhook URL\n`POST https://YOUR_N8N_DOMAIN/webhook/collect-feedback`\n\n### Expected POST Body\n```json\n{\n  \"email\": \"user@example.com\",\n  \"rating\": 4,\n  \"comments\": \"Great product!\",\n  \"would_recommend\": true\n}\n```\n\n### Form Integration\n- **Typeform**: Set up a webhook integration pointing to the collect-feedback URL\n- **Tally**: Use Tally's webhook feature\n- **Google Forms**: Use Google Apps Script to POST to the webhook\n\n### Google Sheet — \"Feedback\" columns:\n- `email`, `rating`, `comments`, `would_recommend`, `timestamp`, `rating_category`\n\n### Credentials Required\n1. **Google Sheets OAuth**\n2. **WhatsApp API Key** (for sending emails)\n3. **Telegram Bot API** (for low-rating alerts)\n\n### Replace Placeholders\n- `Eki` — your app name\n- `[FEEDBACK_FORM_LINK]` — your Typeform/Tally/Google Form URL\n- `marketplace premium status / verification fee discount` — what users get for giving feedback",
+        "width": 420,
+        "height": 660
+      },
+      "id": "c3d4e5f6-3001-4001-8001-000000000815",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-300, 40]
+    }
+  ],
+  "connections": {
+    "Daily 11AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Active Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Active Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter 7-Day Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter 7-Day Users": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Feedback Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp - Feedback Request": {
+      "main": [
+        [
+          {
+            "node": "Update Status - Requested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Collect Feedback": {
+      "main": [
+        [
+          {
+            "node": "Validate Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Feedback": {
+      "main": [
+        [
+          {
+            "node": "Append to Feedback Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Feedback Sheet": {
+      "main": [
+        [
+          {
+            "node": "Switch - Route by Rating",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Route by Rating": {
+      "main": [
+        [
+          {
+            "node": "Request App Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log for Product Team",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram - Low Rating Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request App Review": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Thank You Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log for Product Team": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Thank You Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Low Rating Alert": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Thank You Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp - Thank You Email": {
+      "main": [
+        [
+          {
+            "node": "Update Status - Received",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome"
+  },
+  "tags": [
+    {
+      "name": "feedback"
+    },
+    {
+      "name": "engagement"
+    },
+    {
+      "name": "routing"
+    }
+  ],
+  "meta": {
+    "instanceId": "app-launch-automation"
+  }
+}

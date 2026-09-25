@@ -1,0 +1,171 @@
+{
+  "name": "Eki - 03 Lead Capture Webhook",
+  "nodes": [
+    {
+      "id": "c71e2d95-b2b2-4414-9186-5dca3f2af9c5",
+      "name": "Incoming Lead",
+      "type": "n8n-nodes-base.webhookTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "lead-capture",
+        "options": {}
+      }
+    },
+    {
+      "id": "7e74c1f5-ab15-4b79-9137-b23c56b6cad6",
+      "name": "De-dup & Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body = $json;\nconst phone = body.phone || body.wa_id || '';\nconst name = body.name || body.username || 'Lead';\nconst source = body.source || 'web';\nreturn [{json:{phone, name, source, user_type: body.user_type || 'unknown', status: 'new', timestamp: new Date().toISOString()}}];"
+      }
+    },
+    {
+      "id": "8e1320d9-b5a8-4e26-872a-fe9eb6046731",
+      "name": "Save Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "fae736cb-a79d-4e58-97b6-89753939d998",
+      "name": "WhatsApp Welcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Hi {{$json.name}}! \ud83d\udc4b Welcome to Eki - the trusted marketplace for African foodstuff. Are you a Vendor or a Buyer? Reply VENDOR or BUYER."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "f4299861-a2c6-426d-8c85-c38e6803b2af",
+      "name": "Lead Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\ud83c\udd95 New Lead via WhatsApp!\nName: {{$json.name}}\nPhone: {{$json.phone}}\nSource: {{$json.source}}"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    },
+    [
+      1200,
+      0
+    ]
+  ],
+  "connections": {
+    "Incoming Lead": {
+      "main": [
+        [
+          {
+            "node": "De-dup & Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "De-dup & Parse": {
+      "main": [
+        [
+          {
+            "node": "Save Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Welcome": {
+      "main": [
+        [
+          {
+            "node": "Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "3b61a663-ef4f-4eba-9d2b-f0837071c65c",
+  "active": false,
+  "tags": []
+}

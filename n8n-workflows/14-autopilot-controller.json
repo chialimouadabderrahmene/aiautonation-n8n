@@ -1,0 +1,409 @@
+{
+  "name": "14 - Autopilot Controller",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-8am",
+      "name": "Daily 8AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Emergency stop check\nconst stopFlag = ($env.AUTOPILOT_STOP || '').toLowerCase();\nif (stopFlag === 'true') {\n  return [{ json: { emergency_stop: true, reason: 'AUTOPILOT_STOP=true' } }];\n}\nreturn [{ json: { emergency_stop: false } }];"
+      },
+      "id": "emergency-check",
+      "name": "Emergency Stop Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "not-stopped",
+              "leftValue": "={{ $json.emergency_stop }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "is-running",
+      "name": "Autopilot Running?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 400]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🚨 *AUTOPILOT EMERGENCY STOP*\n\n⛔ All automation halted.\nReason: `AUTOPILOT_STOP=true`\n\nTo resume, set `AUTOPILOT_STOP=false` in Railway env vars and redeploy.",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-emergency",
+      "name": "Telegram Emergency Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [900, 260],
+      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gather environment status\nconst status = {\n  autopilot_social: ($env.AUTOPILOT_SOCIAL_POSTING || 'false').toLowerCase() === 'true',\n  has_buffer: !!$env.BUFFER_API_KEY,\n  has_metricool: !!$env.METRICOOL_API_KEY,\n  has_meta_token: !!$env.META_ACCESS_TOKEN,\n  has_tiktok_token: !!$env.TIKTOK_ACCESS_TOKEN,\n  has_whatsapp: !!$env.WHATSAPP_ACCESS_TOKEN,\n  has_telegram: !!$env.TELEGRAM_CHAT_ID,\n  max_posts: {\n    tiktok: parseInt($env.MAX_TIKTOK_POSTS_PER_DAY || '1'),\n    instagram: parseInt($env.MAX_INSTAGRAM_POSTS_PER_DAY || '1'),\n    facebook: parseInt($env.MAX_FACEBOOK_POSTS_PER_DAY || '1')\n  },\n  today: new Date().toISOString().split('T')[0],\n  timestamp: new Date().toISOString()\n};\n\nstatus.has_any_posting_api = status.has_buffer || status.has_metricool || status.has_meta_token || status.has_tiktok_token;\n\nreturn [{ json: status }];"
+      },
+      "id": "gather-env-status",
+      "name": "Gather Environment Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Social Posts" },
+        "options": {}
+      },
+      "id": "read-social-posts",
+      "name": "Read Social Posts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1140, 340],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Leads" },
+        "options": {}
+      },
+      "id": "read-leads",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1140, 500],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "WhatsApp Conversations" },
+        "options": {}
+      },
+      "id": "read-whatsapp",
+      "name": "Read WhatsApp Conversations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1140, 660],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process social posts: find pending/approved posts for today\n// Apply safety: max posts per platform, no duplicates within 24h\nconst envStatus = $('Gather Environment Status').first().json;\nconst allPosts = $('Read Social Posts').all().map(i => i.json);\nconst today = envStatus.today;\nconst maxPosts = envStatus.max_posts || { tiktok: 1, instagram: 1, facebook: 1 };\n\n// Filter today's posts\nconst todayPosts = allPosts.filter(p => p.date === today);\nconst pendingPosts = todayPosts.filter(p => p.status === 'approved' || p.autopilot_status === 'pending' || p.autopilot_status === 'ready_manual');\n\n// Count already posted today per platform\nconst postedToday = {};\ntodayPosts.forEach(p => {\n  if (p.autopilot_status === 'scheduled' || p.autopilot_status === 'published') {\n    postedToday[p.platform] = (postedToday[p.platform] || 0) + 1;\n  }\n});\n\n// Check for duplicates (same caption within last 24h)\nconst recentCaptions = allPosts\n  .filter(p => {\n    const pDate = new Date(p.date);\n    const now = new Date();\n    return (now - pDate) < 86400000;\n  })\n  .map(p => p.caption ? p.caption.toLowerCase().trim() : '');\n\nconst readyToPost = [];\nconst blocked = [];\n\nfor (const post of pendingPosts) {\n  const platformCount = postedToday[post.platform] || 0;\n  const platformMax = maxPosts[post.platform] || 1;\n  const captionLower = (post.caption || '').toLowerCase().trim();\n  const isDuplicate = recentCaptions.filter(c => c === captionLower).length > 1;\n\n  if (platformCount >= platformMax) {\n    blocked.push({ ...post, block_reason: 'max_posts_reached' });\n  } else if (isDuplicate) {\n    blocked.push({ ...post, block_reason: 'duplicate_within_24h' });\n  } else {\n    readyToPost.push(post);\n    postedToday[post.platform] = platformCount + 1;\n  }\n}\n\nreturn [{\n  json: {\n    ...envStatus,\n    total_posts_today: todayPosts.length,\n    pending_posts: pendingPosts.length,\n    ready_to_post: readyToPost,\n    blocked_posts: blocked,\n    ready_count: readyToPost.length,\n    blocked_count: blocked.length\n  }\n}];"
+      },
+      "id": "process-social",
+      "name": "Process Social Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process WhatsApp leads needing follow-up\n// Safety: never spam, only follow up leads with follow_up_status=pending\n// and last_message older than 24 hours\nconst allLeads = $('Read Leads').all().map(i => i.json);\nconst allConvos = $('Read WhatsApp Conversations').all().map(i => i.json);\nconst today = new Date();\nconst twentyFourHoursAgo = new Date(today - 86400000);\n\n// Find leads needing follow-up\nconst needsFollowUp = allLeads.filter(lead => {\n  if (lead.status === 'unsubscribed') return false;\n  if (lead.source !== 'whatsapp') return false;\n  \n  // Check if last message is older than 24h\n  const lastMsg = lead.last_message ? new Date(lead.last_message) : null;\n  if (!lastMsg || lastMsg > twentyFourHoursAgo) return false;\n  \n  // Check conversation isn't complete\n  if (lead.status === 'converted' || lead.status === 'completed') return false;\n  \n  return true;\n});\n\n// Today's stats\nconst todayStr = today.toISOString().split('T')[0];\nconst leadsToday = allLeads.filter(l => l.first_contact && l.first_contact.startsWith(todayStr));\nconst convosToday = allConvos.filter(c => c.timestamp && c.timestamp.startsWith(todayStr));\n\nreturn [{\n  json: {\n    leads_needing_followup: needsFollowUp,\n    followup_count: needsFollowUp.length,\n    total_leads: allLeads.length,\n    leads_today: leadsToday.length,\n    conversations_today: convosToday.length,\n    unsubscribed_count: allLeads.filter(l => l.status === 'unsubscribed').length\n  }\n}];"
+      },
+      "id": "process-leads",
+      "name": "Process WhatsApp Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 580]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "social-on",
+              "leftValue": "={{ $('Process Social Posts').first().json.autopilot_social }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "social-autopilot-check",
+      "name": "Social Autopilot ON?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1660, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "has-api",
+              "leftValue": "={{ $('Process Social Posts').first().json.has_any_posting_api }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "has-posting-api",
+      "name": "Has Posting API?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1900, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Schedule approved posts via available API\nconst data = $('Process Social Posts').first().json;\nconst posts = data.ready_to_post || [];\n\nif (posts.length === 0) {\n  return [{ json: { action: 'no_posts_to_schedule', count: 0 } }];\n}\n\n// Determine posting API\nlet apiName = 'none';\nif (data.has_buffer) apiName = 'buffer';\nelse if (data.has_metricool) apiName = 'metricool';\nelse if (data.has_meta_token) apiName = 'meta';\nelse if (data.has_tiktok_token) apiName = 'tiktok';\n\nconst scheduled = posts.map((post, i) => ({\n  ...post,\n  autopilot_status: 'scheduled',\n  posting_api: apiName,\n  scheduled_at: new Date(Date.now() + (i + 1) * 3600000).toISOString()\n}));\n\nreturn scheduled.map(s => ({ json: s }));"
+      },
+      "id": "schedule-posts",
+      "name": "Schedule Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2140, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.posting_api === 'buffer' ? 'https://api.bufferapp.com/1/updates/create.json' : $json.posting_api === 'metricool' ? 'https://app.metricool.com/api/v1/scheduler' : $json.posting_api === 'meta' ? 'https://graph.facebook.com/v21.0/me/feed' : 'https://open.tiktokapis.com/v2/post/publish/content/init/' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.posting_api === 'buffer' ? $env.BUFFER_API_KEY : $json.posting_api === 'metricool' ? $env.METRICOOL_API_KEY : $json.posting_api === 'meta' ? $env.META_ACCESS_TOKEN : $env.TIKTOK_ACCESS_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.caption + '\\n\\n' + $json.hashtags, platform: $json.platform, scheduled_at: $json.scheduled_at }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "publish-posts",
+      "name": "Publish to API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2380, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=📋 *Eki Autopilot - Ready-to-Post Summary*\n\n🟡 Social autopilot is ON but no posting API configured.\n\nHere are today's approved posts ready for manual publishing:\n\n{{ $('Process Social Posts').first().json.ready_to_post.map(p => '📌 *' + p.platform.toUpperCase() + '*\\n' + p.hook + '\\n' + p.caption.substring(0, 100) + '...\\n').join('\\n') || 'No posts pending.' }}\n\n🔧 To enable auto-posting, add one of:\\n- BUFFER_API_KEY\\n- METRICOOL_API_KEY\\n- META_ACCESS_TOKEN\\n- TIKTOK_ACCESS_TOKEN",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-ready-posts",
+      "name": "Telegram Ready Posts Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2140, 380],
+      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Send WhatsApp follow-ups to leads with pending status\n// Safety: only message users who messaged first, not unsubscribed, max 1 follow-up per 24h\nconst leadsData = $('Process WhatsApp Leads').first().json;\nconst leads = leadsData.leads_needing_followup || [];\nconst hasWhatsApp = !!$env.WHATSAPP_ACCESS_TOKEN;\n\nif (!hasWhatsApp || leads.length === 0) {\n  return [{ json: { action: 'no_followups', count: 0, reason: !hasWhatsApp ? 'no_whatsapp_token' : 'no_leads_pending' } }];\n}\n\n// Limit to max 10 follow-ups per run to avoid spam\nconst maxFollowups = Math.min(leads.length, 10);\nconst toFollowUp = leads.slice(0, maxFollowups);\n\nreturn toFollowUp.map(lead => ({\n  json: {\n    phone: lead.phone,\n    name: lead.name || 'there',\n    user_type: lead.user_type || 'friend',\n    followup_message: `Hi ${lead.name || 'there'}! 👋 Just checking in from Eki. We noticed you were interested in our AI automation platform. Ready to take the next step? Download our app: ${$env.APP_DOWNLOAD_LINK || 'https://eki.app'}\\n\\nReply STOP to unsubscribe.`\n  }\n}));"
+      },
+      "id": "prepare-followups",
+      "name": "Prepare WhatsApp Follow-ups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1660, 620]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.phone, type: 'text', text: { body: $json.followup_message } }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "send-followups",
+      "name": "Send WhatsApp Follow-ups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1920, 620],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build daily summary for Telegram\nconst social = $('Process Social Posts').first().json;\nconst leads = $('Process WhatsApp Leads').first().json;\nconst today = new Date().toISOString().split('T')[0];\n\nconst summary = {\n  date: today,\n  leads_captured_today: leads.leads_today,\n  total_leads: leads.total_leads,\n  posts_generated: social.total_posts_today,\n  posts_scheduled: social.ready_to_post ? social.ready_to_post.filter(p => p.autopilot_status === 'scheduled').length : 0,\n  posts_ready_manual: social.ready_count,\n  posts_blocked: social.blocked_count,\n  whatsapp_conversations_today: leads.conversations_today,\n  followups_sent: leads.followup_count,\n  unsubscribed: leads.unsubscribed_count,\n  errors: social.blocked_posts ? social.blocked_posts.map(b => b.platform + ': ' + b.block_reason).join(', ') : 'none',\n  autopilot_social: social.autopilot_social,\n  has_posting_api: social.has_any_posting_api\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "build-summary",
+      "name": "Build Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2380, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=📊 *Eki Autopilot Daily Report*\n📅 {{ $json.date }}\n\n━━━━━━━━━━━━━━━━━━━━\n👥 *Leads*\n• Captured today: {{ $json.leads_captured_today }}\n• Total leads: {{ $json.total_leads }}\n• Unsubscribed: {{ $json.unsubscribed }}\n\n━━━━━━━━━━━━━━━━━━━━\n📱 *Social Posts*\n• Generated today: {{ $json.posts_generated }}\n• Scheduled: {{ $json.posts_scheduled }}\n• Ready (manual): {{ $json.posts_ready_manual }}\n• Blocked: {{ $json.posts_blocked }}\n\n━━━━━━━━━━━━━━━━━━━━\n💬 *WhatsApp*\n• Conversations today: {{ $json.whatsapp_conversations_today }}\n• Follow-ups sent: {{ $json.followups_sent }}\n\n━━━━━━━━━━━━━━━━━━━━\n⚙️ *Status*\n• Social autopilot: {{ $json.autopilot_social ? '✅ ON' : '❌ OFF' }}\n• Posting API: {{ $json.has_posting_api ? '✅ Connected' : '⚠️ Missing' }}\n• Errors: {{ $json.errors }}\n\n━━━━━━━━━━━━━━━━━━━━\n🤖 _Eki Autopilot Controller v1.0_",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-summary",
+      "name": "Telegram Daily Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2620, 500],
+      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Automation Logs" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "14-autopilot-controller",
+            "action": "daily_controller_run",
+            "platform": "all",
+            "status": "completed",
+            "details": "=Leads today: {{ $json.leads_captured_today }} | Posts: {{ $json.posts_generated }} | Scheduled: {{ $json.posts_scheduled }} | Follow-ups: {{ $json.followups_sent }} | Errors: {{ $json.errors }}",
+            "error": ""
+          }
+        },
+        "options": {}
+      },
+      "id": "log-controller",
+      "name": "Log Controller Run",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2860, 500],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    }
+  ],
+  "connections": {
+    "Daily 8AM Trigger": {
+      "main": [
+        [{ "node": "Emergency Stop Check", "type": "main", "index": 0 }]
+      ]
+    },
+    "Emergency Stop Check": {
+      "main": [
+        [{ "node": "Autopilot Running?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Autopilot Running?": {
+      "main": [
+        [{ "node": "Gather Environment Status", "type": "main", "index": 0 }],
+        [{ "node": "Telegram Emergency Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gather Environment Status": {
+      "main": [
+        [
+          { "node": "Read Social Posts", "type": "main", "index": 0 },
+          { "node": "Read Leads", "type": "main", "index": 0 },
+          { "node": "Read WhatsApp Conversations", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Read Social Posts": {
+      "main": [
+        [{ "node": "Process Social Posts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [{ "node": "Process WhatsApp Leads", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read WhatsApp Conversations": {
+      "main": [
+        [{ "node": "Process WhatsApp Leads", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process Social Posts": {
+      "main": [
+        [{ "node": "Social Autopilot ON?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process WhatsApp Leads": {
+      "main": [
+        [{ "node": "Prepare WhatsApp Follow-ups", "type": "main", "index": 0 }]
+      ]
+    },
+    "Social Autopilot ON?": {
+      "main": [
+        [{ "node": "Has Posting API?", "type": "main", "index": 0 }],
+        [{ "node": "Build Daily Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Posting API?": {
+      "main": [
+        [{ "node": "Schedule Posts", "type": "main", "index": 0 }],
+        [{ "node": "Telegram Ready Posts Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Schedule Posts": {
+      "main": [
+        [{ "node": "Publish to API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Publish to API": {
+      "main": [
+        [{ "node": "Build Daily Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram Ready Posts Summary": {
+      "main": [
+        [{ "node": "Build Daily Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare WhatsApp Follow-ups": {
+      "main": [
+        [{ "node": "Send WhatsApp Follow-ups", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send WhatsApp Follow-ups": {
+      "main": [
+        [{ "node": "Build Daily Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Daily Summary": {
+      "main": [
+        [{ "node": "Telegram Daily Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram Daily Summary": {
+      "main": [
+        [{ "node": "Log Controller Run", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [{ "name": "autopilot" }, { "name": "controller" }, { "name": "daily" }],
+  "active": false
+}

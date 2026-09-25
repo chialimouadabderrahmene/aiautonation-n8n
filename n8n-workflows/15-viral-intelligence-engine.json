@@ -1,0 +1,176 @@
+{
+  "name": "Eki - 15 Viral Intelligence Engine",
+  "nodes": [
+    {
+      "id": "b0d48140-09dd-49b3-969b-36550d6dafe9",
+      "name": "Every 6h",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": 6
+        }
+      }
+    },
+    {
+      "id": "b413fdf9-c490-41ec-a734-c835d258aea9",
+      "name": "Scrape Trends",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.apify.com/v2/acts/your-actor/runs?token={{$env.APIFY_TOKEN}}",
+        "options": {}
+      }
+    },
+    {
+      "id": "dc942ba1-73c7-4ee3-bccc-f8e0509b4e3a",
+      "name": "GPT-4 Analyze",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "model": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "Analyze these trending posts. Extract: 1) hook patterns 2) emotional triggers 3) content formats. Return JSON with fields: hooks[], emotions[], formats[], creators[]"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "openAiApi": "openAiApi"
+      }
+    },
+    {
+      "id": "b5b8ad77-546f-48aa-a09c-a6e7f3d9aac1",
+      "name": "Parse Patterns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const data = JSON.parse($json.output);\nreturn data.hooks.map(h => ({json: {type:'hook', content:h, score:0, source:'instagram'}}));"
+      }
+    },
+    {
+      "id": "4bf39320-f756-4bcc-8b35-ffd095b0e037",
+      "name": "Save to Intelligence DB",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Intelligence",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "type": "hook",
+            "content": "",
+            "score": "",
+            "source": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "de8c2b72-6108-4865-992c-84bf29ac0ee2",
+      "name": "Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\ud83d\udd0d Viral Intelligence Report:\n{{$node[\"Parse Patterns\"].json.length}} new patterns extracted\n{{JSON.stringify($node[\"GPT-4 Analyze\"].json, null, 2)}}"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    }
+  ],
+  "connections": {
+    "Every 6h": {
+      "main": [
+        [
+          {
+            "node": "Scrape Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Trends": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Analyze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Analyze": {
+      "main": [
+        [
+          {
+            "node": "Parse Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Patterns": {
+      "main": [
+        [
+          {
+            "node": "Save to Intelligence DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "5070df24-9952-48b8-add1-cfa62add9b82",
+  "active": false,
+  "tags": []
+}

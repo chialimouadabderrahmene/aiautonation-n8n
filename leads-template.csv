@@ -1,0 +1,4 @@
+lead_id,email,name,user_segment,country,foodstuff_specialty,source,interest_level,referral_code,signup_date,status,last_contacted,notes
+L-1001,funmi.alao@example.com,Funmi Alao,Vendor (Exporter),Nigeria,Yam flour & spices,instagram,High,WL-EKI-2A8,2026-05-21,New,2026-05-21 20:30:00,Wants to export high-quality chili pepper and yam flour to Milan.
+L-1002,giovanni.rossi@example.it,Giovanni Rossi,Buyer (International),Italy,All foodstuffs,linkedin,Ready to Onboard,,2026-05-21,Welcome Sent,2026-05-21 21:05:00,Importer looking to source authentic palm oil and dried fish for his Milanese retail store.
+L-1003,kofi.mensah@example.com,Kofi Mensah,Vendor (Domestic),Ghana,Palm oil & shea butter,tiktok,Medium,,2026-05-21,New,,Local supplier of organic palm oil seeking export certification guidance.

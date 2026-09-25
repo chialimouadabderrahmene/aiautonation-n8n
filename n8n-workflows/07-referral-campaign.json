@@ -1,0 +1,350 @@
+{
+  "name": "Eki - 07 Referral Campaign Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "track-referral",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e674c321-4f1b-419b-a010-b6f7924c2563",
+      "name": "Referral Hook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Waitlist!A:G",
+        "options": {}
+      },
+      "id": "c6be98bb-fcf2-4df4-8d41-e0e2ac6b67a4",
+      "name": "Read Waitlist Referrers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const waitlist = $input.all();\nconst payload = $('Referral Hook Trigger').first().json.body;\nconst refCode = payload.referral_code.toUpperCase().trim();\nconst referrer = waitlist.find(row => row.json.referral_code && row.json.referral_code.toUpperCase().trim() === refCode);\n\nif (!referrer) {\n  return { found: false, new_email: payload.new_email, new_name: payload.new_name };\n}\n\nconst newCount = parseInt(referrer.json.referrals_count || 0) + 1;\nlet milestoneUnlocked = 'none';\nif (newCount === 3) milestoneUnlocked = 'VIP Access';\nif (newCount === 5) milestoneUnlocked = 'Free Escrow';\n\nreturn {\n  found: true,\n  referrer_email: referrer.json.email,\n  referrer_name: referrer.json.name,\n  new_referrals_count: newCount,\n  milestone_unlocked: milestoneUnlocked,\n  new_email: payload.new_email,\n  new_name: payload.new_name\n};"
+      },
+      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfc",
+      "name": "Match Referrer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.found }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfd",
+      "name": "Referrer Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "responseBody": "{\n  \"status\": \"completed\",\n  \"message\": \"Referral code unmatched, processed lead standard.\"\n}",
+        "options": {}
+      },
+      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcf1",
+      "name": "Respond Unmatched",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        980,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Waitlist!A:G",
+        "matchColumns": [
+          "email"
+        ],
+        "columnsToUpdate": [
+          "referrals_count"
+        ],
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "referrals_count",
+              "value": "={{ $json.new_referrals_count }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2be5b0cd-562a-4df4-8d41-c741e0a290b7",
+      "name": "Increment Count in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        980,
+        450
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.milestone_unlocked }}",
+              "operation": "notEqual",
+              "value2": "none"
+            }
+          ]
+        }
+      },
+      "id": "b0e2ac6b-67a3-41bb-a5a5-c6be98bbfcf8",
+      "name": "Milestone Reached?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/emails",
+        "sendHeaders": true,
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.referrer_email }}\"], \"subject\": \"🎉 You unlocked a milestone reward on Eki!\", \"html\": \"<h3>Congratulations {{ $json.referrer_name }},</h3><p>Your friend <strong>{{ $json.new_name }}</strong> just registered on Eki using your link.</p><p>That makes {{ $json.new_referrals_count }} referrals! You have unlocked your <strong>{{ $json.milestone_unlocked }} Reward</strong>.</p><p>Check your dashboard for details: <strong>https://eki-marketplace.com/dashboard/rewards</strong></p><p>Keep sharing and keep trading safely!</p><p>Cheers,<br>The Eki Team</p>\"}"
+      },
+      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbd005",
+      "name": "Send WhatsApp Reward",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/emails",
+        "sendHeaders": true,
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.referrer_email }}\"], \"subject\": \"Thank you for referring a partner to Eki! 🌍\", \"html\": \"<p>Hey {{ $json.referrer_name }},</p><p>Your friend <strong>{{ $json.new_name }}</strong> just joined the Eki waitlist using your referral code.</p><p>You are now at {{ $json.new_referrals_count }} referrals total. Refer 5 friends to unlock 30 days of commission-free escrow trades!</p><p>Cheers,<br>The Eki Team</p>\"}"
+      },
+      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbd006",
+      "name": "Send Thank You Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "responseBody": "{\n  \"status\": \"success\",\n  \"message\": \"Referral tracked, points incremented and notifier dispatched.\"\n}",
+        "options": {}
+      },
+      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcff",
+      "name": "Respond Track Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Setup Instructions\n1. Replace `EKI_SPREADSHEET_ID_PLACEHOLDER` with Google Sheet ID.\n2. Replace `WHATSAPP_ACCESS_TOKEN_PLACEHOLDER` with WhatsApp API key.\n3. Triggered by Lead Capture Webhook to attribute invites to referrers.",
+        "height": 130,
+        "width": 280
+      },
+      "id": "bbafe1cc-2781-4bdf-87f5-a8cdb615b1eb",
+      "name": "Sticky Note Setup",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        100,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Referral Hook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Waitlist Referrers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Waitlist Referrers": {
+      "main": [
+        [
+          {
+            "node": "Match Referrer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Referrer": {
+      "main": [
+        [
+          {
+            "node": "Referrer Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Referrer Found?": {
+      "main": [
+        [
+          {
+            "node": "Respond Unmatched",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Increment Count in Sheet",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Increment Count in Sheet": {
+      "main": [
+        [
+          {
+            "node": "Milestone Reached?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Milestone Reached?": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reward",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Thank You Email",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Reward": {
+      "main": [
+        [
+          {
+            "node": "Respond Track Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Thank You Email": {
+      "main": [
+        [
+          {
+            "node": "Respond Track Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "meta": {
+    "instanceId": "eki-launch-automation"
+  }
+}

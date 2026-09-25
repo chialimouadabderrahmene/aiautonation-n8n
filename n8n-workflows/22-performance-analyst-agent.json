@@ -1,0 +1,292 @@
+{
+  "name": "Eki - 22 Performance Analyst Agent",
+  "nodes": [
+    {
+      "id": "7eba9a79-ae27-4c32-9983-60349e1f8251",
+      "name": "Monday 9AM",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "hour": 9,
+          "minute": 0,
+          "weekday": 1
+        }
+      }
+    },
+    {
+      "id": "6592bb2b-2af3-451b-8498-359239eef555",
+      "name": "Get All Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.WEBHOOK_URL}}rest/workflows",
+        "options": {}
+      }
+    },
+    {
+      "id": "e8cdc57d-9263-4a91-bba9-af6b02ff77b9",
+      "name": "Leads Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "operation": "getRows",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "e8534447-91b5-41cc-a90a-69ca462e6736",
+      "name": "Content Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        600,
+        200
+      ],
+      "parameters": {
+        "operation": "getRows",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "PublishedContent"
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "4237b787-b4cd-431e-a82d-55f8363307c0",
+      "name": "Merge & Analyze",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const leads = $input.all()[0].json;\nconst content = $input.all()[1].json;\nconst total_leads = leads.length;\nconst vendors = leads.filter(l => l.user_type === 'vendor').length;\nconst buyers = leads.filter(l => l.user_type === 'buyer').length;\nconst total_posts = content.length;\nconst avg_engagement = content.reduce((s,p) => s + parseInt(p.comments||0) + parseInt(p.saves||0), 0) / (total_posts||1);\nreturn [{json:{\n  week_start: new Date().toISOString().slice(0,10),\n  total_leads, vendors, buyers,\n  total_posts, avg_engagement: Math.round(avg_engagement),\n  top_platform: [...new Set(content.map(p=>p.platform))].sort((a,b) => content.filter(p=>p.platform===b).length - content.filter(p=>p.platform===a).length)[0]\n}}];"
+      }
+    },
+    {
+      "id": "3aa1eeb7-e903-43f8-a83e-51ba089e953d",
+      "name": "GPT-4 Deep Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=Analyze Eki's weekly performance and provide strategic recommendations. Return JSON: {top_3_insights[], recommendations[], content_brief_for_next_week, risk_flags[]}. Data: {{JSON.stringify($json)}}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "openAiApi": "openAiApi"
+      }
+    },
+    {
+      "id": "d75581ef-8055-4282-8114-c29e1d3414a2",
+      "name": "Log Report",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Analytics",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "report_date": "",
+            "total_leads": "",
+            "vendors": "",
+            "buyers": "",
+            "posts": "",
+            "engagement": "",
+            "recommendations": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "c9731265-b053-4c48-a18e-971b66a13b7f",
+      "name": "Telegram Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "=Eki Analytics <analytics@eki.app>"
+            },
+            {
+              "name": "to",
+              "value": [
+                "={{$env.TEAM_EMAIL || 'team@eki.app'}}"
+              ]
+            },
+            {
+              "name": "subject",
+              "value": "=Eki Weekly Performance Report - {{$json.week_start}}"
+            },
+            {
+              "name": "html",
+              "value": "=<h2>Eki Weekly Report</h2><p>Leads: {{$json.total_leads}} | Vendors: {{$json.vendors}} | Buyers: {{$json.buyers}}</p><p>Posts: {{$json.total_posts}} | Avg Engagement: {{$json.avg_engagement}}</p><p>Top Platform: {{$json.top_platform}}</p><hr/><p><b>AI Recommendations:</b><br/>{{$node['GPT-4 Deep Analysis'].json.output.recommendations.join('<br/>')}}</p>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0c626865-ae3b-418c-93af-77f87096bba4",
+      "name": "Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\ud83d\udcc8 Eki Weekly Report\nLeads: {{$json.total_leads}}\nVendors: {{$json.vendors}} | Buyers: {{$json.buyers}}\nPosts: {{$json.total_posts}} | Avg Eng: {{$json.avg_engagement}}\n\nTop Insights:\n{{$node['GPT-4 Deep Analysis'].json.output.top_3_insights.join('\\n')}}"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    }
+  ],
+  "connections": {
+    "Monday 9AM": {
+      "main": [
+        [
+          {
+            "node": "Get All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Data": {
+      "main": [
+        [
+          {
+            "node": "Leads Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Content Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leads Data": {
+      "main": [
+        [
+          {
+            "node": "Merge & Analyze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Data": {
+      "main": [
+        [
+          {
+            "node": "Merge & Analyze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Analyze": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Deep Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Deep Analysis": {
+      "main": [
+        [
+          {
+            "node": "Log Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "ad4a26fe-7dcb-492f-b848-6fd2afe17ee3",
+  "active": false,
+  "tags": []
+}

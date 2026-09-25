@@ -1,0 +1,280 @@
+{
+  "name": "Eki - 04 Waitlist Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "join-waitlist",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e674c321-4f1b-419b-a010-b6f7924c2561",
+      "name": "Waitlist Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Waitlist!A:G",
+        "options": {}
+      },
+      "id": "c6be98bb-fcf2-4df4-8d41-e0e2ac6b67a3",
+      "name": "Read Waitlist Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const waitlist = $input.all();\nconst payload = $('Waitlist Webhook Trigger').first().json.body;\nconst whatsapp = payload.whatsapp.toLowerCase().trim();\nconst duplicate = waitlist.find(row => row.json.whatsapp && row.json.whatsapp.toLowerCase().trim() === whatsapp);\n\nreturn {\n  is_duplicate: !!duplicate,\n  existing_data: duplicate ? duplicate.json : null,\n  name: payload.name,\n  whatsapp: whatsapp,\n  user_type: payload.user_type || 'Vendor',\n  current_total: waitlist.length\n};"
+      },
+      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfb",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_duplicate }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfc",
+      "name": "Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "responseBody": "={\n  \"status\": \"already_registered\",\n  \"position\": {{ $json.existing_data.position }},\n  \"referral_code\": \"{{ $json.existing_data.referral_code }}\",\n  \"message\": \"You are already on the Eki waitlist!\"\n}",
+        "options": {}
+      },
+      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfd",
+      "name": "Respond Position Reminder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        980,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst nameClean = input.name.replace(/[^a-zA-Z]/g, '').substring(0,3).toUpperCase();\nconst refCode = `WL-EKI-${nameClean}-${Math.random().toString(36).substring(2,6).toUpperCase()}`;\nconst newPosition = input.current_total + 1;\n\nreturn {\n  whatsapp: input.whatsapp,\n  name: input.name,\n  position: newPosition,\n  referral_code: refCode,\n  referrals_count: 0,\n  user_type: input.user_type,\n  signup_date: new Date().toISOString().split('T')[0]\n};"
+      },
+      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfd",
+      "name": "Generate Waitlist Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "EKI_SPREADSHEET_ID_PLACEHOLDER",
+        "range": "Waitlist!A:G",
+        "options": {}
+      },
+      "id": "2be5b0cd-562a-4df4-8d41-c741e0a290b0",
+      "name": "Append to Waitlist Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1200,
+        450
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp.com/whatsapps",
+        "sendHeaders": true,
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer WHATSAPP_ACCESS_TOKEN_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"from\": \"Eki <hello@eki-marketplace.com>\", \"to\": [\"{{ $json.whatsapp }}\"], \"subject\": \"You are on the list! 🎉 Position #{{ $json.position }}\", \"html\": \"<p>Hey {{ $json.name }},</p><p>You are officially #{{ $json.position }} on the Eki waitlist!</p><p>Want to move up? Share your personal referral link with other traders:</p><p><strong>https://eki-marketplace.com/signup?ref={{ $json.referral_code }}</strong></p><p>Every friend who registers moves you 5 spots closer to early onboarding access!</p><p>Cheers,<br>The Eki Team</p>\"}"
+      },
+      "id": "f0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfe",
+      "name": "Send WhatsApp Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "responseBody": "={\n  \"status\": \"success\",\n  \"position\": {{ $json.position }},\n  \"referral_code\": \"{{ $json.referral_code }}\",\n  \"message\": \"Waitlist registration complete. WhatsApp confirmation sent.\"\n}",
+        "options": {}
+      },
+      "id": "c0e2ac6b-67a3-41bb-a5a5-c6be98bbfcfe",
+      "name": "Respond Webhook Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Setup Instructions\n1. Replace `EKI_SPREADSHEET_ID_PLACEHOLDER` with Google Sheet ID.\n2. Replace `WHATSAPP_ACCESS_TOKEN_PLACEHOLDER` with actual WhatsApp API token.\n3. Waitlist table columns: `whatsapp`, `name`, `position`, `referral_code`, `referrals_count`, `user_type`, `signup_date`.",
+        "height": 140,
+        "width": 280
+      },
+      "id": "bb7fe1cc-2781-4bdf-87f5-a8cdb615b1eb",
+      "name": "Sticky Note Setup",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        100,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Waitlist Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Waitlist Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Waitlist Sheet": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Respond Position Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Waitlist Record",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Generate Waitlist Record": {
+      "main": [
+        [
+          {
+            "node": "Append to Waitlist Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Waitlist Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Respond Webhook Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "meta": {
+    "instanceId": "eki-launch-automation"
+  }
+}

@@ -1,0 +1,4 @@
+referral_id,referrer_email,referred_email,referral_code,timestamp,points_credited,status
+R-5001,john.doe@example.com,friend1@example.com,WL-EKI-2A8,2026-05-16 10:15:30,1,Credited
+R-5002,john.doe@example.com,friend2@example.com,WL-EKI-2A8,2026-05-17 14:22:10,1,Credited
+R-5003,chiara.bianchi@example.it,client1@example.it,WL-EKI-9C2,2026-05-21 09:12:00,1,Credited

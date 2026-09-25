@@ -1,0 +1,245 @@
+{
+  "name": "Eki - 17 ManyChat Comment Funnel",
+  "nodes": [
+    {
+      "id": "cf65bb72-8290-42d8-a03b-5a7c66f5c68b",
+      "name": "ManyChat Webhook",
+      "type": "n8n-nodes-base.webhookTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "manychat-comment",
+        "options": {}
+      }
+    },
+    {
+      "id": "81f3ce4e-e5dd-4c4f-8d7c-d3b3eba6c08e",
+      "name": "Parse Comment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body = $json;\nconst keyword = (body.keyword || body.text || '').toUpperCase();\nconst user = body.name || body.username || 'Unknown';\nreturn [{json:{user,keyword,platform:'instagram',source:body.source||'manychat',timestamp:new Date().toISOString()}}];"
+      }
+    },
+    {
+      "id": "a66735f5-b342-4496-a396-876d270fe0de",
+      "name": "Route by Keyword",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json.keyword}}",
+        "rules": [
+          {
+            "value": "VENDOR"
+          },
+          {
+            "value": "SELL"
+          },
+          {
+            "value": "BUY"
+          },
+          {
+            "value": "INFO"
+          },
+          {
+            "value": "JOIN"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2e60ca93-6be2-47e3-bb56-80e9d5986294",
+      "name": "Send Vendor DM",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$json.user}}",
+        "text": "=Hi {{$json.user}}! \ud83d\udc4b You're selling on IG? Eki gives you a pro storefront, secure payments, order management. Free to set up. Start here: https://eki.app/vendor"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    },
+    {
+      "id": "f82f8d79-822a-4ad0-a2bc-22febe3510d2",
+      "name": "Send Buyer DM",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        900,
+        200
+      ],
+      "parameters": {
+        "chatId": "={{$json.user}}",
+        "text": "=Hi {{$json.user}}! \ud83d\udc4b Looking for trusted African foodstuff? Eki connects you with verified sellers. Browse here: https://eki.app/buy"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    },
+    {
+      "id": "1feaf62c-9713-4cd7-a994-d39a5ff4c741",
+      "name": "Log Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "",
+            "keyword": "",
+            "platform": "",
+            "source": "",
+            "timestamp": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "2e7a540b-2cc2-4054-a98c-aba185cc30bd",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=\ud83d\udcac New lead from Instagram!\nUser: {{$json.user}}\nKeyword: {{$json.keyword}}"
+      },
+      "credentials": {
+        "telegramApi": "telegramApi"
+      }
+    }
+  ],
+  "connections": {
+    "ManyChat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Comment": {
+      "main": [
+        [
+          {
+            "node": "Route by Keyword",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Keyword": {
+      "main": [
+        [
+          {
+            "node": "Send Vendor DM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Vendor DM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Buyer DM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Vendor DM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Vendor DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Vendor DM": {
+      "main": [
+        [
+          {
+            "node": "Log Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Buyer DM": {
+      "main": [
+        [
+          {
+            "node": "Log Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Lead": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "f11beccb-f360-46e8-860e-c2066f70a9c0",
+  "active": false,
+  "tags": []
+}

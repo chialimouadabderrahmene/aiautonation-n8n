@@ -1,0 +1,168 @@
+{
+  "name": "Eki - 16 Pain Discovery Engine",
+  "nodes": [
+    {
+      "id": "9c02aa24-3219-4df2-90fa-bfa8a966a60a",
+      "name": "Daily 6AM",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "hour": 6
+        }
+      }
+    },
+    {
+      "id": "906d7662-d0b5-41f7-8a60-266d71376525",
+      "name": "Scrape Reddit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.reddit.com/r/Nigeria+r/diaspora+r/AfricanFood/search.json?q=foodstuff+vendor+problem&restrict_sr=1&sort=top&t=week",
+        "options": {
+          "headers": {
+            "User-Agent": "EkiBot/1.0"
+          }
+        }
+      }
+    },
+    {
+      "id": "723cd37b-32fe-4cae-80f6-6a7ffbad98ad",
+      "name": "Extract Pains",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const posts = $json.data.children || [];\nreturn posts.slice(0,20).map(p => ({\n  json: {\n    pain: p.data.title,\n    text: p.data.selftext,\n    upvotes: p.data.ups,\n    source: 'reddit'\n  }\n}));"
+      }
+    },
+    {
+      "id": "513a79a5-8884-4897-b920-56f86a7d0545",
+      "name": "GPT-4 Categorize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "contentType": "json",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o-mini"
+            },
+            {
+              "name": "messages",
+              "value": [
+                {
+                  "role": "user",
+                  "content": "Categorize this pain point: vendor/buyer, category (DM_Chaos/Payment_Fraud/Scam_Fear/No_Buyers/Trust), emotional_intensity 1-10. Return JSON:{persona,category,intensity,keywords}"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a31bc4ed-a3fb-45cc-a267-e6137a925b3c",
+      "name": "Save to Pain DB",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "PainPoints",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pain": "",
+            "category": "",
+            "intensity": "",
+            "persona": "",
+            "source": ""
+          }
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2": "googleSheetsOAuth2Api"
+      }
+    }
+  ],
+  "connections": {
+    "Daily 6AM": {
+      "main": [
+        [
+          {
+            "node": "Scrape Reddit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Reddit": {
+      "main": [
+        [
+          {
+            "node": "Extract Pains",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Pains": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Categorize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Categorize": {
+      "main": [
+        [
+          {
+            "node": "Save to Pain DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "fcdfa20b-3e50-4b62-bfd7-fb5243b5c111",
+  "active": false,
+  "tags": []
+}

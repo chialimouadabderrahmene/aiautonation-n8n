@@ -1,0 +1,332 @@
+{
+  "name": "12 - AI Social Autopilot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Daily 9AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check emergency stop\nif (($env.AUTOPILOT_STOP || '').toLowerCase() === 'true') {\n  return [{ json: { stopped: true } }];\n}\nreturn [{ json: { stopped: false } }];"
+      },
+      "id": "stop-check",
+      "name": "Emergency Stop Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "not-stopped",
+              "leftValue": "={{ $json.stopped }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "if-not-stopped",
+      "name": "Not Stopped?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst systemPrompt = 'You are Eki social media strategist. Brand: Eki - AI automation platform for businesses. Tone: professional, innovative, approachable. You generate unique content for each platform. Return ONLY valid JSON.';\nconst userPrompt = `Generate social media content for ${today}. Return JSON with this exact structure:\n{\n  \"tiktok\": { \"hook\": \"attention-grabbing first line\", \"video_script\": \"30-60 sec script with scenes\", \"caption\": \"short caption\", \"hashtags\": \"#tag1 #tag2 (5-8 tags)\" },\n  \"instagram\": { \"hook\": \"reel hook\", \"video_script\": \"reel script\", \"caption\": \"engaging caption with CTA\", \"hashtags\": \"#tag1 #tag2 (10-15 tags)\" },\n  \"facebook\": { \"hook\": \"scroll-stopping opener\", \"caption\": \"longer post with value and CTA\", \"hashtags\": \"#tag1 #tag2 (3-5 tags)\", \"video_script\": \"\" }\n}\nRules: No offensive content. No false claims. No medical/legal/financial promises. No spammy hashtags. Each platform MUST have unique caption. Focus on AI automation value.`;\n\nreturn [{\n  json: {\n    requestBody: {\n      model: 'llama-3.3-70b-versatile',\n      temperature: 0.85,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userPrompt }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "build-ai-request",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.GROQ_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "generate-ai",
+      "name": "Generate Content (Groq)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1020, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Groq/OpenAI response into 3 platform items\nconst item = $input.first().json;\nlet rawContent = '';\n\nif (item.choices && item.choices[0]) {\n  rawContent = item.choices[0].message.content;\n} else {\n  return [{ json: { error: 'No AI response', raw: JSON.stringify(item) } }];\n}\n\n// Extract JSON (handle markdown code blocks if any)\nlet jsonStr = rawContent;\nconst jsonMatch = rawContent.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\nif (jsonMatch) jsonStr = jsonMatch[1].trim();\n\nlet content;\ntry {\n  content = JSON.parse(jsonStr);\n} catch(e) {\n  return [{ json: { error: 'JSON parse failed: ' + e.message, raw: rawContent } }];\n}\n\nconst today = new Date().toISOString().split('T')[0];\nconst platforms = ['tiktok', 'instagram', 'facebook'];\nconst results = [];\n\nfor (const platform of platforms) {\n  const p = content[platform] || {};\n  results.push({\n    json: {\n      date: today,\n      platform: platform,\n      content_type: platform === 'tiktok' ? 'short_video' : platform === 'instagram' ? 'reel' : 'post',\n      hook: p.hook || '',\n      caption: p.caption || '',\n      hashtags: p.hashtags || '',\n      video_script: p.video_script || '',\n      status: 'generated',\n      autopilot_status: 'pending',\n      scheduled_at: '',\n      published_at: '',\n      error: ''\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "parse-response",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Safety checks\nconst items = $input.all();\nconst offensiveRe = /\\b(fuck|shit|damn|bitch|nigger|faggot|retard)\\b/i;\nconst falseClaimRe = /\\b(guaranteed|100%|proven to|always works|never fails|instant results)\\b/i;\nconst medLegalFinRe = /\\b(cure|diagnose|legal advice|financial advice|investment returns|medical treatment|prescription)\\b/i;\nconst spamHashRe = /\\b(follow4follow|f4f|like4like|l4l|followback|instalike|likeforlike)\\b/i;\n\nconst allCaptions = items.map(i => (i.json.caption || '').toLowerCase());\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i].json;\n  const issues = [];\n  const text = (item.caption || '') + ' ' + (item.video_script || '');\n\n  if (offensiveRe.test(text)) issues.push('offensive');\n  if (falseClaimRe.test(text)) issues.push('false_claim');\n  if (medLegalFinRe.test(text)) issues.push('med_legal_fin');\n  if (spamHashRe.test(item.hashtags || '')) issues.push('spam_hashtags');\n  \n  const dupes = allCaptions.filter(c => c === (item.caption || '').toLowerCase()).length;\n  if (dupes > 1) issues.push('duplicate');\n\n  const passed = issues.length === 0;\n  results.push({\n    json: {\n      ...item,\n      status: passed ? 'approved' : 'flagged',\n      error: passed ? '' : issues.join(',')\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "safety-checks",
+      "name": "Safety Checks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Social Posts" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{ $json.date }}",
+            "platform": "={{ $json.platform }}",
+            "content_type": "={{ $json.content_type }}",
+            "hook": "={{ $json.hook }}",
+            "caption": "={{ $json.caption }}",
+            "hashtags": "={{ $json.hashtags }}",
+            "video_script": "={{ $json.video_script }}",
+            "status": "={{ $json.status }}",
+            "autopilot_status": "={{ $json.autopilot_status }}",
+            "scheduled_at": "={{ $json.scheduled_at }}",
+            "published_at": "={{ $json.published_at }}",
+            "error": "={{ $json.error }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-sheets",
+      "name": "Save to Social Posts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1620, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if autopilot posting is enabled and Buffer key exists\nconst autopilotOn = ($env.AUTOPILOT_SOCIAL_POSTING || '').toLowerCase() === 'true';\nconst hasBuffer = !!$env.BUFFER_API_KEY;\nconst items = $input.all();\n\nconst results = items.map(item => ({\n  json: {\n    ...item.json,\n    should_post: autopilotOn && hasBuffer && item.json.status === 'approved',\n    posting_method: hasBuffer ? 'buffer' : 'none'\n  }\n}));\n\nreturn results;"
+      },
+      "id": "check-posting",
+      "name": "Check Posting Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1860, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "should-post",
+              "leftValue": "={{ $json.should_post }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "if-should-post",
+      "name": "Should Auto-Post?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.bufferapp.com/1/updates/create.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.BUFFER_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.caption + '\\n\\n' + $json.hashtags, profile_ids: [$env.BUFFER_PROFILE_ID], scheduled_at: new Date(Date.now() + 3600000).toISOString() }) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "post-buffer",
+      "name": "Post to Buffer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2340, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if Buffer post succeeded or failed\nconst item = $input.first().json;\nconst success = item.success === true || item.updates || (item.id && !item.error);\n\nreturn [{\n  json: {\n    buffer_success: success,\n    buffer_response: item,\n    platform: $('Should Auto-Post?').first().json.platform,\n    caption: $('Should Auto-Post?').first().json.caption,\n    hashtags: $('Should Auto-Post?').first().json.hashtags,\n    date: $('Should Auto-Post?').first().json.date\n  }\n}];"
+      },
+      "id": "check-buffer-result",
+      "name": "Check Buffer Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2580, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "buffer-ok",
+              "leftValue": "={{ $json.buffer_success }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "buffer-success",
+      "name": "Buffer Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2800, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=⚠️ *Buffer Post Failed - Manual Posting Required*\n\n📌 Platform: *{{ $json.platform || 'unknown' }}*\n📅 Date: {{ $json.date }}\n\n📝 *Caption:*\n{{ $json.caption }}\n\n#️⃣ {{ $json.hashtags }}\n\n❌ Error: Buffer API returned failure.\nPlease post manually.",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-buffer-fail",
+      "name": "Telegram (Buffer Failed)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [3040, 300],
+      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=📱 *Eki Social Content - Review & Post Manually*\n\n📅 {{ $json.date }}\n📌 Platform: *{{ $json.platform.toUpperCase() }}*\n🎯 Type: {{ $json.content_type }}\n\n🪝 *Hook:* {{ $json.hook }}\n\n📝 *Caption:*\n{{ $json.caption }}\n\n#️⃣ {{ $json.hashtags }}\n\n🎬 *Script:* {{ $json.video_script || 'N/A' }}\n\n⚡ Status: `{{ $json.status }}`\n💡 Autopilot OFF or no Buffer key — post manually.",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-manual",
+      "name": "Telegram (Manual Post)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2340, 420],
+      "credentials": { "telegramApi": { "id": "", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Automation Logs" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "12-ai-social-autopilot",
+            "action": "=content_generated",
+            "platform": "=all",
+            "status": "=completed",
+            "details": "=Generated 3 posts (TikTok, Instagram, Facebook)",
+            "error": ""
+          }
+        },
+        "options": {}
+      },
+      "id": "log-action",
+      "name": "Log to Automation Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [3040, 100],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "Google Sheets OAuth2" } }
+    }
+  ],
+  "connections": {
+    "Daily 9AM Trigger": {
+      "main": [[{ "node": "Emergency Stop Check", "type": "main", "index": 0 }]]
+    },
+    "Emergency Stop Check": {
+      "main": [[{ "node": "Not Stopped?", "type": "main", "index": 0 }]]
+    },
+    "Not Stopped?": {
+      "main": [
+        [{ "node": "Build AI Request", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Build AI Request": {
+      "main": [[{ "node": "Generate Content (Groq)", "type": "main", "index": 0 }]]
+    },
+    "Generate Content (Groq)": {
+      "main": [[{ "node": "Parse AI Response", "type": "main", "index": 0 }]]
+    },
+    "Parse AI Response": {
+      "main": [[{ "node": "Safety Checks", "type": "main", "index": 0 }]]
+    },
+    "Safety Checks": {
+      "main": [[{ "node": "Save to Social Posts", "type": "main", "index": 0 }]]
+    },
+    "Save to Social Posts": {
+      "main": [[{ "node": "Check Posting Config", "type": "main", "index": 0 }]]
+    },
+    "Check Posting Config": {
+      "main": [[{ "node": "Should Auto-Post?", "type": "main", "index": 0 }]]
+    },
+    "Should Auto-Post?": {
+      "main": [
+        [{ "node": "Post to Buffer", "type": "main", "index": 0 }],
+        [{ "node": "Telegram (Manual Post)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Post to Buffer": {
+      "main": [[{ "node": "Check Buffer Result", "type": "main", "index": 0 }]]
+    },
+    "Check Buffer Result": {
+      "main": [[{ "node": "Buffer Success?", "type": "main", "index": 0 }]]
+    },
+    "Buffer Success?": {
+      "main": [
+        [{ "node": "Log to Automation Logs", "type": "main", "index": 0 }],
+        [{ "node": "Telegram (Buffer Failed)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram (Buffer Failed)": {
+      "main": [[{ "node": "Log to Automation Logs", "type": "main", "index": 0 }]]
+    },
+    "Telegram (Manual Post)": {
+      "main": [[{ "node": "Log to Automation Logs", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [{ "name": "social-media" }, { "name": "autopilot" }, { "name": "production" }],
+  "active": false
+}

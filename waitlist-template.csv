@@ -1,0 +1,4 @@
+email,name,position,referral_code,referrals_count,user_type,signup_date
+john.doe@example.com,John Doe,1,WL-EKI-2A8,3,Vendor,2026-05-15
+mary.eze@example.com,Mary Eze,20,WL-EKI-5B9,0,Vendor,2026-05-18
+chiara.bianchi@example.it,Chiara Bianchi,8,WL-EKI-9C2,1,Buyer,2026-05-20

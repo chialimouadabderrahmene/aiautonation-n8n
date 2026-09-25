@@ -1,0 +1,364 @@
+{
+  "name": "Eki - 05 WhatsApp Welcome Sequence",
+  "nodes": [
+    {
+      "id": "56b8a12b-51e9-44b4-9063-257af467f6ee",
+      "name": "Daily 9AM Check",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "hour": 9,
+          "minute": 0,
+          "weekday": [
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "d14de988-5b47-4108-85aa-65382d359fbe",
+      "name": "Get New Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "operation": "getRows",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
+      }
+    },
+    {
+      "id": "54bf0413-dd5f-4269-9737-90a89f4af253",
+      "name": "Filter Fresh Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return ($json || []).filter(l => l.status === 'new' && (!l.last_wa || (Date.now() - new Date(l.last_wa).getTime()) > 86400000)).slice(0, 50).map(l => ({json: {...l, wa_day: parseInt(l.wa_day || '0') + 1}}));"
+      }
+    },
+    {
+      "id": "58f680b1-b037-4438-85f6-7a219d53b5f6",
+      "name": "Route by Day",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json.wa_day}}",
+        "rules": [
+          {
+            "value": "1"
+          },
+          {
+            "value": "2"
+          },
+          {
+            "value": "3"
+          }
+        ]
+      }
+    },
+    {
+      "id": "78c330ff-4eae-4b0f-902d-d73fab465283",
+      "name": "WA Day 1 - Welcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Hi {{$json.name}}! We know the chaos of selling on WhatsApp - missed orders, ghost buyers, fake payment alerts. Eki was built to fix this. Here's a 1-min overview: https://eki.app/how-it-works\n\nReply BUYER or VENDOR so we can help you better."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "fc961e65-4a7f-48d7-b596-e8810abccc5e",
+      "name": "WA Day 2 - Social Proof",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Hi {{$json.name}}! Did you know vendors using Eki get a verified storefront, secure payments, and order management - all in one place.\n\nOne vendor got 50 orders in 3 weeks. See their store: https://eki.app/showcase\n\nReply SETUP to create your store in 15 min."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "05f25600-0ab5-467d-81eb-4c5ef2948ead",
+      "name": "WA Day 3 - CTA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text.body",
+              "value": "=Ready to start {{$json.name}}? Here's what you get:\n\u2705 Professional storefront\n\u2705 Secure payments\n\u2705 Order management\n\u2705 Buyer discovery\n\nSetup is free & takes 15 min: https://eki.app/signup\n\nReply HELP if you need assistance."
+            }
+          ]
+        },
+        "options": {
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.WHATSAPP_ACCESS_TOKEN}}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "d5082aa4-e54d-4727-9dc9-28a0e52a08f8",
+      "name": "Update Progress",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $json.map(l => ({json: {...l, wa_day: l.wa_day, last_wa: new Date().toISOString(), status: l.wa_day >= 3 ? 'nurturing' : 'new'}}));"
+      }
+    },
+    {
+      "id": "f7ce2696-63ba-4a33-b27b-167cb188cf49",
+      "name": "Log Progress",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$env.GOOGLE_SHEETS_ID}}",
+        "sheetName": "Leads"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": "googleSheetsOAuth2Api"
+      }
+    }
+  ],
+  "connections": {
+    "Daily 9AM Check": {
+      "main": [
+        [
+          {
+            "node": "Get New Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter Fresh Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Fresh Leads": {
+      "main": [
+        [
+          {
+            "node": "Route by Day",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Day": {
+      "main": [
+        [
+          {
+            "node": "WA Day 1 - Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA Day 2 - Social Proof",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA Day 3 - CTA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA Day 1 - Welcome": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA Day 2 - Social Proof": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA Day 3 - CTA": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress": {
+      "main": [
+        [
+          {
+            "node": "Log Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {},
+  "versionId": "78727347-5a0a-4393-8814-8e4b7eb3f603",
+  "active": false,
+  "tags": []
+}
