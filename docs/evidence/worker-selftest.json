@@ -1,0 +1,43 @@
+{
+  "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
+  "subtitlesFilter": true,
+  "assemblySeconds": 15.1,
+  "qa": {
+    "ok": true,
+    "issues": [],
+    "checks": {
+      "exists": true,
+      "container": true,
+      "video": true,
+      "resolution": true,
+      "aspectRatio": true,
+      "audio": true,
+      "duration": true,
+      "decodes": true
+    }
+  },
+  "output": {
+    "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+    "durationSec": 16.9,
+    "sizeBytes": 13842896,
+    "video": {
+      "codec": "h264",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30
+    },
+    "audio": {
+      "codec": "aac",
+      "sampleRate": 48000,
+      "channels": 2
+    }
+  },
+  "storageDriver": "s3",
+  "storage": {
+    "key": "_selftest/1790540980631-final.mp4",
+    "uploadedBytes": 13842896,
+    "downloadMatches": true,
+    "signedUrl": "http://storage:8333/eki-media/_selftest/1790540980631-final.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=eki-local-access%2F20260927%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260927T202940Z&X-Amz-Expires=600&X-Amz-Signature=…&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+  }
+}

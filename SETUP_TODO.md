@@ -1,5 +1,8 @@
 # Setup checklist — Eki n8n automation
 
+> **Superseded for normal operation.** Configuration is now entered in the AI Automation Control Center (Integrations + Settings) and delivered to n8n automatically; deployment is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and the admin workflow in [CLIENT_SETUP_CHECKLIST.md](CLIENT_SETUP_CHECKLIST.md). Do **not** edit n8n environment variables or n8n credentials by hand. This page remains as background/reference for the workflows' behaviour.
+
+
 Legend: **EXTERNAL DEPENDENCY** = needs an account, approval or decision from you/the client; the repo cannot do it.
 
 ## Launch details

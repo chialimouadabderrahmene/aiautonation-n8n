@@ -1,248 +1,176 @@
 import "dotenv/config";
 import http from "node:http";
-import { Worker, Job } from "bullmq";
-import { prisma } from "./lib/prisma";
-import { getRedisConnection, VIDEO_QUEUE_NAME, VideoGenerationJobPayload } from "./lib/queue";
-import { generateScript } from "./pipeline/script";
-import { generateVoiceover } from "./pipeline/voice";
-import { generateSceneVideo } from "./pipeline/video";
-import { assembleVideo, buildSrt } from "./pipeline/assemble";
-import { qualityCheck } from "./pipeline/qa";
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { Worker, Job, UnrecoverableError } from "bullmq";
+import { prisma } from "./lib/prisma";
+import { logger } from "./lib/logger";
+import { getRedisConnection, VIDEO_QUEUE_NAME, DELIVERY_QUEUE_NAME, VideoGenerationJobPayload, DeliveryJobPayload } from "./lib/queue";
+import { startHeartbeat, stopHeartbeat, currentCapabilities } from "./lib/heartbeat";
+import { ProviderError, scrubSecrets } from "./lib/http";
+import { processVideoJob, audit } from "./pipeline/orchestrator";
+import { sendVideoForApproval, notifyTeam } from "./delivery/telegram";
+import { publishVideo } from "./delivery/publish";
 
-async function isCancelled(jobId: string): Promise<boolean> {
-  const job = await prisma.videoJob.findUnique({ where: { id: jobId }, select: { state: true } });
-  return job?.state === "CANCELLED";
+/**
+ * Eki video worker: consumes two BullMQ queues.
+ *   video-generation  long jobs (concurrency VIDEO_WORKER_CONCURRENCY, default 1)
+ *   video-delivery    Telegram approval sends + publishing (concurrency 2)
+ * Retries are bounded by each job's `attempts` (set by the API from Settings);
+ * non-retryable failures (bad key, moderation, QA) stop immediately.
+ */
+
+async function waitForDatabase(): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return;
+    } catch (err) {
+      if (attempt >= 30) throw err;
+      logger.warn({ attempt }, "[worker] database not reachable yet, retrying in 2s");
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
 }
 
-async function setState(jobId: string, state: string, extra: Record<string, unknown> = {}): Promise<void> {
-  await prisma.videoJob.update({ where: { id: jobId }, data: { state: state as never, ...extra } });
+/** Remove temp work dirs left behind by a crash (older than 2 h). */
+async function cleanupStaleTemp(): Promise<void> {
+  const tmp = os.tmpdir();
+  for (const name of await fs.readdir(tmp).catch(() => [] as string[])) {
+    if (!name.startsWith("eki-")) continue;
+    const full = path.join(tmp, name);
+    const stat = await fs.stat(full).catch(() => null);
+    if (stat && Date.now() - stat.mtimeMs > 2 * 3600_000) await fs.rm(full, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
-async function fail(jobId: string, stage: string, error: unknown): Promise<never> {
-  const message = error instanceof Error ? error.message : String(error);
-  await prisma.videoJob.update({
-    where: { id: jobId },
-    data: { state: "FAILED", error: message, errorStage: stage, completedAt: new Date() },
+async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
+  const payload = job.data;
+  const attempt = job.attemptsMade;
+  const maxAttempts = job.opts.attempts ?? 1;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "VIDEO_WORKER", externalId: `${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: {
+      source: "VIDEO_WORKER",
+      externalId: `${job.id}#${attempt}`,
+      trigger: payload.kind === "publish" ? `publish:${payload.target}` : "telegram:send-approval",
+      provider: payload.kind === "publish" ? payload.target : "telegram",
+      relatedEntityType: "VideoJob",
+      relatedEntityId: payload.videoJobId,
+      retryCount: attempt,
+      mode: payload.kind,
+    },
   });
-  throw error instanceof Error ? error : new Error(message);
-}
-
-async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): Promise<void> {
-  const { videoJobId } = bullJob.data;
-  const execution = await prisma.automationExecution.create({
-    data: { source: "VIDEO_WORKER", externalId: videoJobId, trigger: "video.create", status: "RUNNING", relatedEntityType: "VideoJob", relatedEntityId: videoJobId },
-  });
+  const finish = (status: "SUCCESS" | "FAILED", error?: string) =>
+    prisma.automationExecution.update({ where: { id: execution.id }, data: { status, finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error } });
 
   try {
-    const job = await prisma.videoJob.findUnique({ where: { id: videoJobId }, include: { project: true } });
-    if (!job) throw new Error(`VideoJob ${videoJobId} not found`);
-    if (job.state === "CANCELLED") return;
-
-    await prisma.videoJob.update({ where: { id: videoJobId }, data: { startedAt: new Date() } });
-
-    // 1. Script
-    await setState(videoJobId, "SCRIPT_GENERATING");
-    const script = await generateScript({
-      contentType: job.project.contentType,
-      topic: job.project.topic,
-      prompt: job.project.prompt,
-      audience: job.project.audience,
-      language: job.project.language,
-      tone: job.project.tone,
-      durationSec: job.project.durationSec,
-      aspectRatio: job.project.aspectRatio,
-      visualStyle: job.project.visualStyle,
-      brand: job.project.brand,
-      cta: job.project.cta,
-    }).catch((err) => fail(videoJobId, "SCRIPT_GENERATING", err));
-
-    await prisma.videoJob.update({
-      where: { id: videoJobId },
-      data: { script: script as unknown as object, caption: script.caption, hashtags: script.hashtags },
-    });
-    for (const scene of script.scenes) {
-      await prisma.videoScene.create({
-        data: {
-          jobId: videoJobId,
-          index: scene.index,
-          visualPrompt: scene.visualPrompt,
-          voiceoverText: scene.voiceoverText,
-          subtitleText: scene.subtitleText,
-          durationSec: Math.round(scene.durationSec),
-        },
+    if (payload.kind === "send-approval") {
+      await sendVideoForApproval(payload.videoJobId);
+      await audit("approval.sent_to_telegram", payload.videoJobId, { requestedBy: payload.requestedBy });
+    } else {
+      const where = { videoJobId_target: { videoJobId: payload.videoJobId, target: payload.target } };
+      await prisma.publication.update({ where, data: { status: "PUBLISHING", attempts: { increment: 1 } } });
+      const result = await publishVideo(payload.videoJobId, payload.target);
+      await prisma.publication.update({ where, data: { status: "PUBLISHED", externalId: result.externalId, externalUrl: result.externalUrl ?? null, error: null, publishedAt: new Date() } });
+      await audit("video.published", payload.videoJobId, { target: payload.target, externalId: result.externalId });
+    }
+    await finish("SUCCESS");
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    const retryable = err instanceof ProviderError ? err.retryable : false;
+    const willRetry = retryable && attempt + 1 < maxAttempts;
+    await finish("FAILED", message);
+    if (payload.kind === "send-approval") {
+      await prisma.approval.updateMany({ where: { videoJobId: payload.videoJobId }, data: { note: `${willRetry ? "Retrying — " : ""}Telegram send failed: ${message}`.slice(0, 500) } });
+    } else {
+      await prisma.publication.update({
+        where: { videoJobId_target: { videoJobId: payload.videoJobId, target: payload.target } },
+        data: { status: willRetry ? "PENDING" : "FAILED", error: message },
       });
     }
-    await setState(videoJobId, "STORYBOARD_READY", { storyboard: script.scenes as unknown as object });
-    if (await isCancelled(videoJobId)) return;
-
-    // 2. Voiceover
-    await setState(videoJobId, "VOICE_GENERATING");
-    const fullNarration = script.scenes.map((s) => s.voiceoverText).join(" ");
-    const voiceoverUrl = await generateVoiceover(videoJobId, fullNarration, job.project.voicePreset ?? undefined).catch((err) =>
-      fail(videoJobId, "VOICE_GENERATING", err),
-    );
-    await prisma.videoAsset.create({ data: { jobId: videoJobId, type: "VOICEOVER", provider: "elevenlabs", url: voiceoverUrl } });
-    if (await isCancelled(videoJobId)) return;
-
-    // 3. Visual scenes (sequential — Runway is polled per scene; parallelising
-    // would need per-provider rate-limit awareness this pass doesn't have).
-    await setState(videoJobId, "VISUAL_GENERATING");
-    const sceneUrls: string[] = [];
-    for (const scene of script.scenes) {
-      try {
-        const result = await generateSceneVideo(videoJobId, scene.index, {
-          prompt: scene.visualPrompt,
-          durationSec: scene.durationSec,
-          aspectRatio: job.project.aspectRatio,
-        });
-        await prisma.videoScene.update({
-          where: { jobId_index: { jobId: videoJobId, index: scene.index } },
-          data: { status: "READY", provider: "runway", providerJobId: result.providerJobId, sceneVideoUrl: result.url, completedAt: new Date() },
-        });
-        sceneUrls.push(result.url);
-        await prisma.videoAsset.create({ data: { jobId: videoJobId, type: "SCENE", provider: "runway", url: result.url } });
-      } catch (err) {
-        await prisma.videoScene.update({
-          where: { jobId_index: { jobId: videoJobId, index: scene.index } },
-          data: { status: "FAILED", error: err instanceof Error ? err.message : String(err) },
-        });
-        await fail(videoJobId, "VISUAL_GENERATING", err);
-      }
-      if (await isCancelled(videoJobId)) return;
+    await audit(payload.kind === "publish" ? "video.publish_failed" : "approval.send_failed", payload.videoJobId, { message, willRetry, target: payload.kind === "publish" ? payload.target : undefined });
+    if (!willRetry) {
+      await notifyTeam(`${payload.kind === "publish" ? `Publishing to ${payload.target}` : "Sending for approval"} failed: ${message}`);
+      throw new UnrecoverableError(message);
     }
-
-    // 4. Assembly (+ subtitles, + music if configured)
-    await setState(videoJobId, "ASSEMBLING");
-    const srt = job.project.subtitles ? buildSrt(script.scenes.map((s) => ({ subtitleText: s.subtitleText, durationSec: s.durationSec }))) : null;
-    const assembled = await assembleVideo({
-      jobId: videoJobId,
-      sceneVideoUrls: sceneUrls,
-      voiceoverPath: voiceoverUrl,
-      subtitlesSrt: srt,
-      // Background/custom music upload is not implemented in this pass (see
-      // docs/VIDEO_PIPELINE.md "Known limitations") — never pass a
-      // non-file value like "background" to ffmpeg.
-      musicPath: null,
-    }).catch((err) => fail(videoJobId, "ASSEMBLING", err));
-    if (srt) await prisma.videoAsset.create({ data: { jobId: videoJobId, type: "SUBTITLES", url: `${videoJobId}/subtitles.srt` } });
-
-    // 5. Quality check — real checks against the real output file.
-    await setState(videoJobId, "QUALITY_CHECK");
-    const qa = await qualityCheck(assembled.localPath, job.project.durationSec);
-    await fs.rm(assembled.workDir, { recursive: true, force: true }).catch(() => undefined);
-
-    if (!qa.ok) {
-      await fail(videoJobId, "QUALITY_CHECK", new Error(`Quality check failed: ${qa.issues.join("; ")}`));
-    }
-
-    await prisma.videoAsset.create({ data: { jobId: videoJobId, type: "FINAL", url: assembled.url, durationSec: qa.durationSec } });
-    await prisma.videoJob.update({
-      where: { id: videoJobId },
-      data: { state: "READY", finalVideoUrl: assembled.url, completedAt: new Date() },
-    });
-
-    await prisma.automationExecution.update({
-      where: { id: execution.id },
-      data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() },
-    });
-  } catch (err) {
-    await prisma.automationExecution.update({
-      where: { id: execution.id },
-      data: {
-        status: "FAILED",
-        finishedAt: new Date(),
-        durationMs: Date.now() - execution.startedAt.getTime(),
-        error: err instanceof Error ? err.message : String(err),
-      },
-    });
     throw err;
   }
 }
 
-// Retry policy: deliberately NOT set to BullMQ's automatic attempts>1 here (or
-// at the producer, api/src/routes/video.ts — see its comment). This pipeline
-// has no per-stage checkpointing: an automatic retry would silently re-run
-// EVERY stage from Script generation again, including ones that already
-// succeeded and already spent real OpenAI/Runway/ElevenLabs credit. A human
-// re-running a known-failed job (POST /api/video/jobs/:id/retry, tracked via
-// VideoJob.retryCount) is the safe version of "retry handling" for a pipeline
-// that bills per call; see docs/VIDEO_PIPELINE.md "Known limitations".
-const worker = new Worker<VideoGenerationJobPayload>(VIDEO_QUEUE_NAME, processVideoJob, {
-  connection: getRedisConnection(),
-  concurrency: Number(process.env.VIDEO_WORKER_CONCURRENCY ?? 1),
-});
-
-worker.on("completed", (job) => {
-  // eslint-disable-next-line no-console
-  console.log(`[worker] video job ${job.data.videoJobId} completed`);
-});
-worker.on("failed", (job, err) => {
-  // eslint-disable-next-line no-console
-  console.error(`[worker] video job ${job?.data.videoJobId} failed:`, err.message);
-});
-worker.on("error", (err) => {
-  // BullMQ connection-level errors (e.g. Redis dropped) - do not crash the
-  // process; the Worker retries its own connection internally.
-  // eslint-disable-next-line no-console
-  console.error("[worker] connection error:", err.message);
-});
-
-// Real startup/liveness health check, not a placeholder: reports DOWN unless
-// this process's actual Redis connection and Prisma/Postgres connection are
-// both reachable right now. Deploy platforms (Railway, k8s, etc.) that expect
-// an HTTP health check for a non-HTTP background worker should point here.
-const HEALTH_PORT = Number(process.env.WORKER_HEALTH_PORT ?? 4101);
-const healthServer = http.createServer((req, res) => {
-  if (req.url !== "/health") {
-    res.writeHead(404).end();
-    return;
-  }
-  Promise.all([
-    getRedisConnection().ping().then(() => true).catch(() => false),
-    prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
-  ]).then(([redisOk, dbOk]) => {
-    const ok = redisOk && dbOk && !isShuttingDown;
-    res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(
-      JSON.stringify({ ok, redis: redisOk, database: dbOk, shuttingDown: isShuttingDown }),
-    );
-  });
-});
-healthServer.listen(HEALTH_PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`[eki-automation-worker] health check listening on :${HEALTH_PORT}/health`);
-});
-
-// Graceful shutdown: stop accepting new jobs and let any in-flight job finish
-// (worker.close() waits for active jobs) before the process exits, so a
-// deploy/restart never kills a video job mid-ffmpeg-assembly.
 let isShuttingDown = false;
-async function shutdown(signal: string): Promise<void> {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  // eslint-disable-next-line no-console
-  console.log(`[eki-automation-worker] ${signal} received, finishing in-flight jobs before exit...`);
-  const timeout = setTimeout(() => {
-    // eslint-disable-next-line no-console
-    console.error("[eki-automation-worker] graceful shutdown timed out after 30s, forcing exit");
-    process.exit(1);
-  }, 30_000);
-  timeout.unref();
-  try {
-    await worker.close();
+
+async function main() {
+  if (!process.env.AUTOMATION_SECRET_KEY || process.env.AUTOMATION_SECRET_KEY.length < 32) {
+    throw new Error("AUTOMATION_SECRET_KEY must be set (same value as the API)");
+  }
+  await waitForDatabase();
+  await cleanupStaleTemp();
+  await startHeartbeat();
+
+  const videoWorker = new Worker<VideoGenerationJobPayload>(VIDEO_QUEUE_NAME, processVideoJob, {
+    connection: getRedisConnection(),
+    concurrency: Number(process.env.VIDEO_WORKER_CONCURRENCY ?? 1),
+    // Long provider polls: extend the lock so healthy jobs are not considered stalled.
+    lockDuration: 5 * 60_000,
+    maxStalledCount: 2,
+  });
+  const deliveryWorker = new Worker<DeliveryJobPayload>(DELIVERY_QUEUE_NAME, processDelivery, {
+    connection: getRedisConnection(),
+    concurrency: 2,
+    lockDuration: 10 * 60_000,
+  });
+
+  for (const w of [videoWorker, deliveryWorker]) {
+    w.on("failed", (job, err) => logger.warn({ queue: w.name, jobId: job?.id, err: scrubSecrets(err.message, []) }, "[worker] job failed"));
+    w.on("completed", (job) => logger.info({ queue: w.name, jobId: job.id }, "[worker] job completed"));
+    // Redis connection errors: BullMQ reconnects by itself; never crash the process.
+    w.on("error", (err) => logger.error({ queue: w.name, err: err.message }, "[worker] queue connection error"));
+  }
+
+  const redis = getRedisConnection();
+  const HEALTH_PORT = Number(process.env.WORKER_HEALTH_PORT ?? process.env.PORT ?? 4101);
+  const healthServer = http.createServer((req, res) => {
+    if (req.url !== "/health") {
+      res.writeHead(404).end();
+      return;
+    }
+    Promise.all([redis.ping().then(() => true).catch(() => false), prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false)]).then(([redisOk, dbOk]) => {
+      const caps = currentCapabilities();
+      const ok = redisOk && dbOk && !isShuttingDown;
+      res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(
+        JSON.stringify({ ok, redis: redisOk, database: dbOk, ffmpeg: caps?.ffmpeg ?? null, ffprobe: caps?.ffprobe ?? null, storage: caps?.storage.ok ?? false, shuttingDown: isShuttingDown }),
+      );
+    });
+  });
+  healthServer.listen(HEALTH_PORT, () => logger.info(`[worker] health check on :${HEALTH_PORT}/health`));
+
+  // Graceful shutdown: stop taking jobs, let in-flight work reach a checkpoint.
+  // Anything interrupted is picked up again after restart (stalled-job
+  // recovery) and resumes from its last completed stage.
+  const shutdown = async (signal: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    logger.info(`[worker] ${signal} received, finishing in-flight jobs`);
+    const timeout = setTimeout(() => process.exit(1), 60_000);
+    timeout.unref();
+    await Promise.allSettled([videoWorker.close(), deliveryWorker.close()]);
+    await stopHeartbeat();
     await prisma.$disconnect();
     healthServer.close();
-    // eslint-disable-next-line no-console
-    console.log("[eki-automation-worker] shut down cleanly");
     process.exit(0);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[eki-automation-worker] error during shutdown:", err);
-    process.exit(1);
-  }
+  };
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  logger.info(`[worker] consuming ${VIDEO_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME}`);
 }
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-process.on("SIGINT", () => void shutdown("SIGINT"));
 
-// eslint-disable-next-line no-console
-console.log(`[eki-automation-worker] listening for video generation jobs (concurrency=${Number(process.env.VIDEO_WORKER_CONCURRENCY ?? 1)})`);
+process.on("unhandledRejection", (err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, "unhandled rejection"));
+
+main().catch(async (err) => {
+  logger.fatal({ err: err instanceof Error ? err.message : String(err) }, "[worker] fatal startup error");
+  await notifyTeam(`Video worker failed to start: ${err instanceof Error ? err.message : String(err)}`).catch(() => undefined);
+  process.exit(1);
+});

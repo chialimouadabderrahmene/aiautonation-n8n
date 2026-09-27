@@ -1,151 +1,204 @@
-# Deployment
+# Deployment (one-time, technical)
 
-Four independent services. None of this touches the Eki marketplace's
-Vercel projects, database, or domains.
+This is done **once** by whoever deploys the system. After it, the client
+configures everything in the Control Center (see `CLIENT_SETUP_CHECKLIST.md`)
+— no code, no `.env`, no n8n screens, no restarts.
 
-## Verified real bugs fixed in the Docker images (found by actually building and running them)
+## Topology
 
-These were caught by building `docker/Dockerfile.api` / `Dockerfile.worker`
-and running the resulting containers against real Postgres/Redis, not by
-inspection:
-
-1. **`npm ci` ran before `prisma/` was copied in.** `package.json`'s
-   `postinstall: prisma generate` needs `prisma/schema.prisma` to exist —
-   without it, the build failed outright (`schema.prisma: file not found`).
-   Fixed: `COPY {api,worker}/prisma ./prisma` now happens before `npm ci`.
-2. **The Prisma query engine crashed the process on its first database
-   query** inside the Alpine runtime image: `Error loading shared library
-   libssl.so.1.1: No such file or directory`. Root cause: Alpine 3.24 (what
-   `node:22-alpine` uses) only ships OpenSSL 3.x — there is no
-   `openssl1.1-compat` package for it — but the default-generated Prisma
-   engine binary was linked against OpenSSL 1.1. Fixed in two places that are
-   both required: `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]`
-   added to both `prisma/schema.prisma` files, **and** `RUN apk add --no-cache
-   openssl` added to the **build** stage of both Dockerfiles too, not just
-   the runtime stage — `prisma generate`'s own "native" platform detection
-   needs openssl present at *generate* time, or it silently falls back to
-   generating the legacy engine that then fails to load at runtime. Reproduced
-   this exact failure once with openssl only in the runtime stage, confirmed
-   fixed with it in both.
-3. **`COPY {api,worker} ./` after `RUN npm ci` copied this repo's own,
-   host-machine `node_modules` into the image**, overwriting the container's
-   freshly-`npm ci`'d one (no `.dockerignore` existed). On a Windows dev
-   machine this reintroduced a Windows-native Prisma engine binary into a
-   Linux image. Fixed: added `.dockerignore` at the repo root excluding
-   `node_modules`, `.next`, `dist`, and `.env*` from every build context.
-4. **No container-level health checks.** Added `HEALTHCHECK` to both
-   Dockerfiles (hits each service's own `/health` — worker's is new, see
-   below) and a `HEALTHCHECK` to n8n's compose service.
-
-**Re-verification status — fully confirmed against a real, fixed worker
-container** (not just inspection): built the image with all fixes applied,
-ran it against real Postgres 16 + Redis 7 containers, and got:
-- `GET /health` → `{"ok":true,"redis":true,"database":true,"shuttingDown":false}` (real DB/Redis round trip, no crash)
-- `node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node` present (the correct engine — previously it was the legacy no-suffix one that crashed)
-- Docker's own `HEALTHCHECK` reported `healthy`
-- `docker stop` (real `SIGTERM`) produced exactly the expected log lines —
-  `SIGTERM received, finishing in-flight jobs before exit...` then
-  `shut down cleanly` — and exit code `0`
-
-The `api` image (identical fix) was independently rebuilt and booted the
-same way, against the same real Postgres/Redis: `GET /health` → 200,
-`GET /health/detailed` → real `{"database":{"status":"ONLINE"},"redis":{"status":"ONLINE"},"n8n":{"status":"NOT_CONFIGURED"}}`,
-Docker's own `HEALTHCHECK` → `healthy`, and a real
-`POST /api/auth/login` through the container issued a real, valid JWT. Item 3
-follows directly from the reproduced evidence in items 1–2 (that's *how* the
-stale/wrong engine got into the image in the first place) and is a standard,
-low-risk `.dockerignore` addition.
-
-**What was NOT run as a single command:** `docker compose -f
-docker/docker-compose.yml up -d --build` for all four services together, in
-one shot (this sandbox's outbound network was intermittent throughout —
-`tls: bad record MAC` / `ERR_SSL_CIPHER_OPERATION_FAILED` hit `npm ci`,
-`apk add`, and `docker pull` at various points, a transient environment
-condition, not a code defect). What happened instead: every piece was
-verified independently, for real, then wired to the others for real —
-Postgres 16 + Redis 7 via `docker run` (official images); `api` and `worker`
-images built individually and run against that real Postgres/Redis, both
-confirmed healthy with real DB/Redis round trips; `web` run locally
-(`npm run build && npm start`) against the real `api`, and clicked through
-in a real browser (see `docs/OPERATIONS.md` "Real UI testing done this
-pass"); n8n 2.40.7 run via `docker run`, had all 22 workflows imported into
-it for real, and was connected to the running Control Center for real —
-confirmed live in the browser (`n8n: CONNECTED`, `SYSTEM: PARTIALLY READY`
-on the Dashboard; see `docs/N8N_SETUP.md`). Every service and every
-integration point between them is proven; the one thing not literally
-exercised is Compose's own orchestration (env var wiring between services,
-`depends_on` health-gating, the `web` build arg). Before your first real
-deploy: run `docker compose -f docker/docker-compose.yml up -d --build` once,
-end to end, and confirm all containers report healthy — low risk given the
-above, but genuinely not the same test.
-
-## Real health checks added this pass
-
-| Service | Endpoint | Checks |
-|---|---|---|
-| `api` | `GET /health` | Liveness only (process up) — never touches the DB, so a container platform doesn't restart a healthy API over a transient DB blip |
-| `api` | `GET /health/detailed` | Real: Postgres (`SELECT 1`), Redis (`PING`), n8n (`isReachable()` if configured) — returns 503 if the database is down |
-| `worker` | `GET /health` (port `WORKER_HEALTH_PORT`, default 4101) | Real: Postgres + Redis ping, `false` while shutting down |
-| `worker` | Docker `HEALTHCHECK` | Calls the above via `wget` (Alpine's busybox `wget`, no extra package needed) |
-| `worker` | graceful shutdown | `SIGTERM`/`SIGINT` → stop accepting jobs, let the in-flight job finish (`worker.close()`), 30s force-exit timeout |
-
-## Local development
-
-```bash
-cd docker
-cp ../api/.env.example ../api/.env        # fill in AUTOMATION_SECRET_KEY, JWT_SECRET, ADMIN_BOOTSTRAP_*
-cp ../worker/.env.example ../worker/.env  # AUTOMATION_SECRET_KEY must match api/.env exactly
-cp ../web/.env.example ../web/.env.local
-export AUTOMATION_SECRET_KEY=$(openssl rand -hex 32)
-export JWT_SECRET=$(openssl rand -hex 32)
-export N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)
-export ADMIN_BOOTSTRAP_EMAIL=you@example.com
-export ADMIN_BOOTSTRAP_PASSWORD='choose one'
-docker compose up -d --build
+```
+                Internet
+                   │
+        ┌──────────┴───────────┐
+        │ web  (PUBLIC)        │  Next.js UI + same-origin proxy for /api/*
+        └──────────┬───────────┘  (browser, Telegram webhook, OAuth callbacks,
+                   │ private net   signed local media links all enter here)
+        ┌──────────┴───────────┐        ┌───────────────────────┐
+        │ api  (PRIVATE)       │◄──────►│ n8n (PUBLIC editor +  │
+        │ :4100 app            │ :5678  │ webhooks; supervisor   │
+        │ :4110 internal only  │◄───────│ pulls config from      │
+        └──┬──────┬─────────┬──┘ :4110  │ api:4110, :5690 test-run)
+           │      │         │           └───────────┬───────────┘
+      Postgres  Redis   S3 bucket                    │
+      (PRIVATE)(PRIVATE) (private, signed URLs)   Postgres schema "n8n"
+           │      │         │
+        ┌──┴──────┴─────────┴──┐
+        │ worker (PRIVATE)     │  BullMQ consumer, FFmpeg/ffprobe
+        └──────────────────────┘
 ```
 
-Then:
-1. Run migrations once: `docker compose exec api npx prisma migrate deploy`
-2. Web UI: http://localhost:3200 — sign in with `ADMIN_BOOTSTRAP_EMAIL`/`PASSWORD` (only works on first boot, before any admin account exists).
-3. n8n: http://localhost:5679 — complete its own first-run owner setup, then Settings → API to generate an n8n API key, then add it as the `n8n` integration in the Control Center.
+| Service | Public? | Why |
+|---|---|---|
+| web | **yes** | the only UI; proxies `/api/*` to the API at request time |
+| api | no | reached by web (and n8n's supervisor) over private networking |
+| worker | no | no inbound traffic at all (health endpoint for the platform only) |
+| n8n | editor + webhooks only | leads/WhatsApp/ManyChat webhooks must reach n8n; the editor is behind n8n's own owner login |
+| Postgres | no | private networking only (no TCP proxy) |
+| Redis | no | private networking only |
+| Bucket | S3 endpoint | objects are private; access only through short-lived signed URLs |
 
-Alternatively, run each service with `npm run dev` from its own directory
-against your own local/managed Postgres + Redis — see each service's
-`.env.example`.
+One Postgres serves both: schema `public` = Control Center, schema `n8n` =
+n8n (n8n creates its schema itself — verified).
 
-## Production (Railway — recommended, matches the existing `.env.railway.example`)
+## Railway — automated path
 
-1. **Postgres**: one Railway Postgres plugin. This is a *new* database —
-   never point it at the Eki marketplace's database.
-2. **Redis**: one Railway Redis plugin, shared by `api` and `worker`.
-3. **n8n**: see `N8N_SETUP.md` — deploy it first; several integrations and
-   the readiness engine depend on it existing.
-4. **api**: deploy `docker/Dockerfile.api` (build context = repo root).
-   Env vars: `DATABASE_URL`, `REDIS_URL`, `AUTOMATION_SECRET_KEY`,
-   `JWT_SECRET`, `WEB_ORIGIN` (the web service's public URL),
-   `ADMIN_BOOTSTRAP_EMAIL`/`PASSWORD` (unset after first boot),
-   `TELEGRAM_WEBHOOK_SECRET`. Run `npx prisma migrate deploy` once after
-   the first deploy (Railway "Deploy Command" or a one-off shell).
-5. **worker**: deploy `docker/Dockerfile.worker` (installs `ffmpeg` in the
-   image — this is why it's a separate Dockerfile from `api`). Same
-   `DATABASE_URL`/`REDIS_URL`/`AUTOMATION_SECRET_KEY` as `api`. Add
-   `STORAGE_PUBLIC_BASE_URL` once you attach a persistent volume or object
-   storage (local disk on Railway does **not** survive a redeploy —
-   generated videos would be lost; see `ARCHITECTURE.md` "Storage").
-6. **web**: deploy `docker/Dockerfile.web` with build arg
-   `NEXT_PUBLIC_AUTOMATION_API_URL` set to the `api` service's public URL.
+Prerequisites: Railway CLI v4+ (`railway login`), this repo pushed to GitHub,
+the GitHub app connected to Railway.
 
-## Order matters on first deploy
+```bash
+GITHUB_REPO=owner/repo ADMIN_EMAIL=you@company.com bash scripts/railway-setup.sh
+```
 
-Postgres → run `prisma migrate deploy` → api → worker → web → n8n (any
-order relative to the others, but nothing depends on it existing yet).
-Configure the `n8n` integration in the Control Center only once the n8n
-service itself is reachable and its API key exists.
+It creates Postgres, Redis, the four services, public domains for web and n8n,
+the n8n volume, all variables (secrets generated with `openssl` locally, shared
+ones as Railway shared variables, service addresses as `${{service.RAILWAY_PRIVATE_DOMAIN}}`
+references) and prints the admin + n8n-owner passwords **once**.
 
-## Rollback
+Then, in the dashboard (not available through the CLI):
 
-Every service is stateless except Postgres/Redis/n8n's own volume — redeploy
-a previous image tag for `api`/`worker`/`web` with no data migration needed
-(no destructive migrations exist in `api/prisma/migrations`). Database
-rollback is out of scope for this pass; back up the Railway Postgres plugin
-before running a new migration, same practice as any other project here.
+1. **New → Bucket.** On the `api` **and** `worker` services set
+   `STORAGE_DRIVER=s3`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
+   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` from the bucket's credentials
+   (reference variables). Cloudflare R2 or AWS S3 work identically. If the
+   endpoint the services use differs from the one browsers/Instagram can reach,
+   also set `S3_PUBLIC_ENDPOINT` on the api and worker.
+2. For each service, **Settings → Config-as-code** → `/railway/<service>.json`
+   (healthchecks, restart policy, watch paths).
+3. Deploy.
+
+> `scripts/railway-setup.sh` was written against the Railway CLI's documented
+> commands but could **not** be executed from the build sandbox (no Railway
+> account/token there). Review it before running; the manual path below is
+> equivalent.
+
+## Railway — manual path (dashboard)
+
+Create: Postgres, Redis, a Bucket, and four services from this repo, each with
+**Settings → Config-as-code** pointing at `railway/api.json`, `railway/worker.json`,
+`railway/web.json`, `railway/n8n.json`. Generate public domains for **web** and
+**n8n** only. Add a volume to **n8n** mounted at `/home/node/.n8n`.
+
+Shared variables (generate each with `openssl rand -hex 32`):
+`AUTOMATION_SECRET_KEY`, `JWT_SECRET`, `INTERNAL_API_TOKEN`, `N8N_ENCRYPTION_KEY`.
+
+**api**
+```
+PORT=4100
+INTERNAL_PORT=4110
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+AUTOMATION_SECRET_KEY=${{shared.AUTOMATION_SECRET_KEY}}
+JWT_SECRET=${{shared.JWT_SECRET}}
+INTERNAL_API_TOKEN=${{shared.INTERNAL_API_TOKEN}}
+ADMIN_BOOTSTRAP_EMAIL=<admin email>
+ADMIN_BOOTSTRAP_PASSWORD=<strong password — change it in Settings after first login>
+PUBLIC_WEB_URL=https://${{web.RAILWAY_PUBLIC_DOMAIN}}
+WEB_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}
+N8N_INTERNAL_URL=http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5678
+N8N_PUBLIC_URL=https://${{n8n.RAILWAY_PUBLIC_DOMAIN}}
+N8N_SUPERVISOR_URL=http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5690
+N8N_OWNER_EMAIL=<admin email>
+N8N_OWNER_PASSWORD=<8+ chars incl. an uppercase letter and a digit>
+STORAGE_DRIVER=s3 + S3_* (bucket)
+```
+
+**worker**
+```
+PORT=4101
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+AUTOMATION_SECRET_KEY=${{shared.AUTOMATION_SECRET_KEY}}
+VIDEO_WORKER_CONCURRENCY=1
+STORAGE_DRIVER=s3 + S3_* (bucket)
+```
+
+**web**
+```
+PORT=3200
+API_INTERNAL_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4100
+```
+
+**n8n**
+```
+PORT=5678
+RAILWAY_RUN_UID=0                     # lets n8n write the mounted volume
+DB_TYPE=postgresdb
+DB_POSTGRESDB_HOST=${{Postgres.PGHOST}}
+DB_POSTGRESDB_PORT=${{Postgres.PGPORT}}
+DB_POSTGRESDB_DATABASE=${{Postgres.PGDATABASE}}
+DB_POSTGRESDB_USER=${{Postgres.PGUSER}}
+DB_POSTGRESDB_PASSWORD=${{Postgres.PGPASSWORD}}
+DB_POSTGRESDB_SCHEMA=n8n
+N8N_ENCRYPTION_KEY=${{shared.N8N_ENCRYPTION_KEY}}
+N8N_HOST=${{RAILWAY_PUBLIC_DOMAIN}}
+N8N_PROTOCOL=https
+N8N_PROXY_HOPS=1
+N8N_EDITOR_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}/
+N8N_WEBHOOK_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}/
+WEBHOOK_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}/
+CONTROL_CENTER_INTERNAL_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4110
+INTERNAL_API_TOKEN=${{shared.INTERNAL_API_TOKEN}}
+```
+
+Do **not** set `ALLOW_PROVIDER_OVERRIDES` / `PROVIDER_API_OVERRIDES` in
+production — they exist only for the local test overlay (the Dashboard shows a
+red TEST MODE banner if they are ever on).
+
+## What happens automatically on every deploy / restart
+
+1. **api** entrypoint runs `prisma migrate deploy` (idempotent, retried while
+   Postgres starts), then the server verifies all 16 tables exist, bootstraps
+   the admin (first boot only), creates integration rows, generates the inbound
+   webhook secret and the Telegram webhook secret, verifies them, recomputes
+   readiness, and starts listening (`:4100`, internal `:4110`).
+2. **n8n**'s supervisor waits for the API, loads the runtime configuration
+   (whatever the admin entered — nothing on first boot), starts n8n.
+3. **api** background tasks (every 15 s until done, then periodically):
+   create the n8n owner (first boot only) → log in → mint an API key → store
+   it encrypted → test it → import the 22 workflows **inactive** (idempotent;
+   matched by stored id then by name) → create the n8n credentials from the
+   vault → mirror executions every 30 s → re-sync every 5 min → deactivate any
+   workflow active in n8n but not enabled in the Control Center.
+4. **worker** waits for Postgres, removes stale temp files, detects
+   ffmpeg/ffprobe/subtitle support/storage, reports a heartbeat every 30 s.
+5. After an admin changes an integration or setting, n8n credentials are
+   re-synced (seconds) and the supervisor restarts n8n with the new
+   configuration (≤ ~30 s). Nobody restarts anything by hand.
+
+Verified locally with the same images: fresh stack → all of the above with no
+manual step; full restart of every service → back ONLINE in ~60 s with the same
+22 workflows and the same active set (see the report's test evidence).
+
+## Verify the deployment
+
+```bash
+# 20-step production smoke test through the public web URL
+SMOKE_BASE_URL=https://<web domain> SMOKE_EMAIL=... SMOKE_PASSWORD=... \
+SMOKE_EXPECT_ALL_INACTIVE=1 node scripts/smoke-test.mjs
+
+# FFmpeg/ffprobe + real assembly + storage round-trip on the deployed worker
+railway ssh --service worker -- node dist/tools/selftest.js
+```
+
+## Local stack (same topology)
+
+```bash
+cp docker/.env.example docker/.env      # fill with `openssl rand -hex 32` values
+docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+# http://localhost:3200 (Control Center)   http://localhost:5679 (n8n editor)
+```
+
+Test mode (mock providers, for exercising the whole pipeline without real
+accounts — never for production):
+
+```bash
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.test.yml --env-file docker/.env up -d --build
+E2E_EMAIL=... E2E_PASSWORD=... node scripts/local-e2e-test-mode.mjs
+```
+
+## Secrets that must be backed up outside Railway
+
+`AUTOMATION_SECRET_KEY` (all Control Center credentials) and
+`N8N_ENCRYPTION_KEY` (all n8n credentials). Losing either makes the matching
+stored credentials unreadable (the admin would have to re-enter them). Backups
+and restore: `docs/BACKUP_RESTORE.md`.

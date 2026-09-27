@@ -1,114 +1,145 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { n8nClient, N8nNotConfiguredError } from "../modules/workflows/n8nClient";
+import { n8nClient } from "../modules/n8n/client";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
+import { recomputeAllReadiness } from "../modules/workflows/readiness";
+import { runN8nSync, schedulerStatus } from "../modules/system/scheduler";
+import { testRunWorkflow } from "../modules/n8n/testRun";
+import { checkN8n } from "../modules/system/health";
+import { safeErrorMessage } from "../lib/http";
 
 export const workflowsRouter = Router();
+
+interface Detail {
+  ok: boolean;
+  label: string;
+  note?: string;
+}
+
+function blockers(detail: unknown): string[] {
+  return ((detail as Detail[]) ?? []).filter((d) => !d.ok).map((d) => d.note ?? `${d.label} not satisfied`);
+}
 
 workflowsRouter.get("/", async (_req, res) => {
   const workflows = await prisma.workflowConfig.findMany({ orderBy: { key: "asc" } });
   res.json(workflows);
 });
 
-/** Live n8n status merged in where an instance is configured; workflows this
- * control center hasn't imported into n8n yet (n8nWorkflowId is null) are
- * reported as such rather than silently omitted. */
 workflowsRouter.get("/n8n-status", async (_req, res) => {
+  const [health, report] = await Promise.all([checkN8n(), prisma.setting.findUnique({ where: { key: "_n8nLastReconcile" } })]);
+  res.json({ health, lastReconcile: report?.value ?? null, scheduler: schedulerStatus() });
+});
+
+/** Re-import/re-sync now (idempotent). Normally runs automatically. */
+workflowsRouter.post("/sync", async (req: AuthedRequest, res) => {
   try {
-    const reachable = await n8nClient.isReachable();
-    if (!reachable) return res.json({ connected: false, workflows: [] });
-    const { data } = await n8nClient.listWorkflows();
-    res.json({ connected: true, workflows: data });
+    const report = await runN8nSync(req.admin?.email ?? "unknown");
+    res.json(report);
   } catch (err) {
-    if (err instanceof N8nNotConfiguredError) return res.json({ connected: false, workflows: [] });
-    res.status(502).json({ connected: false, message: err instanceof Error ? err.message : "n8n error" });
+    res.status(502).json({ message: safeErrorMessage(err) });
   }
 });
 
-/** Called by scripts/import-n8n-workflows.js after it creates a workflow in
- * a real n8n instance, so Automations knows which WorkflowConfig row maps to
- * which n8n workflow id (enable/disable/activate-ready all need this). */
-workflowsRouter.post("/:key/link-n8n", async (req: AuthedRequest, res) => {
-  const { n8nWorkflowId } = req.body as { n8nWorkflowId?: string };
-  if (!n8nWorkflowId) return res.status(400).json({ message: "n8nWorkflowId is required" });
-  const workflow = await prisma.workflowConfig.findUnique({ where: { key: req.params.key } });
-  if (!workflow) return res.status(404).json({ message: "Unknown workflow" });
-
-  await prisma.workflowConfig.update({ where: { key: req.params.key }, data: { n8nWorkflowId } });
-  await recordAudit(req.admin?.email ?? "unknown", "workflow.linked_n8n", "WorkflowConfig", req.params.key, { n8nWorkflowId });
-  res.json({ ok: true });
-});
+async function enableOne(key: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let wf = await prisma.workflowConfig.findUnique({ where: { key } });
+  if (!wf) return { ok: false, reason: "Unknown workflow" };
+  if (!wf.n8nPresent) {
+    // Right after a restart the first sync may not have run yet: run it now
+    // instead of refusing (it is idempotent and never activates anything).
+    await runN8nSync().catch(() => undefined);
+    wf = (await prisma.workflowConfig.findUnique({ where: { key } }))!;
+  }
+  if (wf.readiness !== "READY") return { ok: false, reason: blockers(wf.readinessDetail).join("; ") || wf.readiness };
+  if (!wf.n8nWorkflowId) return { ok: false, reason: "Not imported into n8n" };
+  try {
+    const result = await n8nClient.activate(wf.n8nWorkflowId);
+    if (!result.active) return { ok: false, reason: "n8n did not report the workflow as active" };
+  } catch (err) {
+    return { ok: false, reason: `n8n refused activation: ${safeErrorMessage(err)}` };
+  }
+  await prisma.workflowConfig.update({ where: { key }, data: { enabled: true, n8nActive: true } });
+  return { ok: true };
+}
 
 workflowsRouter.post("/:key/enable", async (req: AuthedRequest, res) => {
-  const workflow = await prisma.workflowConfig.findUnique({ where: { key: req.params.key } });
-  if (!workflow) return res.status(404).json({ message: "Unknown workflow" });
-  if (workflow.readiness !== "READY") {
-    return res.status(409).json({ message: "Workflow is not READY — resolve its blockers first.", readiness: workflow.readiness, detail: workflow.readinessDetail });
-  }
-  if (workflow.n8nWorkflowId) {
-    try {
-      await n8nClient.activate(workflow.n8nWorkflowId);
-    } catch (err) {
-      return res.status(502).json({ message: err instanceof Error ? err.message : "Failed to activate in n8n" });
-    }
-  }
-  await prisma.workflowConfig.update({ where: { key: req.params.key }, data: { enabled: true } });
-  await recordAudit(req.admin?.email ?? "unknown", "workflow.enabled", "WorkflowConfig", req.params.key);
+  await recomputeAllReadiness();
+  const result = await enableOne(String(req.params.key));
+  if (!result.ok) return res.status(409).json({ message: result.reason });
+  await recordAudit(req.admin?.email ?? "unknown", "workflow.enabled", "WorkflowConfig", String(req.params.key));
   res.json({ ok: true });
 });
 
 workflowsRouter.post("/:key/disable", async (req: AuthedRequest, res) => {
-  const workflow = await prisma.workflowConfig.findUnique({ where: { key: req.params.key } });
-  if (!workflow) return res.status(404).json({ message: "Unknown workflow" });
-  if (workflow.n8nWorkflowId) {
+  const key = String(req.params.key);
+  const wf = await prisma.workflowConfig.findUnique({ where: { key } });
+  if (!wf) return res.status(404).json({ message: "Unknown workflow" });
+  // Mark disabled first: even if n8n is briefly unreachable, the reconcile
+  // loop will deactivate it (drift) as soon as it can.
+  await prisma.workflowConfig.update({ where: { key }, data: { enabled: false } });
+  if (wf.n8nWorkflowId) {
     try {
-      await n8nClient.deactivate(workflow.n8nWorkflowId);
+      await n8nClient.deactivate(wf.n8nWorkflowId);
+      await prisma.workflowConfig.update({ where: { key }, data: { n8nActive: false } });
     } catch (err) {
-      return res.status(502).json({ message: err instanceof Error ? err.message : "Failed to deactivate in n8n" });
+      await recordAudit(req.admin?.email ?? "unknown", "workflow.disabled", "WorkflowConfig", key, { n8nError: safeErrorMessage(err) });
+      return res.status(202).json({ ok: true, message: `Disabled here; n8n was unreachable (${safeErrorMessage(err)}) — it will be deactivated automatically when n8n answers.` });
     }
   }
-  await prisma.workflowConfig.update({ where: { key: req.params.key }, data: { enabled: false } });
-  await recordAudit(req.admin?.email ?? "unknown", "workflow.disabled", "WorkflowConfig", req.params.key);
+  await recordAudit(req.admin?.email ?? "unknown", "workflow.disabled", "WorkflowConfig", key);
   res.json({ ok: true });
 });
 
-/** "Activate Automation": enables every workflow that is currently READY,
- * skips the rest, and reports exactly why each skipped one was skipped. */
-workflowsRouter.post("/activate-ready", async (req: AuthedRequest, res) => {
-  const workflows = await prisma.workflowConfig.findMany();
-  const activated: string[] = [];
-  const skipped: { key: string; reason: string }[] = [];
+workflowsRouter.post("/:key/test-run", async (req: AuthedRequest, res) => {
+  const key = String(req.params.key);
+  const wf = await prisma.workflowConfig.findUnique({ where: { key } });
+  if (!wf) return res.status(404).json({ message: "Unknown workflow" });
+  try {
+    const result = await testRunWorkflow(key, req.admin?.email ?? "unknown");
+    await recordAudit(req.admin?.email ?? "unknown", "workflow.test_run", "WorkflowConfig", key, { ok: result.ok, kind: result.kind, message: result.message });
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ ok: false, message: safeErrorMessage(err) });
+  }
+});
 
-  for (const workflow of workflows) {
-    if (workflow.readiness !== "READY") {
-      skipped.push({ key: workflow.key, reason: `${workflow.readiness}` });
+/** ACTIVATE READY AUTOMATIONS: recalculates readiness first, enables only
+ * READY workflows, reports each skipped one with its exact reasons. */
+workflowsRouter.post("/activate-ready", async (req: AuthedRequest, res) => {
+  await recomputeAllReadiness();
+  const workflows = await prisma.workflowConfig.findMany({ orderBy: { key: "asc" } });
+  const activated: string[] = [];
+  const alreadyActive: string[] = [];
+  const skipped: { key: string; name: string; reasons: string[] }[] = [];
+
+  for (const wf of workflows) {
+    if (wf.enabled && wf.n8nActive) {
+      alreadyActive.push(wf.key);
       continue;
     }
-    if (workflow.n8nWorkflowId) {
-      try {
-        await n8nClient.activate(workflow.n8nWorkflowId);
-      } catch (err) {
-        skipped.push({ key: workflow.key, reason: err instanceof Error ? err.message : "n8n activation failed" });
-        continue;
-      }
-    }
-    await prisma.workflowConfig.update({ where: { key: workflow.key }, data: { enabled: true } });
-    activated.push(workflow.key);
+    const result = await enableOne(wf.key);
+    if (result.ok) activated.push(wf.key);
+    else skipped.push({ key: wf.key, name: wf.name, reasons: wf.readiness === "READY" ? [result.reason] : blockers(wf.readinessDetail) });
   }
 
-  await recordAudit(req.admin?.email ?? "unknown", "automation.activate_ready", undefined, undefined, { activated, skipped });
-  res.json({ activated, skipped });
+  await recordAudit(req.admin?.email ?? "unknown", "automation.activate_ready", undefined, undefined, { activated, alreadyActive, skipped: skipped.map((s) => s.key) });
+  res.json({ activated, alreadyActive, skipped, summary: { activated: activated.length, alreadyActive: alreadyActive.length, skipped: skipped.length } });
 });
 
 workflowsRouter.post("/deactivate-all", async (req: AuthedRequest, res) => {
-  const workflows = await prisma.workflowConfig.findMany({ where: { enabled: true } });
-  for (const workflow of workflows) {
-    if (workflow.n8nWorkflowId) {
-      await n8nClient.deactivate(workflow.n8nWorkflowId).catch(() => undefined);
+  const workflows = await prisma.workflowConfig.findMany({ where: { OR: [{ enabled: true }, { n8nActive: true }] } });
+  const failed: string[] = [];
+  for (const wf of workflows) {
+    await prisma.workflowConfig.update({ where: { key: wf.key }, data: { enabled: false } });
+    if (wf.n8nWorkflowId) {
+      try {
+        await n8nClient.deactivate(wf.n8nWorkflowId);
+        await prisma.workflowConfig.update({ where: { key: wf.key }, data: { n8nActive: false } });
+      } catch {
+        failed.push(wf.key);
+      }
     }
-    await prisma.workflowConfig.update({ where: { key: workflow.key }, data: { enabled: false } });
   }
-  await recordAudit(req.admin?.email ?? "unknown", "automation.deactivate_all");
-  res.json({ ok: true, count: workflows.length });
+  await recordAudit(req.admin?.email ?? "unknown", "automation.deactivate_all", undefined, undefined, { count: workflows.length, failed });
+  res.json({ ok: true, count: workflows.length, pendingInN8n: failed });
 });

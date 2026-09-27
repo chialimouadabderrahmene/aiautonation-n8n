@@ -1,5 +1,8 @@
 # Handover — Eki n8n launch automation
 
+> **Superseded for normal operation.** Configuration is now entered in the AI Automation Control Center (Integrations + Settings) and delivered to n8n automatically; deployment is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and the admin workflow in [CLIENT_SETUP_CHECKLIST.md](CLIENT_SETUP_CHECKLIST.md). Do **not** edit n8n environment variables or n8n credentials by hand. This page remains as background/reference for the workflows' behaviour.
+
+
 ## 1. What this is
 An **n8n 2.40.7** automation (22 workflow files) around the Eki marketplace launch: AI-assisted content with human approval, lead capture, template-compliant WhatsApp funnels, waitlist and referrals, feedback, reporting, and optional social posting. Data lives in Google Sheets. It is separate from the Eki app's own in-app lifecycle automations (push/in-app, run by the backend) — see [business-flows.md](business-flows.md).
 

@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "eki-local",
+      "credentials": [{ "accessKey": "eki-local-access", "secretKey": "eki-local-secret-not-for-production" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

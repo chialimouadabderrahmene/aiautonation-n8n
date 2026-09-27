@@ -1,17 +1,18 @@
 import { z } from "zod";
 import { getDecryptedCredentials } from "../lib/credentials";
+import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../lib/http";
 
 const sceneSchema = z.object({
   index: z.number().int().min(0),
-  visualPrompt: z.string().min(1),
-  voiceoverText: z.string().min(1),
-  subtitleText: z.string().min(1),
-  durationSec: z.number().min(2).max(15),
+  visualPrompt: z.string().min(1).max(1000),
+  voiceoverText: z.string().min(1).max(600),
+  subtitleText: z.string().min(1).max(300),
+  durationSec: z.number().min(2).max(10),
 });
 
 export const scriptSchema = z.object({
   hook: z.string().min(1),
-  scenes: z.array(sceneSchema).min(1).max(12),
+  scenes: z.array(sceneSchema).min(1).max(15),
   caption: z.string().min(1),
   hashtags: z.array(z.string()).max(15),
 });
@@ -32,39 +33,43 @@ export interface ScriptRequest {
   cta?: string | null;
 }
 
-/**
- * Calls whichever of OpenAI/Groq is configured (both speak the same
- * OpenAI-compatible chat-completions API), asking for strict JSON, then
- * validates it with zod before the pipeline ever touches it — an invalid or
- * missing-field response fails the job rather than producing a broken video.
- */
-export async function generateScript(request: ScriptRequest): Promise<GeneratedScript> {
-  const openai = await getDecryptedCredentials("openai");
-  const groq = await getDecryptedCredentials("groq");
-  const chosen = openai?.secrets.apiKey
-    ? { baseUrl: "https://api.openai.com/v1", apiKey: openai.secrets.apiKey, model: openai.config.model || "gpt-4o-mini" }
-    : groq?.secrets.apiKey
-      ? { baseUrl: "https://api.groq.com/openai/v1", apiKey: groq.secrets.apiKey, model: groq.config.model || "llama-3.3-70b-versatile" }
-      : null;
-  if (!chosen) throw new Error("Neither OpenAI nor Groq is configured — cannot generate a script.");
+async function chooseProvider() {
+  for (const [key, baseUrl, fallbackModel] of [
+    ["openai", "https://api.openai.com/v1", "gpt-4o-mini"],
+    ["groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"],
+  ] as const) {
+    const c = await getDecryptedCredentials(key);
+    if (c?.status === "CONNECTED" && c.secrets.apiKey) return { key, baseUrl, apiKey: c.secrets.apiKey, model: c.config.model || fallbackModel };
+  }
+  throw new ProviderError("Neither OpenAI nor Groq is connected — cannot write the script", null, false);
+}
 
-  const sceneCount = Math.max(3, Math.min(8, Math.round(request.durationSec / 5)));
+/**
+ * Real OpenAI/Groq chat-completions call in JSON mode; the response is
+ * validated with zod before the pipeline touches it. Scene lengths are kept
+ * within what the video model can generate per clip (2–10 s).
+ */
+export async function generateScript(request: ScriptRequest): Promise<GeneratedScript & { provider: string; model: string }> {
+  const ai = await chooseProvider();
+  const sceneCount = Math.max(3, Math.min(12, Math.round(request.durationSec / 6)));
   const systemPrompt = [
-    "You write short-form vertical video scripts for a real product marketing team.",
-    "Return ONLY a JSON object — no markdown, no commentary — matching exactly this shape:",
-    '{"hook":"...","scenes":[{"index":0,"visualPrompt":"...","voiceoverText":"...","subtitleText":"...","durationSec":5}],"caption":"...","hashtags":["..."]}',
-    `Produce exactly ${sceneCount} scenes whose durationSec values sum to approximately ${request.durationSec}.`,
-    "Never invent statistics, prices, dates or claims not present in the brief.",
-    "visualPrompt is a prompt for an AI video generator (describe the shot, not narration). voiceoverText is what a narrator says. subtitleText is the on-screen caption for that scene (can equal voiceoverText, shortened).",
+    "You write short-form video scripts for a real product marketing team.",
+    "Return ONLY a JSON object — no markdown — with exactly this shape:",
+    '{"hook":"...","scenes":[{"index":0,"visualPrompt":"...","voiceoverText":"...","subtitleText":"...","durationSec":6}],"caption":"...","hashtags":["#..."]}',
+    `Produce exactly ${sceneCount} scenes, index 0..${sceneCount - 1}. Each durationSec is an integer between 4 and 8; together they sum to about ${request.durationSec}.`,
+    "visualPrompt: a detailed shot description for an AI video model (subjects, setting, camera movement, lighting, style) — no on-screen text, no logos, no real people's names, max 900 characters.",
+    "voiceoverText: what the narrator says during that scene; it must be speakable in the scene's duration (about 2.3 words per second).",
+    "subtitleText: the on-screen caption for the scene (short, can be a trimmed voiceoverText).",
+    "The last scene delivers the call to action. Never invent statistics, prices, dates, awards or testimonials that are not in the brief.",
+    `Write voiceoverText, subtitleText and caption in this language: ${request.language}.`,
   ].join(" ");
 
   const userPrompt = [
     `Brand: ${request.brand}`,
-    `Platform/content type: ${request.contentType}`,
+    `Platform: ${request.contentType}`,
     `Topic: ${request.topic}`,
     `Brief: ${request.prompt}`,
     request.audience ? `Audience: ${request.audience}` : "",
-    `Language: ${request.language}`,
     `Tone: ${request.tone}`,
     `Visual style: ${request.visualStyle}`,
     `Target duration: ${request.durationSec} seconds`,
@@ -74,39 +79,42 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
     .filter(Boolean)
     .join("\n");
 
-  const res = await fetch(`${chosen.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${chosen.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: chosen.model,
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
+  const data = await withRetry(async () => {
+    const { res } = await timedFetch(
+      `${ai.baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ai.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ai.model,
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+        }),
+      },
+      90_000,
+    );
+    if (!res.ok) throw describeHttpFailure(ai.key === "openai" ? "OpenAI" : "Groq", res.status, await readErrorDetail(res));
+    return (await res.json()) as { choices: { message: { content: string } }[] };
   });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`AI provider responded ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = (await res.json()) as { choices: { message: { content: string } }[] };
   const raw = data.choices[0]?.message.content;
-  if (!raw) throw new Error("AI provider returned no content");
-
+  if (!raw) throw new ProviderError("AI provider returned no content", null, true);
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
   } catch {
-    throw new Error("AI provider did not return valid JSON");
+    throw new ProviderError("AI provider did not return valid JSON", null, true);
   }
-
   const parsed = scriptSchema.safeParse(json);
   if (!parsed.success) {
-    throw new Error(`AI script failed validation: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    throw new ProviderError(`AI script failed validation: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`, null, true);
   }
-  return parsed.data;
+  const scenes = parsed.data.scenes
+    .sort((a, b) => a.index - b.index)
+    .map((s, i) => ({ ...s, index: i, durationSec: Math.max(2, Math.min(10, Math.round(s.durationSec))) }));
+  return { ...parsed.data, scenes, provider: ai.key, model: ai.model };
 }

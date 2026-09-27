@@ -7,15 +7,11 @@
 
 generator client {
   provider      = "prisma-client-js"
-  // "native" = whatever this dev machine is (Windows here) so local dev keeps
-  // working; "linux-musl-openssl-3.0.x" = the api/worker Docker runtime
-  // (node:22-alpine, confirmed Alpine 3.24 / OpenSSL 3.5 - no OpenSSL 1.1
-  // package exists for it). Without this, `prisma generate` produces an
-  // engine binary linked against libssl.so.1.1, which does not exist on this
-  // Alpine version at all - the query engine fails to load the moment the
-  // API/worker touches the database (confirmed: crashed a real container on
-  // its first query, "Error loading shared library libssl.so.1.1").
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  // "native" = the developer's machine; "debian-openssl-3.0.x" = the api and
+  // worker Docker runtime (Ubuntu 24.04 LTS, OpenSSL 3 — docker/Dockerfile.api
+  // and docker/Dockerfile.worker). Without the explicit target Prisma would
+  // ship an engine for the build host only and crash on its first query.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -68,6 +64,16 @@ model Integration {
   lastTestOk      Boolean?
   lastTestMessage String?
   lastTestLatencyMs Int?
+  /// "API_KEY" | "OAUTH" | "INFRA" — mirrors the provider registry's authType.
+  authType          String              @default("API_KEY")
+  /// OAuth providers only: human-readable connected account (e.g. "@ekiapp"),
+  /// never a token.
+  connectedAccount  String?
+  connectedAt       DateTime?
+  tokenExpiresAt    DateTime?
+  /// Map of n8n credential name -> n8n credential id created from this
+  /// integration by the n8n sync (see modules/n8n/credentials.ts).
+  n8nCredentialIds  Json                @default("{}")
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -122,6 +128,18 @@ model WorkflowConfig {
   readinessDetail   Json              @default("[]")
   lastExecutionAt   DateTime?
   lastExecutionOk   Boolean?
+  /// Live n8n state as last observed by the reconcile loop.
+  n8nPresent        Boolean           @default(false)
+  n8nActive         Boolean           @default(false)
+  n8nSyncedAt       DateTime?
+  /// Hash of the transformed definition last pushed to n8n; a mismatch means
+  /// the workflow in n8n is out of date (credentials changed, file changed).
+  n8nDefinitionHash String?
+  /// "manual" (has a Manual Trigger, runnable on demand), "webhook", "error".
+  triggerKind       String            @default("manual")
+  lastTestRunAt      DateTime?
+  lastTestRunOk      Boolean?
+  lastTestRunMessage String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -159,7 +177,10 @@ model AutomationExecution {
   relatedEntityId   String?
   error            String?
   retryCount       Int              @default(0)
+  /// n8n execution mode (trigger, webhook, cli, error, ...) or worker stage.
+  mode             String?
 
+  @@unique([source, externalId])
   @@index([source, status])
   @@index([startedAt])
 }
@@ -211,6 +232,11 @@ model VideoProject {
   brand         String   @default("Eki")
   cta           String?
   testMode      Boolean  @default(true)
+  /// MediaFile id of an uploaded music track, when music != "none".
+  musicFileId   String?
+  /// Where an approved video is published: any of "instagram", "facebook",
+  /// "x", "linkedin". Empty = approval only, publish manually.
+  publishTargets String[] @default([])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -231,13 +257,16 @@ model VideoJob {
   errorStage    String?
   retryCount    Int           @default(0)
   costMetadata  Json?
+  /// 0-100, coarse progress for the UI.
+  progress      Int           @default(0)
   createdAt     DateTime      @default(now())
   startedAt     DateTime?
   completedAt   DateTime?
 
-  scenes   VideoScene[]
-  assets   VideoAsset[]
-  approval Approval?
+  scenes       VideoScene[]
+  assets       VideoAsset[]
+  approval     Approval?
+  publications Publication[]
 }
 
 model VideoScene {
@@ -252,7 +281,11 @@ model VideoScene {
   provider       String   @default("runway")
   providerJobId  String?
   status         String   @default("PENDING") // PENDING | GENERATING | READY | FAILED
+  /// Storage key of the downloaded provider clip (never a provider URL — those expire).
   sceneVideoUrl  String?
+  /// Storage key of this scene's voiceover audio + its measured length.
+  voiceKey       String?
+  voiceDurationSec Float?
   error          String?
   createdAt      DateTime @default(now())
   completedAt    DateTime?
@@ -267,9 +300,15 @@ model VideoAsset {
   type          VideoAssetType
   provider      String?
   providerJobId String?
+  /// Storage key (object key in the bucket). Resolved to a short-lived signed
+  /// URL only when the UI asks for it.
   url           String
+  mimeType      String?
   sizeBytes     Int?
   durationSec   Float?
+  width         Int?
+  height        Int?
+  metadata      Json?
   createdAt     DateTime       @default(now())
 }
 
@@ -282,9 +321,70 @@ model Approval {
   telegramChatId    String?
   telegramMessageId String?
   note              String?
+  rejectionReason   String?
   decidedBy         String?
   decidedAt         DateTime?
   createdAt         DateTime       @default(now())
+}
+
+enum PublicationStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  SKIPPED
+}
+
+/// One row per (approved video, target platform).
+model Publication {
+  id          String            @id @default(cuid())
+  videoJobId  String
+  videoJob    VideoJob          @relation(fields: [videoJobId], references: [id], onDelete: Cascade)
+  target      String
+  status      PublicationStatus @default(PENDING)
+  externalId  String?
+  externalUrl String?
+  error       String?
+  attempts    Int               @default(0)
+  createdAt   DateTime          @default(now())
+  publishedAt DateTime?
+
+  @@unique([videoJobId, target])
+}
+
+/// Uploaded media the admin manages from the Control Center (music beds).
+model MediaFile {
+  id          String   @id @default(cuid())
+  kind        String   @default("MUSIC")
+  name        String
+  storageKey  String
+  mimeType    String
+  sizeBytes   Int
+  durationSec Float?
+  createdAt   DateTime @default(now())
+}
+
+/// Short-lived server-side OAuth state (CSRF + PKCE verifier, encrypted).
+model OAuthState {
+  id                String   @id
+  provider          String
+  codeVerifierEnc   String?
+  createdAt         DateTime @default(now())
+  expiresAt         DateTime
+}
+
+/// Liveness + capability reports from background services (worker). The API
+/// reads this for the Dashboard's system health — a worker that stopped
+/// reporting is OFFLINE, never assumed healthy.
+model ServiceHeartbeat {
+  id           String   @id // "<service>:<instance>"
+  service      String
+  instance     String
+  startedAt    DateTime
+  lastSeenAt   DateTime
+  capabilities Json     @default("{}")
+
+  @@index([service, lastSeenAt])
 }
 
 // ------------------------------------------------------------------ Misc

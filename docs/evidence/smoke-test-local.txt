@@ -1,0 +1,178 @@
+Smoke test against http://localhost:3200
+
+ 1. PASS    Open web — login page served
+ 2. PASS    Login — JWT issued; wrong password rejected (401)
+ 3. PASS    Dashboard loads — system=PARTIALLY_READY (TEST MODE)
+ 4. PASS    n8n connected — n8n online — 22/22 workflows present, 0 active
+ 5. PASS    Database connected — PostgreSQL reachable, 2 migrations applied
+ 6. PASS    Redis connected — Redis reachable
+ 7. PASS    Worker connected — 1 worker(s) online — ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
+ 8. PASS    FFmpeg verified on worker — ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers | ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers
+ 9. PASS    22 workflows present in n8n — 22/22
+10. PASS    Workflows inactive unless enabled — 0 active in n8n, all of them enabled on purpose
+11. SKIPPED Configure an integration — SMOKE_PROVIDER not set — existing integrations are re-tested in step 12 instead
+12. PASS    Test provider — openai: CONNECTED (Connected — model gpt-4o-mini available) | google-sheets: TEST FAILED (Google rejected the service account key: invalid_grant: Invalid grant: account not found) | telegram: CONNECTED (Connected — bot is in "Eki mock team") | meta: CONNECTED (Connected — Page + Instagram) | runway: CONNECTED (Connected — 5000 credits available) | elevenlabs: CONNECTED (Connected — voice "Mock Voice" — 99,900 characters left)
+13. PASS    Readiness recalculated — 0 workflow(s) changed readiness; READY now: 00-global-error-handler
+14. PASS    Enable a READY workflow — 00-global-error-handler active in n8n
+15. PASS    Execute workflow (TEST RUN) — not-runnable: FAILED — The error handler runs automatically when another workflow fails; it cannot be started directly
+16. SKIPPED Execution visible in UI data — no execution to look for (test kind: not-runnable)
+17. PASS    Error paths are safe — blocked enable → 409 with reason; unauthenticated → 401; forged Telegram webhook → 403; internal routes not public; no secrets in responses
+18. PASS    Disable workflow — 00-global-error-handler inactive in n8n
+ Container eki-automation-api-1 Restarting 
+ Container eki-automation-n8n-1 Restarting 
+ Container eki-automation-worker-1 Restarting 
+ Container eki-automation-web-1 Restarting 
+ Container eki-automation-api-1 Started 
+ Container eki-automation-web-1 Started 
+ Container eki-automation-worker-1 Started 
+ Container eki-automation-n8n-1 Started 
+19. PASS    Restart services — all core services back ONLINE
+20. PASS    Persistence after restart — 22/22 workflows, 0 active (unchanged), 15 integration states unchanged
+
+18 passed, 2 skipped, 0 failed
+{
+  "base": "http://localhost:3200",
+  "at": "2026-09-27T20:43:42.717Z",
+  "results": [
+    {
+      "step": 1,
+      "name": "Open web",
+      "status": "PASS",
+      "detail": "login page served",
+      "ms": 70
+    },
+    {
+      "step": 2,
+      "name": "Login",
+      "status": "PASS",
+      "detail": "JWT issued; wrong password rejected (401)",
+      "ms": 666
+    },
+    {
+      "step": 3,
+      "name": "Dashboard loads",
+      "status": "PASS",
+      "detail": "system=PARTIALLY_READY (TEST MODE)",
+      "ms": 190
+    },
+    {
+      "step": 4,
+      "name": "n8n connected",
+      "status": "PASS",
+      "detail": "n8n online — 22/22 workflows present, 0 active",
+      "ms": 0
+    },
+    {
+      "step": 5,
+      "name": "Database connected",
+      "status": "PASS",
+      "detail": "PostgreSQL reachable, 2 migrations applied",
+      "ms": 0
+    },
+    {
+      "step": 6,
+      "name": "Redis connected",
+      "status": "PASS",
+      "detail": "Redis reachable",
+      "ms": 0
+    },
+    {
+      "step": 7,
+      "name": "Worker connected",
+      "status": "PASS",
+      "detail": "1 worker(s) online — ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+      "ms": 0
+    },
+    {
+      "step": 8,
+      "name": "FFmpeg verified on worker",
+      "status": "PASS",
+      "detail": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers | ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
+      "ms": 1
+    },
+    {
+      "step": 9,
+      "name": "22 workflows present in n8n",
+      "status": "PASS",
+      "detail": "22/22",
+      "ms": 0
+    },
+    {
+      "step": 10,
+      "name": "Workflows inactive unless enabled",
+      "status": "PASS",
+      "detail": "0 active in n8n, all of them enabled on purpose",
+      "ms": 13
+    },
+    {
+      "step": 11,
+      "name": "Configure an integration",
+      "status": "SKIPPED",
+      "detail": "SMOKE_PROVIDER not set — existing integrations are re-tested in step 12 instead",
+      "ms": 0
+    },
+    {
+      "step": 12,
+      "name": "Test provider",
+      "status": "PASS",
+      "detail": "openai: CONNECTED (Connected — model gpt-4o-mini available) | google-sheets: TEST FAILED (Google rejected the service account key: invalid_grant: Invalid grant: account not found) | telegram: CONNECTED (Connected — bot is in \"Eki mock team\") | meta: CONNECTED (Connected — Page + Instagram) | runway: CONNECTED (Connected — 5000 credits available) | elevenlabs: CONNECTED (Connected — voice \"Mock Voice\" — 99,900 characters left)",
+      "ms": 1157
+    },
+    {
+      "step": 13,
+      "name": "Readiness recalculated",
+      "status": "PASS",
+      "detail": "0 workflow(s) changed readiness; READY now: 00-global-error-handler",
+      "ms": 12
+    },
+    {
+      "step": 14,
+      "name": "Enable a READY workflow",
+      "status": "PASS",
+      "detail": "00-global-error-handler active in n8n",
+      "ms": 323
+    },
+    {
+      "step": 15,
+      "name": "Execute workflow (TEST RUN)",
+      "status": "PASS",
+      "detail": "not-runnable: FAILED — The error handler runs automatically when another workflow fails; it cannot be started directly",
+      "ms": 12
+    },
+    {
+      "step": 16,
+      "name": "Execution visible in UI data",
+      "status": "SKIPPED",
+      "detail": "no execution to look for (test kind: not-runnable)",
+      "ms": 0
+    },
+    {
+      "step": 17,
+      "name": "Error paths are safe",
+      "status": "PASS",
+      "detail": "blocked enable → 409 with reason; unauthenticated → 401; forged Telegram webhook → 403; internal routes not public; no secrets in responses",
+      "ms": 215
+    },
+    {
+      "step": 18,
+      "name": "Disable workflow",
+      "status": "PASS",
+      "detail": "00-global-error-handler inactive in n8n",
+      "ms": 93
+    },
+    {
+      "step": 19,
+      "name": "Restart services",
+      "status": "PASS",
+      "detail": "all core services back ONLINE",
+      "ms": 11392
+    },
+    {
+      "step": 20,
+      "name": "Persistence after restart",
+      "status": "PASS",
+      "detail": "22/22 workflows, 0 active (unchanged), 15 integration states unchanged",
+      "ms": 528
+    }
+  ]
+}

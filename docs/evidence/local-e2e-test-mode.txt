@@ -1,0 +1,113 @@
+PASS  Configure + test OpenAI, Runway, ElevenLabs, Telegram (mock endpoints) — openai=CONNECTED, runway=CONNECTED, elevenlabs=CONNECTED, telegram=CONNECTED; secrets absent from API responses
+PASS  Telegram webhook registered automatically — approval readiness READY
+PASS  Video pipeline readiness READY — ✓ OpenAI or Groq, ✓ Runway, ✓ ElevenLabs, ✓ Video worker with FFmpeg, ✓ Media storage
+PASS  Readiness → activate-ready enables only READY workflows in n8n; disable works — activated 1, skipped 21 (each with reasons); disabled again
+PASS  Music upload (raw audio → S3) — 160514 bytes stored
+PASS  Generate video → READY (script, per-scene voice, Runway clips, FFmpeg, QA, S3) — 5 scenes, 30.0s 1080x1920, 17.3 MB; states seen: QUEUED→VISUAL_GENERATING→ASSEMBLING→QUALITY_CHECK→READY; signed URL fetch from host: not reachable from host (bucket is private to the compose network)
+PASS  READY video sent to Telegram automatically (multipart, APPROVE/REJECT buttons) — video upload 17257658 bytes; has reply_markup=true; approval PENDING
+PASS  Scene voice/visual calls match scene count (no duplicate billing) — 5 TTS + 5 text_to_video for 5 scenes
+PASS  Forged Telegram callback rejected; real callback from the team chat approves — forged → 403; foreign chat ignored; team chat → APPROVED by @eki_editor
+PASS  Meta OAuth: server-side code exchange, tokens never returned — CONNECTED as "Eki Mock Page · IG @eki.mock"; state is single-use; tokens not in responses
+PASS  Approve → publish to Instagram + Facebook — instagram → https://www.instagram.com/reel/MOCK/, facebook → https://www.facebook.com/100000000000777
+PASS  Reject → regenerate starts a fresh job — rejected (reason stored) → new job cmuka5xne00khb7ni9q0t5qnb READY
+PASS  Provider failure → automatic retry resumes without repeating finished stages — 1 script call, 3 TTS, 4 Runway tasks (1 retried) for 3 scenes; executions: SUCCESS/retry1, FAILED/retry0
+PASS  Cancel during generation cancels the Runway task — job CANCELLED; DELETE /v1/tasks/{id} sent to Runway
+PASS  Executions + reports reflect the runs — videos 5, failed executions 2, published 2, success rate 78%
+
+15/15 passed
+{
+  "at": "2026-09-27T20:39:49.594Z",
+  "mode": "LOCAL TEST MODE (mock providers)",
+  "results": [
+    {
+      "name": "Configure + test OpenAI, Runway, ElevenLabs, Telegram (mock endpoints)",
+      "ok": true,
+      "detail": "openai=CONNECTED, runway=CONNECTED, elevenlabs=CONNECTED, telegram=CONNECTED; secrets absent from API responses",
+      "ms": 1541
+    },
+    {
+      "name": "Telegram webhook registered automatically",
+      "ok": true,
+      "detail": "approval readiness READY",
+      "ms": 11
+    },
+    {
+      "name": "Video pipeline readiness READY",
+      "ok": true,
+      "detail": "✓ OpenAI or Groq, ✓ Runway, ✓ ElevenLabs, ✓ Video worker with FFmpeg, ✓ Media storage",
+      "ms": 9
+    },
+    {
+      "name": "Readiness → activate-ready enables only READY workflows in n8n; disable works",
+      "ok": true,
+      "detail": "activated 1, skipped 21 (each with reasons); disabled again",
+      "ms": 4849
+    },
+    {
+      "name": "Music upload (raw audio → S3)",
+      "ok": true,
+      "detail": "160514 bytes stored",
+      "ms": 332
+    },
+    {
+      "name": "Generate video → READY (script, per-scene voice, Runway clips, FFmpeg, QA, S3)",
+      "ok": true,
+      "detail": "5 scenes, 30.0s 1080x1920, 17.3 MB; states seen: QUEUED→VISUAL_GENERATING→ASSEMBLING→QUALITY_CHECK→READY; signed URL fetch from host: not reachable from host (bucket is private to the compose network)",
+      "ms": 63439
+    },
+    {
+      "name": "READY video sent to Telegram automatically (multipart, APPROVE/REJECT buttons)",
+      "ok": true,
+      "detail": "video upload 17257658 bytes; has reply_markup=true; approval PENDING",
+      "ms": 11
+    },
+    {
+      "name": "Scene voice/visual calls match scene count (no duplicate billing)",
+      "ok": true,
+      "detail": "5 TTS + 5 text_to_video for 5 scenes",
+      "ms": 2
+    },
+    {
+      "name": "Forged Telegram callback rejected; real callback from the team chat approves",
+      "ok": true,
+      "detail": "forged → 403; foreign chat ignored; team chat → APPROVED by @eki_editor",
+      "ms": 2201
+    },
+    {
+      "name": "Meta OAuth: server-side code exchange, tokens never returned",
+      "ok": true,
+      "detail": "CONNECTED as \"Eki Mock Page · IG @eki.mock\"; state is single-use; tokens not in responses",
+      "ms": 603
+    },
+    {
+      "name": "Approve → publish to Instagram + Facebook",
+      "ok": true,
+      "detail": "instagram → https://www.instagram.com/reel/MOCK/, facebook → https://www.facebook.com/100000000000777",
+      "ms": 42410
+    },
+    {
+      "name": "Reject → regenerate starts a fresh job",
+      "ok": true,
+      "detail": "rejected (reason stored) → new job cmuka5xne00khb7ni9q0t5qnb READY",
+      "ms": 72547
+    },
+    {
+      "name": "Provider failure → automatic retry resumes without repeating finished stages",
+      "ok": true,
+      "detail": "1 script call, 3 TTS, 4 Runway tasks (1 retried) for 3 scenes; executions: SUCCESS/retry1, FAILED/retry0",
+      "ms": 69464
+    },
+    {
+      "name": "Cancel during generation cancels the Runway task",
+      "ok": true,
+      "detail": "job CANCELLED; DELETE /v1/tasks/{id} sent to Runway",
+      "ms": 7080
+    },
+    {
+      "name": "Executions + reports reflect the runs",
+      "ok": true,
+      "detail": "videos 5, failed executions 2, published 2, success rate 78%",
+      "ms": 12
+    }
+  ]
+}

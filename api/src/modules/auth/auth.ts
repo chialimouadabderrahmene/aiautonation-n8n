@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../lib/prisma";
+import { logger } from "../../lib/logger";
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -21,9 +22,8 @@ export async function bootstrapAdmin(): Promise<void> {
   const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
   if (!email || !password) return;
   const passwordHash = await bcrypt.hash(password, 12);
-  await prisma.adminUser.create({ data: { email, passwordHash } });
-  // eslint-disable-next-line no-console
-  console.log(`[auth] bootstrapped admin account for ${email}`);
+  await prisma.adminUser.create({ data: { email: email.toLowerCase(), passwordHash } });
+  logger.info({ email: email.toLowerCase() }, "[auth] bootstrapped admin account");
 }
 
 export async function login(email: string, password: string): Promise<{ token: string } | null> {

@@ -1,5 +1,7 @@
 # Environment variables
 
+> These variables are **computed by the Control Center** from Integrations and Settings and delivered to n8n by its supervisor (`api/src/modules/n8n/runtimeEnv.ts`). The table remains the reference for what each workflow reads.
+
 Generated from the workflows by reading every `$env.X` they use (plus the WhatsApp template keys). Source of truth for the example values is [`.env.railway.example`](../.env.railway.example); `node tools/validate-workflows.js` fails when a workflow reads a variable that is not listed there.
 
 **n8n platform settings (not read by workflows, but required):** `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (n8n 2.x blocks `$env` in expressions/Code nodes by default — every workflow needs it), `N8N_ENCRYPTION_KEY`, `N8N_WEBHOOK_URL` (replaces the deprecated `WEBHOOK_URL`), `GENERIC_TIMEZONE=Africa/Lagos`, `TZ=Africa/Lagos`, `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` (execution data contains phone numbers and message text), `EXECUTIONS_DATA_SAVE_ON_ERROR=all`, `EXECUTIONS_DATA_PRUNE=true`, `EXECUTIONS_DATA_MAX_AGE=336`.

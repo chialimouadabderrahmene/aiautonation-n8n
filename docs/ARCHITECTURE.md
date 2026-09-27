@@ -1,101 +1,68 @@
 # Architecture
 
-The Eki AI Automation Control Center is a **standalone product**, entirely
-inside `ai automation italy/`. It shares no code, database, authentication,
-or deployment with the Eki marketplace (`ekiapp-backend-main`,
-`ekiapp-frontnend-application-ios-android-main`).
+Standalone system inside this repository only — it shares no code, database or
+deployment with the Eki marketplace backend, mobile app or admin web.
 
 ```
-                    WEB CONTROL CENTER (web/, Next.js)
-                           |  Bearer JWT, browser never sees provider secrets
-                           v
-                  AUTOMATION API (api/, Express)
-                           |
-             +-------------+-------------+
-             |             |             |
-             v             v             v
-           n8n         AI PROVIDERS   VIDEO WORKER (worker/, BullMQ)
-     (separate deploy)  (OpenAI/Groq)         |
-                                      +-------+-------+
-                                      |               |
-                                   Runway        ElevenLabs
-                                      |
-                                    FFmpeg
-                                      |
-                                 Final MP4
-                                   |
-                                   v
-                            Telegram Approval
-                                   |
-                                   v
-                              Publishing (n8n)
+browser ──https──► web (Next.js 14, public)
+                    └─ /api/* proxy (request time) ─► api (Express, private)
+Telegram ─► web /api/telegram/webhook ─┘                │
+OAuth providers ─► web /api/oauth/callback/* ─┘         ├─ Postgres (public schema)
+                                                        ├─ Redis / BullMQ ─► worker (FFmpeg)
+                                                        ├─ S3 bucket (media)       │
+                                                        ├─ n8n public API :5678    ├─ Postgres
+                                                        └─ internal :4110 ◄─ n8n supervisor
+                                                                                   └─ S3, providers
 ```
 
 ## Services
 
-| Service | Tech | Deploy target | Talks to |
-|---|---|---|---|
-| `web/` | Next.js 14 (App Router), TypeScript, Tailwind | Static/Node hosting (Vercel, Railway, ...) | `api/` only, over HTTPS, with a JWT |
-| `api/` | Express, TypeScript, Prisma | Railway / any Node host | Postgres, Redis (enqueue only), n8n's REST API, every provider's API (for connection tests) |
-| `worker/` | BullMQ consumer, TypeScript, ffmpeg | Railway / any Node host with ffmpeg installed | Same Postgres (own generated Prisma client — see below), Redis, OpenAI/Groq, Runway, ElevenLabs |
-| n8n | n8n (official image) | Railway (see `N8N_SETUP.md`) | Google Sheets, Telegram, WhatsApp, Resend, Buffer, X, Apify — the 22 existing workflows |
+| Service | Code | Responsibilities |
+|---|---|---|
+| web | `web/` | UI (9 sections + login), same-origin proxy to the API. Holds no secrets; no `NEXT_PUBLIC_*` variables. |
+| api | `api/` | Auth, encrypted vault, provider registry + tests, OAuth, readiness engine, n8n provisioning/sync/test runs, execution mirroring, Telegram webhook router, video/approval/publishing orchestration, health, audit. |
+| worker | `worker/` | Video generation (script → voice → Runway → FFmpeg → QA → storage), Telegram approval upload, publishing. Heartbeat with capabilities. |
+| n8n | `docker/Dockerfile.n8n` | The 22 workflows. Supervisor delivers configuration and runs test executions. |
 
-## Why a separate worker
+## Key design decisions
 
-`api/` handles HTTP requests and must respond quickly. Video generation is
-minutes of provider polling plus real FFmpeg encoding — running that inside
-an HTTP request handler would mean a request that never returns, no way to
-show progress, and no recovery if the process restarts mid-job. `worker/` is
-a long-running BullMQ consumer instead: `api/` only ever *enqueues* a job
-(`POST /api/video/projects` → one row in Postgres + one BullMQ job) and reads
-its state back from Postgres; `worker/` does the actual work and writes
-progress back to the same rows.
+- **Single source of configuration: the Control Center.** Credentials live
+  encrypted in the Control Center; n8n receives them as managed n8n credentials
+  (public API) and a computed runtime environment (supervisor). Nobody edits
+  n8n env vars or credential screens.
+- **Data-driven providers.** `api/src/modules/providers/definitions.ts` declares
+  every provider's fields (type, secret, validation, group), auth type, test,
+  and OAuth flow; the UI renders forms from it.
+- **Readiness is computed, never asserted.** `modules/workflows/readiness.ts`
+  checks tested providers, settings, confirmations, n8n presence, synced n8n
+  credentials, worker FFmpeg and storage. Activation always recalculates first.
+- **Asynchronous, resumable video jobs.** HTTP returns immediately; BullMQ
+  carries the job; every stage is checkpointed in Postgres so retries resume.
+- **Private by default.** Only web and the n8n editor/webhooks are public; the
+  API's internal endpoints are on a separate listener the proxy never reaches.
 
-## Two Prisma clients, one database
+## Security model
 
-`api/prisma/schema.prisma` and `worker/prisma/schema.prisma` are byte-for-byte
-identical (each file says so). This exists only so each service — deployed
-independently, in its own container — can generate its own `@prisma/client`
-without a cross-package build dependency. **Only `api/` owns migrations**
-(`npm run prisma:migrate:deploy`); the worker's copy is `prisma generate`
-only, never `migrate`. If you change the schema, edit both files identically.
+| Concern | Implementation |
+|---|---|
+| Secrets at rest | AES-256-GCM per field, key from `AUTOMATION_SECRET_KEY` (scrypt-derived), unique IV, auth tag |
+| Secrets in responses | Only masked previews (`sk-a••••1234`). The single exception: a *generated* webhook secret is returned once when the admin rotates it |
+| OAuth tokens | Exchanged server-side, stored encrypted, refreshed server-side, never sent to the browser |
+| Logs | pino with redaction of credential-bearing keys; request logs have no query strings or bodies; provider error texts pass through `scrubSecrets` |
+| Admin auth | bcrypt (12 rounds), JWT 12 h, failed-login rate limit (10 / 15 min) |
+| Webhooks | Telegram: `secret_token` header compared in constant time, callbacks accepted only from the configured team chat; OAuth: single-use expiring state (+PKCE for X); media: HMAC-signed expiring links or S3 presigned URLs |
+| Internal API | separate port + `INTERNAL_API_TOKEN` |
+| Headers | helmet on the API; X-Frame-Options DENY, nosniff, HSTS, referrer and permissions policies on the web app |
+| Test mode | provider redirection requires two explicit env vars and shows a red banner on the Dashboard |
 
-## Credentials: two homes, by design
+## Data model (Prisma, `api/prisma/schema.prisma`)
 
-- **Provider credentials the Control Center itself calls** (OpenAI, Groq,
-  Runway, ElevenLabs, Telegram send, Resend, Buffer, X, Meta, Apify,
-  Google Sheets service-account) live in the Control Center's own encrypted
-  `Integration`/`EncryptedCredential` tables (AES-256-GCM, see
-  `INTEGRATIONS.md`).
-- **Credentials the n8n workflows themselves use** (their Google Sheets
-  OAuth2, their Telegram bot, WhatsApp, ...) live in **n8n's own credential
-  vault** (`N8N_ENCRYPTION_KEY`), configured through the n8n UI, exactly as
-  `ai automation italy/docs/api-keys-required.md` already documented before
-  this project existed. The Control Center never reads or writes n8n's
-  credential store directly — it only calls n8n's workflow-management REST
-  API (activate/deactivate/execute), authenticated with a separate n8n API
-  key that *is* stored in the Control Center's vault (provider `n8n`).
-
-This split exists because the two credential sets are consumed by two
-different runtimes that don't share a process or a database — duplicating
-"the Google Sheets key" into the Control Center's vault would not make n8n's
-workflows use it.
-
-## Readiness engine
-
-`api/src/modules/workflows/manifest.ts` declares, per existing n8n workflow,
-which providers/settings it needs (sourced from this repo's own
-`docs/env-vars.md`, not invented). `api/src/modules/workflows/readiness.ts`
-evaluates that against live `Integration.status` rows (and a few
-`Setting` booleans for things no API can verify, like "Meta approved these
-WhatsApp templates"). Nothing is ever marked READY by writing to the
-database directly — only by a real `POST /api/integrations/:provider/test`
-that actually called the provider.
-
-## Storage
-
-Generated assets (voiceover, scene clips, final MP4) go through a one-method
-`StorageProvider` interface (`worker/src/lib/storage.ts`). It ships with a
-local-disk implementation only — no S3/R2 credentials exist yet. Swapping in
-object storage later is a one-file change; nothing else references the
-filesystem directly.
+AdminUser · Integration (+ authType, connected account, token expiry, synced
+n8n credential ids) · EncryptedCredential · WorkflowConfig (+ n8n presence,
+active state, definition hash, trigger kind, last test run) ·
+AutomationExecution (unique per source+external id) · VideoProject (+ music,
+publish targets) · VideoJob (+ progress) · VideoScene (+ voice key/duration) ·
+VideoAsset (+ mime, dimensions, metadata) · Approval (+ rejection reason) ·
+Publication · MediaFile · OAuthState · ServiceHeartbeat · Setting · AuditLog.
+`worker/prisma/schema.prisma` is an identical copy (a unit test enforces it);
+migrations are owned by `api/`.

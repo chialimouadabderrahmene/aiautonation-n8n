@@ -1,65 +1,168 @@
 # Client setup checklist — Eki AI Automation Control Center
 
-No source code editing needed for anything below. Do these in order; each step tells you what to check before moving to the next.
+Everything below happens in your web browser, in the Control Center. You never
+edit code, workflow files, server settings or `.env` files, and you never need
+to open n8n or restart anything.
 
-**Before you start:** someone technical needs to deploy the four services once (n8n, the API, the worker, the web app) on Railway or similar — see `docs/DEPLOYMENT.md` and `docs/N8N_SETUP.md`. That is a one-time setup step, not something you do from the Control Center itself. Once it's deployed and you have its web address, everything below is done by you, in the browser.
-
----
-
-### STEP 1 — Open the Control Center
-Go to the web address your developer gave you (e.g. `https://your-control-center.up.railway.app`). Sign in with the admin email and password you were given.
-
-### STEP 2 — Go to Integrations
-Click **Integrations** in the left menu. You'll see a card for every connected service (OpenAI, n8n, WhatsApp, Telegram, Resend, Runway, ElevenLabs, and others). Every one starts as **NOT CONFIGURED** — that's expected on day one.
-
-### STEP 3 — Configure OpenAI (or Groq)
-On the **OpenAI** card, click **Configure**, paste your OpenAI API key, click **Save credentials**.
-
-### STEP 4 — Click Test Connection
-Click **Test connection** on the same card. Wait a moment. It will show either:
-- **CONNECTED** (green) — the key works.
-- **TEST FAILED** (red) with a plain-English reason (e.g. "Unauthorized API key") — the key is wrong or expired; fix it and test again.
-
-Never assume a saved key works until you see **CONNECTED**.
-
-### STEP 5 — Configure Runway
-Same as Step 3–4, on the **Runway** card. This is what generates the video scenes.
-
-### STEP 6 — Configure ElevenLabs
-Same again, on the **ElevenLabs** card. This is what generates the voiceover.
-
-### STEP 7 — Configure Telegram
-Same again, on the **Telegram** card — this is how you'll approve/reject generated videos and how the team gets error alerts. You'll need a bot token from @BotFather and your team's chat ID (your developer can help with this one — see `docs/api-keys-required.md`).
-
-### STEP 8 — Check the Dashboard
-Click **Dashboard**. You'll see:
-- **System status**: BLOCKED / PARTIALLY READY / READY
-- **Integrations connected**: how many of the cards above show CONNECTED
-- **Action required**: a plain list of exactly what's still broken, and why
-
-Nothing on this page is ever shown as working unless it's actually been tested — a green checkmark here means it's real.
-
-### STEP 9 — Fix any BLOCKED integrations
-Go back to **Integrations**, find anything still red or grey, and fix it (usually a typo'd key or an expired token). Repeat Steps 3–4 for each one until the Dashboard's "Action required" list is empty (or only lists things you're intentionally not using yet).
-
-### STEP 10 — Activate Ready Automations
-Click **Automations**. Each of the 22 workflows lists exactly what it still needs. Once a workflow's requirements are all satisfied, click **Enable** on it individually, or click **Activate ready automations** at the top to enable every workflow that's currently ready in one click. Workflows that aren't ready yet stay off — this button never force-activates something broken.
-
-*(One-time technical step your developer must do first: the workflows have to be imported into your n8n instance before they appear here as enable-able. See `docs/N8N_SETUP.md`.)*
-
-### STEP 11 — Create your first video
-Click **Video Generator** → **New project**. Fill in the project name, pick a content type (Reel, TikTok, etc.), topic, and a short prompt describing what you want. Click **Generate video**. You'll see a live progress bar move through: Script → Storyboard → Voiceover → Visuals → Assembly → Quality check.
-
-### STEP 12 — Approve through Telegram
-Once the video is ready, click **Send to Telegram** on it. It'll arrive in your configured Telegram chat with **Approve** / **Reject** buttons. Tap one — the decision shows up back in the Control Center's **Approvals** page automatically.
-
-### STEP 13 — Publish
-Approved videos are ready to post manually to your social channels (or, once you've configured Buffer/X under Integrations and enabled the relevant automation in Step 10, some posting can happen automatically — check `docs/VIDEO_PIPELINE.md` and `SOCIAL_AUTOPILOT_TESTING.md` for what's automatic vs. manual today, and keep automatic social posting **off** until you've reviewed a week of output by hand).
+> The one-time technical deployment (done once by your developer) is in
+> `docs/DEPLOYMENT.md`. When it is finished you receive two things: the
+> Control Center web address and your admin email + password.
 
 ---
 
-## If something looks wrong
-- **A card never goes to CONNECTED** → re-check the key/token you pasted (copy-paste errors are the #1 cause); read the red error text, it's the real error from that provider, not a generic message.
-- **A workflow won't enable** → read its blocker list on the Automations page; it names exactly what's missing.
-- **A video gets stuck** → open it in Video Generator and check which stage it failed at; you can retry it from there.
-- **Anything else** → Executions and Reports pages show every run and every failure with a plain-English reason. Send a screenshot of that to your developer.
+## 1. Log in
+
+Open the Control Center address (for example
+`https://eki-control-center.up.railway.app`) and sign in.
+
+Go to **Settings → Admin password** and change the password you were given.
+
+## 2. Look at the Dashboard
+
+**Dashboard → System health** must show **Online** for API, Video worker,
+Database, Queue (Redis), n8n and Media storage. These are checked live. If one
+shows Offline for more than a few minutes after a deployment, send a screenshot
+to your developer — nothing on this list is something you fix yourself.
+
+n8n is connected automatically; it already shows **Connected** and
+"22/22 workflows present, 0 active".
+
+## 3. Open Integrations
+
+Every provider starts as **Not configured** (except n8n and "Inbound webhook
+security", which are set up automatically). Each card shows its status:
+
+| Status | Meaning |
+|---|---|
+| Not configured | Nothing entered yet |
+| Configured | Saved (encrypted) but not tested yet |
+| Testing… | The Control Center is calling the provider right now |
+| Connected | The provider accepted the credentials in a real test |
+| Test failed | The provider rejected them — the red text is the provider's own reason |
+| Action required | Something changed (for example an expired login) — reconnect or re-test |
+
+## 4. Configure each provider you use
+
+**Providers with an API key** (OpenAI, Groq, Telegram, WhatsApp, Resend,
+Apify, Runway, ElevenLabs, Google Sheets, Buffer):
+
+1. Click **Configure** — each field explains what to paste and links to where
+   you get it.
+2. Click **Save (encrypted)**. The key is encrypted on the server; afterwards
+   you only ever see a masked version like `sk-a••••••••1234`.
+3. Click **Test connection**.
+
+**Providers you connect with your account** (X, Meta — Facebook Page and
+Instagram, LinkedIn):
+
+1. Click **Configure**. The card shows a *redirect URL* — paste it into your
+   app in that platform's developer portal (link on the card).
+2. Paste the app's Client/App ID and Secret, click **Save**.
+3. Click **Connect account**, approve access on the platform's own page, and
+   you are brought back to Integrations. The card then shows the connected
+   account, the connected date and when it was last verified. Tokens renew
+   automatically; **Disconnect account** removes them.
+
+Minimum for video automation: **OpenAI** (or Groq), **Runway**,
+**ElevenLabs** (enter a default Voice ID) and **Telegram** (bot token + your
+team chat ID, with the bot added to that chat).
+
+## 5. Test and fix blockers
+
+Only **Connected** counts. If a test fails, read the red message (it is the
+provider's own answer — typically a mistyped key, an expired token, missing
+permissions, or the bot not being in the chat), click **Edit**, fix it, test
+again.
+
+Then open **Automations** (and the **Video Generator** / **Dashboard** for
+video). Everything lists exactly what it still needs, for example:
+
+```
+Video automation                          BLOCKED
+✓ OpenAI or Groq
+✓ Runway
+✕ ElevenLabs — ElevenLabs is not configured
+✓ Video worker with FFmpeg
+✓ Media storage
+```
+
+Some items are filled in on **Settings**, not Integrations: the launch date of
+the content calendar, app/vendor links, the feedback survey link, and the
+confirmation that Meta approved your WhatsApp templates. Settings marked for
+n8n reach the automations by themselves within about a minute.
+
+## 6. Activate ready automations
+
+On **Automations**, click **Activate ready automations**. The Control Center
+re-checks everything, switches on **only** the workflows that are READY, and
+shows the result, e.g. *Activated: 17 · Skipped: 5*, with the exact reason for
+every skipped one. Nothing blocked is ever switched on.
+
+Per workflow you can also **Enable**, **Disable**, or **Test run**:
+
+- *Test run* on a scheduled workflow runs it once for real (real messages,
+  real sheet rows).
+- *Test webhook* on a webhook workflow checks it is live and rejects
+  unauthenticated calls (no fake leads are sent).
+
+**Stop all** switches every automation off immediately. For social posting
+there is also an **Emergency stop** switch in Settings.
+
+## 7. Create content
+
+**AI Content Studio** shows every content project and how far it is:
+script → voice → video → subtitles → ready → approved.
+
+## 8. Generate a video
+
+**Video Generator → New video**: project name, topic, prompt, platform,
+audience, language, tone, duration, aspect ratio, visual style, voice,
+subtitles, music (upload tracks in **Settings → Music library**), call to
+action, and where to publish after approval. Click **GENERATE VIDEO**.
+
+The job page updates live: Queued → Script → Storyboard → Voice → Visuals →
+Assembly → Quality check → **Ready**. You can close the page; generation
+continues. If a provider hiccups, the job retries automatically from the step
+that failed (finished steps are not paid for twice). If it still fails, the
+page shows the step and the reason, and **Retry** resumes from there.
+
+## 9. Approve
+
+When a video is **Ready** it is sent automatically to your Telegram team chat
+with **✅ APPROVE** and **❌ REJECT** buttons (you can also decide on the
+video's page). The decision appears on **Approvals**.
+
+- **Reject** → on the video page, write what should change and click
+  **Regenerate video**.
+- **Approve** → publishing starts (next step).
+
+## 10. Publish
+
+Approved videos are published to the platforms you ticked when creating them
+(Instagram Reels, Facebook Page, X, LinkedIn) through your connected accounts.
+The video page shows each platform's status with a link to the live post, and
+a **Retry** button if a platform refused it. If you ticked none, click
+**Download MP4** and post it yourself.
+
+## 11. Monitor
+
+- **Dashboard** — live health, what is ready, what needs attention.
+- **Executions** — every run (n8n workflows, video jobs, Telegram sends,
+  publishing) with trigger, start/end time, duration, retries and the error
+  if any.
+- **Reports** — success rate, runs per day, per-workflow results, videos
+  generated, approvals, publications.
+- Failures are also sent to your Telegram team chat (switch in Settings →
+  Notifications).
+
+---
+
+### When something looks wrong
+
+| You see | Do this |
+|---|---|
+| A card says *Test failed* | Read the red message, fix the key/permission, test again |
+| A card says *Action required* on X/Meta/LinkedIn | Click **Connect account** again (the platform ended the session) |
+| A workflow stays *Blocked* | Its blocker list says exactly what is missing (Integrations or Settings) |
+| A video *Failed* | Open it: the failed step and reason are shown; click **Retry** |
+| System health shows *Offline* for a long time | Send your developer a screenshot of the Dashboard |

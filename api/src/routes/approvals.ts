@@ -1,108 +1,155 @@
 import { Router } from "express";
+import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { getDecryptedCredentials } from "../modules/integrations/vault";
+import { enqueueDelivery } from "../lib/queue";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
+import { evaluateRequirements } from "../modules/workflows/readiness";
+import { VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
+import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup } from "../modules/telegram/telegram";
+import { getProviderValues } from "../modules/integrations/vault";
+import { getN8nConnection } from "../modules/n8n/client";
+import { timedFetch } from "../lib/http";
+import { logger } from "../lib/logger";
 
-/** Authenticated actions (send to Telegram, read approval state). */
+/** Authenticated actions (send to Telegram, decide from the UI, list). */
 export const approvalsRouter = Router();
-/** Public — Telegram calls this directly. Kept on a separate router so it
- * can never accidentally inherit an admin-only route mounted alongside it. */
-export const approvalsPublicRouter = Router();
-
-async function sendTelegramVideo(chatId: string, job: { id: string; finalVideoUrl: string | null; caption: string | null; project: { name: string } }) {
-  const creds = await getDecryptedCredentials("telegram");
-  if (!creds?.secrets.botToken) throw new Error("Telegram is not configured");
-
-  const caption = `${job.project.name}\n\n${job.caption ?? ""}`.slice(0, 1024);
-  const replyMarkup = {
-    inline_keyboard: [[
-      { text: "✅ Approve", callback_data: `approve:${job.id}` },
-      { text: "❌ Reject", callback_data: `reject:${job.id}` },
-    ]],
-  };
-
-  const body = job.finalVideoUrl
-    ? { chat_id: chatId, video: job.finalVideoUrl, caption, reply_markup: replyMarkup }
-    : { chat_id: chatId, text: `${caption}\n\n(no final video URL yet)`, reply_markup: replyMarkup };
-  const method = job.finalVideoUrl ? "sendVideo" : "sendMessage";
-
-  const res = await fetch(`https://api.telegram.org/bot${creds.secrets.botToken}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json()) as { ok: boolean; result?: { message_id: number }; description?: string };
-  if (!data.ok) throw new Error(data.description ?? "Telegram send failed");
-  return data.result?.message_id;
-}
-
-approvalsRouter.post("/video/:jobId/send", async (req: AuthedRequest, res) => {
-  const job = await prisma.videoJob.findUnique({ where: { id: req.params.jobId }, include: { project: true } });
-  if (!job) return res.status(404).json({ message: "Not found" });
-  if (job.state !== "READY") return res.status(409).json({ message: "Video is not READY yet" });
-
-  const creds = await getDecryptedCredentials("telegram");
-  const chatId = creds?.secrets.approvalChatId;
-  if (!chatId) return res.status(409).json({ message: "Telegram approval chat is not configured" });
-
-  try {
-    const messageId = await sendTelegramVideo(chatId, job);
-    await prisma.approval.upsert({
-      where: { videoJobId: job.id },
-      update: { status: "PENDING", telegramChatId: chatId, telegramMessageId: String(messageId ?? ""), decidedAt: null, decidedBy: null },
-      create: { videoJobId: job.id, telegramChatId: chatId, telegramMessageId: String(messageId ?? "") },
-    });
-    await recordAudit(req.admin?.email ?? "unknown", "approval.sent_to_telegram", "VideoJob", job.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(502).json({ message: err instanceof Error ? err.message : "Failed to send to Telegram" });
-  }
-});
+/** Public — Telegram calls this directly; gated by the secret_token header. */
+export const telegramPublicRouter = Router();
 
 approvalsRouter.get("/", async (_req, res) => {
   const approvals = await prisma.approval.findMany({
-    include: { videoJob: { include: { project: true } } },
+    include: { videoJob: { include: { project: true, publications: true } } },
     orderBy: { createdAt: "desc" },
+    take: 200,
   });
   res.json(approvals);
 });
 
 approvalsRouter.get("/video/:jobId", async (req, res) => {
-  const approval = await prisma.approval.findUnique({ where: { videoJobId: req.params.jobId } });
+  res.json(await prisma.approval.findUnique({ where: { videoJobId: String(req.params.jobId) } }));
+});
+
+approvalsRouter.post("/video/:jobId/send", async (req: AuthedRequest, res) => {
+  const jobId = String(req.params.jobId);
+  const job = await prisma.videoJob.findUnique({ where: { id: jobId } });
+  if (!job) return res.status(404).json({ message: "Not found" });
+  if (job.state !== "READY") return res.status(409).json({ message: "Video is not READY yet" });
+  const readiness = await evaluateRequirements(VIDEO_APPROVAL_REQUIREMENTS);
+  if (readiness.readiness !== "READY") return res.status(409).json({ message: "Telegram approval is not ready", ...readiness });
+
+  await prisma.approval.upsert({
+    where: { videoJobId: jobId },
+    update: { status: "PENDING", decidedAt: null, decidedBy: null, rejectionReason: null, note: "Sending to Telegram…" },
+    create: { videoJobId: jobId, note: "Sending to Telegram…" },
+  });
+  await enqueueDelivery({ kind: "send-approval", videoJobId: jobId, requestedBy: req.admin?.email ?? "unknown" });
+  await recordAudit(req.admin?.email ?? "unknown", "approval.send_requested", "VideoJob", jobId);
+  res.status(202).json({ ok: true, message: "Queued — the worker uploads the video to Telegram" });
+});
+
+const decideSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]), reason: z.string().trim().max(500).optional() });
+
+/** Record an approval decision (from Telegram or from the Control Center UI). */
+export async function decide(videoJobId: string, decision: "APPROVED" | "REJECTED", decidedBy: string, reason?: string) {
+  const approval = await prisma.approval.upsert({
+    where: { videoJobId },
+    update: { status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
+    create: { videoJobId, status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
+  });
+  await recordAudit(decidedBy, decision === "APPROVED" ? "video.approved" : "video.rejected", "VideoJob", videoJobId, { reason });
+
+  if (decision === "APPROVED") {
+    const job = await prisma.videoJob.findUniqueOrThrow({ where: { id: videoJobId }, include: { project: true } });
+    for (const target of job.project.publishTargets) {
+      await prisma.publication.upsert({
+        where: { videoJobId_target: { videoJobId, target } },
+        update: { status: "PENDING", error: null },
+        create: { videoJobId, target },
+      });
+      await enqueueDelivery({ kind: "publish", videoJobId, target, requestedBy: decidedBy });
+    }
+  }
+  return approval;
+}
+
+approvalsRouter.post("/video/:jobId/decision", async (req: AuthedRequest, res) => {
+  const jobId = String(req.params.jobId);
+  const parsed = decideSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "decision must be APPROVED or REJECTED" });
+  const job = await prisma.videoJob.findUnique({ where: { id: jobId } });
+  if (!job || job.state !== "READY") return res.status(409).json({ message: "Only a READY video can be approved or rejected" });
+  const approval = await decide(jobId, parsed.data.decision, req.admin?.email ?? "unknown", parsed.data.reason);
   res.json(approval);
 });
 
-/**
- * Telegram webhook — public by necessity (Telegram calls it directly), but
- * gated by the same `X-Telegram-Bot-Api-Secret-Token` header pattern the
- * existing workflow 02 (content-approval) already uses. Only handles the
- * approve/reject inline-button callback for video approvals; everything else
- * is left to the existing n8n workflow 02.
- */
-approvalsPublicRouter.post("/telegram/webhook", async (req, res) => {
-  const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (expected && req.headers["x-telegram-bot-api-secret-token"] !== expected) {
-    return res.status(403).json({ message: "Forbidden" });
-  }
-
-  const callback = req.body?.callback_query as { data?: string; from?: { username?: string; id?: number } } | undefined;
-  if (!callback?.data) return res.json({ ok: true });
-
-  const [action, videoJobId] = callback.data.split(":");
-  if ((action !== "approve" && action !== "reject") || !videoJobId) return res.json({ ok: true });
-
-  const approval = await prisma.approval.findUnique({ where: { videoJobId } });
-  if (!approval) return res.json({ ok: true });
-
-  await prisma.approval.update({
-    where: { videoJobId },
-    data: {
-      status: action === "approve" ? "APPROVED" : "REJECTED",
-      decidedAt: new Date(),
-      decidedBy: callback.from?.username ?? String(callback.from?.id ?? "telegram"),
-    },
-  });
-  await recordAudit("telegram", `video.${action}d`, "VideoJob", videoJobId);
+approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRequest, res) => {
+  const jobId = String(req.params.jobId);
+  const target = String(req.params.target);
+  const pub = await prisma.publication.findUnique({ where: { videoJobId_target: { videoJobId: jobId, target } } });
+  if (!pub) return res.status(404).json({ message: "Not found" });
+  if (pub.status !== "FAILED") return res.status(409).json({ message: "Only a FAILED publication can be retried" });
+  await prisma.publication.update({ where: { id: pub.id }, data: { status: "PENDING", error: null } });
+  await enqueueDelivery({ kind: "publish", videoJobId: jobId, target, requestedBy: req.admin?.email ?? "unknown" });
   res.json({ ok: true });
+});
+
+/**
+ * Telegram webhook. Video approval buttons (callback data `vid:approve:<id>`
+ * / `vid:reject:<id>`) are handled here; every other update is forwarded to
+ * n8n workflow 02 (content approval commands). Always answers 200 so
+ * Telegram never retries forever.
+ */
+telegramPublicRouter.post("/webhook", async (req, res) => {
+  const header = req.headers["x-telegram-bot-api-secret-token"];
+  const expected = await getTelegramWebhookSecret();
+  if (typeof header !== "string" || !secretsEqual(header, expected)) return res.status(403).json({ message: "Forbidden" });
+  res.json({ ok: true });
+
+  try {
+    const update = req.body as {
+      callback_query?: { id: string; data?: string; from?: { id?: number; username?: string }; message?: { chat?: { id?: number }; message_id?: number } };
+    };
+    const cb = update.callback_query;
+    const match = cb?.data?.match(/^vid:(approve|reject):([a-z0-9]+)$/);
+    if (cb && match) {
+      const telegram = await getProviderValues("telegram");
+      const chatId = String(cb.message?.chat?.id ?? "");
+      if (!telegram?.approvalChatId || chatId !== telegram.approvalChatId) {
+        await answerCallback(cb.id, "Not allowed from this chat");
+        return;
+      }
+      const [, action, jobId] = match as unknown as [string, "approve" | "reject", string];
+      const job = await prisma.videoJob.findUnique({ where: { id: jobId }, include: { approval: true } });
+      if (!job || job.state !== "READY") {
+        await answerCallback(cb.id, "This video is no longer awaiting approval");
+        return;
+      }
+      if (job.approval && job.approval.status !== "PENDING") {
+        await answerCallback(cb.id, `Already ${job.approval.status.toLowerCase()}`);
+        return;
+      }
+      const who = cb.from?.username ? `@${cb.from.username}` : `telegram:${cb.from?.id ?? "unknown"}`;
+      await decide(jobId, action === "approve" ? "APPROVED" : "REJECTED", who, action === "reject" ? `Rejected in Telegram by ${who}` : undefined);
+      await answerCallback(cb.id, action === "approve" ? "Approved ✅" : "Rejected ❌");
+      if (cb.message?.message_id) await editDecisionMarkup(chatId, cb.message.message_id, action === "approve" ? `✅ Approved by ${who}` : `❌ Rejected by ${who}`);
+      return;
+    }
+    if (cb?.data === "noop") {
+      await answerCallback(cb.id, "Already decided");
+      return;
+    }
+
+    // Everything else belongs to n8n workflow 02 (/approve, /reject, /edit commands).
+    const conn = await getN8nConnection().catch(() => null);
+    if (!conn) return;
+    const { res: fwd } = await timedFetch(`${conn.baseUrl}/webhook/content-approval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": expected },
+      body: JSON.stringify(req.body),
+    });
+    if (!fwd.ok && fwd.status !== 404) logger.warn({ status: fwd.status }, "[telegram] forward to n8n workflow 02 failed");
+  } catch (err) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[telegram] webhook handling failed");
+  }
 });

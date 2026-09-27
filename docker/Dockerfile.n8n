@@ -1,0 +1,28 @@
+# n8n pinned to the version the 22 workflows were validated against, plus the
+# Eki supervisor (docker/n8n/supervisor.mjs) which delivers the configuration
+# entered in the Control Center to n8n and restarts it when that changes.
+FROM n8nio/n8n:2.40.7
+USER root
+COPY docker/n8n/supervisor.mjs /opt/eki/supervisor.mjs
+RUN chmod 0555 /opt/eki/supervisor.mjs
+USER node
+ENV N8N_BLOCK_ENV_ACCESS_IN_NODE=false \
+    N8N_DIAGNOSTICS_ENABLED=false \
+    N8N_PERSONALIZATION_ENABLED=false \
+    N8N_VERSION_NOTIFICATIONS_ENABLED=false \
+    N8N_HIRING_BANNER_ENABLED=false \
+    N8N_PUBLIC_API_SWAGGERUI_DISABLED=true \
+    N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true \
+    GENERIC_TIMEZONE=Africa/Lagos \
+    TZ=Africa/Lagos \
+    EXECUTIONS_DATA_SAVE_ON_ERROR=all \
+    EXECUTIONS_DATA_SAVE_ON_SUCCESS=all \
+    EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true \
+    EXECUTIONS_DATA_PRUNE=true \
+    EXECUTIONS_DATA_MAX_AGE=168 \
+    N8N_PORT=5678 \
+    SUPERVISOR_PORT=5690
+EXPOSE 5678 5690
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+  CMD wget -q -O- http://127.0.0.1:5678/healthz || exit 1
+ENTRYPOINT ["tini", "--", "node", "/opt/eki/supervisor.mjs"]

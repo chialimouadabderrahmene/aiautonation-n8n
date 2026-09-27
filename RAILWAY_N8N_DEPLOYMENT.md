@@ -1,5 +1,8 @@
 # n8n on Railway — production deployment
 
+> **Superseded for normal operation.** Configuration is now entered in the AI Automation Control Center (Integrations + Settings) and delivered to n8n automatically; deployment is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and the admin workflow in [CLIENT_SETUP_CHECKLIST.md](CLIENT_SETUP_CHECKLIST.md). Do **not** edit n8n environment variables or n8n credentials by hand. This page remains as background/reference for the workflows' behaviour.
+
+
 Deploys the Eki automation on Railway with PostgreSQL. Version pin: **n8n 2.40.7** (the version the staging suite in `staging/` was run against). Upgrade deliberately: change the image tag, run `staging/` against it, then redeploy.
 
 ## 1. Project and database

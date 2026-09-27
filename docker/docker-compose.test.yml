@@ -1,0 +1,30 @@
+# LOCAL TEST OVERLAY — do not use for production.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.test.yml --env-file docker/.env up -d --build
+#
+# Adds tools/mock-providers (OpenAI/Runway/ElevenLabs/Telegram/Meta mocks
+# built on FFmpeg test media) and switches api + worker into the explicit
+# provider-override TEST MODE, so the whole video pipeline and approval flow
+# can run where real providers are unreachable. The Dashboard shows a red
+# TEST MODE banner while this is active. Nothing produced this way is
+# evidence that a real provider account works.
+services:
+  mock-providers:
+    image: eki-automation-worker
+    entrypoint: ["node", "/mock/server.mjs"]
+    environment:
+      MOCK_PUBLIC_URL: http://mock-providers:9100
+    ports:
+      - "9100:9100" # test inspection only (GET /__requests)
+    healthcheck:
+      disable: true
+    volumes:
+      - ../tools/mock-providers:/mock:ro
+  api:
+    environment:
+      ALLOW_PROVIDER_OVERRIDES: "true"
+      PROVIDER_API_OVERRIDES: '{"api.openai.com":"http://mock-providers:9100","api.groq.com":"http://mock-providers:9100","api.dev.runwayml.com":"http://mock-providers:9100","api.elevenlabs.io":"http://mock-providers:9100","api.telegram.org":"http://mock-providers:9100","graph.facebook.com":"http://mock-providers:9100","graph-video.facebook.com":"http://mock-providers:9100"}'
+  worker:
+    environment:
+      ALLOW_PROVIDER_OVERRIDES: "true"
+      PROVIDER_API_OVERRIDES: '{"api.openai.com":"http://mock-providers:9100","api.groq.com":"http://mock-providers:9100","api.dev.runwayml.com":"http://mock-providers:9100","api.elevenlabs.io":"http://mock-providers:9100","api.telegram.org":"http://mock-providers:9100","graph.facebook.com":"http://mock-providers:9100","graph-video.facebook.com":"http://mock-providers:9100"}'

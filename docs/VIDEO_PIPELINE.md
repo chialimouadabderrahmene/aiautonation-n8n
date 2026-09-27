@@ -1,100 +1,81 @@
-# Video generation pipeline
+# Video pipeline
 
-`Idea → Script → Storyboard → Voiceover → Visual generation → Assembly →
-Subtitles → Quality check → MP4 → Telegram approval → Publish`
+```
+Web (form) → API POST /api/video/projects ──(201 immediately)──► browser polls job
+               │ readiness gate (AI, Runway, ElevenLabs, worker FFmpeg, storage)
+               ▼
+            BullMQ "video-generation" (attempts from Settings, exponential backoff)
+               ▼
+            worker orchestrator (worker/src/pipeline/orchestrator.ts)
+  SCRIPT_GENERATING   OpenAI (or Groq) JSON-mode script, zod-validated; scenes 4–8 s
+  STORYBOARD_READY    scenes persisted (visual prompt, narration, caption, duration)
+  VOICE_GENERATING    ElevenLabs TTS per scene → storage, real duration measured (ffprobe)
+  VISUAL_GENERATING   Runway text_to_video per scene → poll task → download (URLs expire) → storage
+  ASSEMBLING          FFmpeg: normalize clips (size/fps/pix fmt), hold last frame while the
+                      narration finishes, concat, narration track, timed burned-in subtitles,
+                      optional looped music bed with fade, H.264/AAC MP4 +faststart
+  QUALITY_CHECK       file exists; MP4 container; H.264 at exact 1080×1920 / 1920×1080; AAC audio;
+                      duration matches timeline; full decode pass with no errors
+  READY               final.mp4 + subtitles.srt uploaded; signed URLs on demand
+               ▼
+            Telegram: multipart sendVideo to the team chat with ✅ APPROVE / ❌ REJECT
+               ▼ (button → API webhook, or the job page)
+  APPROVED → BullMQ "video-delivery" publish jobs → Instagram Reels / Facebook Page / X / LinkedIn
+  REJECTED → "Regenerate" (new job, revision note appended to the brief)
+```
 
-## Trigger
+## Providers
 
-`POST /api/video/projects` (Video Generator screen) — refuses with 409 if
-`evaluateRequirements(["openai|groq", "runway", "elevenlabs"])` isn't READY.
-On success it creates one `VideoProject` + one `VideoJob` (state `QUEUED`)
-and enqueues one BullMQ job (`video-generation` queue, `worker/src/index.ts`
-consumes it). The HTTP request returns immediately — generation happens
-entirely in `worker/`.
+- **Runway** (`pipeline/video.ts`): `POST /v1/text_to_video` with
+  `X-Runway-Version: 2024-11-06`. Models selectable in Integrations: `gen4.5`
+  (ratio `720:1280`/`1280:720`, integer 2–10 s), `veo3.1` / `veo3.1_fast`
+  (`1080:1920`/`1920:1080`, 4/6/8 s). Task polling `GET /v1/tasks/{id}`
+  (PENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLED), cancellation
+  `DELETE /v1/tasks/{id}`. Contract taken from `@runwayml/sdk`.
+- **ElevenLabs** (`pipeline/voice.ts`): `POST /v1/text-to-speech/{voice}`
+  (`mp3_44100_128`, model from Integrations, default `eleven_multilingual_v2`).
+  Errors mapped: 401 key, 403 permission/plan, 404 voice, 422 request, 429 quota
+  (retried), 5xx (retried), timeouts (retried).
+- **Script**: OpenAI preferred, Groq fallback; only CONNECTED providers used.
 
-## Stages (`worker/src/index.ts` orchestrates; each stage is its own file)
+## Reliability
 
-1. **`SCRIPT_GENERATING`** (`pipeline/script.ts`) — calls whichever of
-   OpenAI/Groq is connected, `response_format: json_object`, validated with
-   zod (`scriptSchema`) before anything downstream touches it. Produces a
-   hook, 3–8 scenes (visual prompt + voiceover text + subtitle text +
-   duration), a caption, and hashtags.
-2. **`STORYBOARD_READY`** — the validated script is persisted; `VideoScene`
-   rows are created (one per scene, `status: PENDING`).
-3. **`VOICE_GENERATING`** (`pipeline/voice.ts`) — ElevenLabs
-   text-to-speech over the full concatenated narration, saved as one
-   `VideoAsset` (`type: VOICEOVER`).
-4. **`VISUAL_GENERATING`** (`pipeline/video.ts`) — one Runway job per scene,
-   sequential (not parallel — no per-provider rate-limit handling exists yet
-   for concurrent generation), polled to completion, each result downloaded
-   into local storage and recorded as a `VideoAsset` (`type: SCENE`). A
-   single scene failure fails the whole job (no partial video is produced or
-   presented as done).
-5. **`ASSEMBLING`** (`pipeline/assemble.ts`) — `ffmpeg` concatenates the
-   scene clips, mixes in the voiceover, and (if `subtitles` is on) burns in
-   an `.srt` built from each scene's subtitle text and duration
-   (`buildSrt`). Shells out to the real `ffmpeg` binary — no video-editing
-   library dependency.
-6. **`QUALITY_CHECK`** (`pipeline/qa.ts`) — real `ffprobe` on the actual
-   output file: file exists and is non-empty, has a video stream, has an
-   audio stream, duration is at least ~70% of the requested duration. A
-   failing check fails the job — nothing is marked `READY` on a rubber stamp.
-7. **`READY`** — final MP4 saved as a `VideoAsset` (`type: FINAL`),
-   `VideoJob.finalVideoUrl` set.
+- Retries: transient errors (timeouts, 429, 5xx, Runway internal failures) are
+  retried inside the adapter (3× backoff) and at job level (`videoMaxAttempts`,
+  default 2, max 5). Non-retryable errors (bad key, moderation, QA failure) stop
+  at once. No infinite retries.
+- Resume: completed script, per-scene voice, and per-scene clips are reused on
+  retry; a scene whose Runway task was in progress when the worker restarted is
+  resumed by polling the same task.
+- Cancel: marks the job CANCELLED, removes it from the queue if waiting, and the
+  worker cancels the running Runway task at its next poll.
+- Each attempt is an `AutomationExecution` row (stage, error, retry count);
+  final failures are audited and sent to the Telegram team chat.
+- Temp files: per-job temp dir always removed; stale ones (>2 h) removed at
+  worker start.
 
-Any stage can fail into `FAILED` with `errorStage` + `error` recorded (never
-silently swallowed), and every attempt is logged as an `AutomationExecution`
-(`source: VIDEO_WORKER`) for the Executions/Reports screens.
+## Storage layout (bucket)
 
-## Cancellation
+```
+jobs/<jobId>/voice/scene-<n>.mp3
+jobs/<jobId>/scenes/scene-<n>.mp4
+jobs/<jobId>/final.mp4
+jobs/<jobId>/subtitles.srt
+media/music/<id>.<ext>
+```
+Private bucket; the UI receives 1-hour presigned URLs; Instagram/Facebook get a
+1-hour URL to fetch the file; Telegram receives the bytes (files over Telegram's
+50 MB bot limit are sent as a 24-hour link instead).
 
-The job state is checked between stages (`isCancelled`) — setting a job to
-`CANCELLED` via `POST /api/video/jobs/:id/cancel` stops the worker from
-progressing it further, though a stage already in flight (e.g. a Runway call
-already sent) is not aborted mid-call in this pass.
+## Verification
 
-## Retry
-
-`POST /api/video/jobs/:id/retry` only accepts a `FAILED` job and re-runs the
-**entire** pipeline from `QUEUED` (increments `retryCount`). Per-stage retry
-(e.g. "just regenerate this one scene") is not implemented — the UI's
-storyboard tab shows per-scene status/error for diagnosis, but the retry
-action is whole-job only in this pass.
-
-## Provider abstraction
-
-`VideoProvider` (`pipeline/video.ts`) and `VoiceProvider` (`pipeline/voice.ts`)
-are one-method-family interfaces; `RunwayVideoProvider` and
-`ElevenLabsVoiceProvider` are the only implementations. Adding a second video
-provider (Pika, Luma, ...) means implementing the interface once — the
-orchestrator in `index.ts` never references Runway by name outside
-`pipeline/video.ts`.
-
-**Runway status: not verified against a real account.** The request/response
-shapes (`POST /v1/text_to_video`, `GET /v1/tasks/:id`, `X-Runway-Version`
-header) follow Runway's publicly documented async-task pattern but have
-never round-tripped against a real API key — confirm against
-`https://docs.dev.runwayml.com` before production use, and update only
-`pipeline/video.ts` if the shape differs.
-
-## Storage
-
-Local disk only (`worker/src/lib/storage.ts`, `StorageProvider` interface).
-Does **not** survive a redeploy on most PaaS (Railway included, without an
-attached volume) — see `ARCHITECTURE.md` "Storage" and `DEPLOYMENT.md` step 5.
-
-## Known limitations (this pass)
-
-- **Background/custom music is not implemented.** `VideoProject.music`
-  accepts `"none" | "background" | <asset id>` in the schema, but the worker
-  always assembles with `musicPath: null` — passing an unresolved value like
-  `"background"` straight to ffmpeg would corrupt every assembly, so it was
-  deliberately left out rather than shipped broken. `assemble.ts`'s `amix`
-  path is written and ready for when a real music-asset library exists.
-- Parallel scene generation, per-stage retry, and image-to-video (vs.
-  text-to-video) are not implemented.
-- No FFmpeg execution has happened in this environment — `ffmpeg`/`ffprobe`
-  are not installed on the dev machine this was built on. The commands are
-  standard and the code is typechecked and reviewed, but "the actual ffmpeg
-  invocation runs correctly end-to-end" is **not tested** here — see the
-  final report's "Testing performed" section.
+- `node dist/tools/selftest.js` on the worker: real FFmpeg assembly of
+  mismatched synthetic clips + narration + music → QA → storage round-trip.
+  Local result: 1080×1920 H.264/AAC, 16.9 s, all 8 QA checks true.
+- `scripts/local-e2e-test-mode.mjs` (mock providers): full pipeline to READY,
+  Telegram upload with buttons, approval, publishing, reject/regenerate,
+  retry-resume (1 script call, N voice calls, N+1 Runway tasks after one
+  injected failure), cancellation — 15/15 passed.
+- **Real Runway + ElevenLabs + OpenAI generation: NOT TESTED** (provider hosts
+  blocked from the build sandbox, no accounts). See the report's "Real video
+  acceptance test" for the exact command to run once credentials exist.

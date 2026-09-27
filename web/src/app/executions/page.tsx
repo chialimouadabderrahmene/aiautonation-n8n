@@ -1,26 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
-import { Badge, Card, ErrorState, LoadingState, PageHeader, statusTone } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge, formatDateTime, inputClass } from "@/components/ui";
 import { api, APIError } from "@/lib/api";
 import { AutomationExecution } from "@/lib/types";
+import { usePolling } from "@/lib/usePolling";
 
-const STATUS_FILTERS = ["ALL", "SUCCESS", "FAILED", "RUNNING", "CANCELLED"] as const;
+const SOURCE_LABEL: Record<string, string> = { N8N: "n8n workflow", VIDEO_WORKER: "Video worker", CONTROL_CENTER: "Control Center" };
+
+function duration(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  return `${Math.floor(ms / 60_000)} m ${Math.round((ms % 60_000) / 1000)} s`;
+}
 
 export default function ExecutionsPage() {
-  const [executions, setExecutions] = useState<AutomationExecution[]>([]);
-  const [filter, setFilter] = useState<(typeof STATUS_FILTERS)[number]>("ALL");
+  const [items, setItems] = useState<AutomationExecution[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
+  const [source, setSource] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<AutomationExecution | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  async function load() {
-    setLoading(true);
-    setError("");
+  async function load(cursor?: string) {
     try {
-      const query = filter === "ALL" ? "" : `?status=${filter}`;
-      setExecutions(await api.get<AutomationExecution[]>(`/api/executions${query}`));
+      const q = new URLSearchParams({ limit: "50", ...(status ? { status } : {}), ...(source ? { source } : {}), ...(cursor ? { cursor } : {}) });
+      const r = await api.get<{ items: AutomationExecution[]; nextCursor: string | null }>(`/api/executions?${q.toString()}`);
+      setItems((prev) => (cursor ? [...prev, ...r.items] : r.items));
+      setNextCursor(r.nextCursor);
+      setError("");
     } catch (err) {
       setError(err instanceof APIError ? err.message : "Failed to load executions");
     } finally {
@@ -29,78 +40,94 @@ export default function ExecutionsPage() {
   }
 
   useEffect(() => {
+    setLoading(true);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [status, source]);
+  usePolling(() => load(), 15_000);
 
   return (
     <ControlCenterLayout>
-      <PageHeader title="Execution Logs" subtitle="Every n8n workflow run and video-worker job, in one timeline." />
-
-      <div className="mb-4 flex gap-2">
-        {STATUS_FILTERS.map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className={`rounded-full px-3 py-1 text-sm font-semibold ${filter === s ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600"}`}
-          >
-            {s}
-          </button>
-        ))}
+      <PageHeader title="Executions" subtitle="Every automation run — n8n workflows, video generation, Telegram sends and publishing — in one list." />
+      <div className="mb-4 flex flex-wrap gap-3">
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputClass} w-auto`}>
+          <option value="">All statuses</option>
+          <option value="RUNNING">Running</option>
+          <option value="SUCCESS">Success</option>
+          <option value="FAILED">Failed</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+        <select value={source} onChange={(e) => setSource(e.target.value)} className={`${inputClass} w-auto`}>
+          <option value="">All sources</option>
+          <option value="N8N">n8n workflows</option>
+          <option value="VIDEO_WORKER">Video worker</option>
+        </select>
       </div>
-
       {loading ? (
         <LoadingState />
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
-      ) : executions.length === 0 ? (
-        <Card>
-          <p className="text-sm text-slate-500">No executions recorded yet.</p>
-        </Card>
+        <ErrorState message={error} onRetry={() => load()} />
+      ) : items.length === 0 ? (
+        <EmptyState title="No executions yet" subtitle="Runs appear here as soon as an automation or video job starts." />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-400">
+        <Card className="overflow-x-auto p-0">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-400">
               <tr>
-                <th className="px-4 py-3">Timestamp</th>
-                <th className="px-4 py-3">Source</th>
-                <th className="px-4 py-3">Workflow</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Workflow / job</th>
+                <th className="px-4 py-3">Trigger</th>
+                <th className="px-4 py-3">Started</th>
                 <th className="px-4 py-3">Duration</th>
-                <th className="px-4 py-3">Provider</th>
+                <th className="px-4 py-3">Retries</th>
+                <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
             <tbody>
-              {executions.map((e) => (
-                <tr key={e.id} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => setSelected(e)}>
-                  <td className="px-4 py-3 text-slate-500">{new Date(e.startedAt).toLocaleString()}</td>
-                  <td className="px-4 py-3">{e.source.replace("_", " ")}</td>
-                  <td className="px-4 py-3">{e.workflowConfig?.name ?? e.trigger ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge tone={statusTone(e.status)}>{e.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500">{e.durationMs ? `${(e.durationMs / 1000).toFixed(1)}s` : "—"}</td>
-                  <td className="px-4 py-3 text-slate-500">{e.provider ?? "—"}</td>
-                </tr>
+              {items.map((e) => (
+                <Fragment key={e.id}>
+                  <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-800">{e.workflowConfig?.name ?? (e.relatedEntityType === "VideoJob" ? "Video job" : e.relatedEntityId ?? "—")}</p>
+                      <p className="text-xs text-slate-400">
+                        {SOURCE_LABEL[e.source]}
+                        {e.provider ? ` · ${e.provider}` : ""}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{e.trigger ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDateTime(e.startedAt)}</td>
+                    <td className="px-4 py-3 text-slate-600">{duration(e.durationMs)}</td>
+                    <td className="px-4 py-3 text-slate-600">{e.retryCount}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={e.status} />
+                    </td>
+                  </tr>
+                  {expanded === e.id ? (
+                    <tr className="bg-slate-50">
+                      <td colSpan={6} className="px-4 py-3 text-xs text-slate-600">
+                        <p>
+                          Finished: {formatDateTime(e.finishedAt)} · External id: {e.externalId ?? "—"} · Related: {e.relatedEntityType ?? "—"} {e.relatedEntityId ?? ""}
+                          {e.mode ? ` · Stage/mode: ${e.mode}` : ""}
+                        </p>
+                        {e.error ? <p className="mt-1 text-red-700">Error: {e.error}</p> : null}
+                        {e.relatedEntityType === "VideoJob" && e.relatedEntityId ? (
+                          <a href={`/video/${e.relatedEntityId}`} className="mt-1 inline-block font-semibold text-brand-600 underline">
+                            Open video
+                          </a>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
-
-      {selected ? (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/30 p-4" onClick={() => setSelected(null)}>
-          <Card className="max-w-lg" >
-            <div onClick={(e) => e.stopPropagation()}>
-              <p className="font-bold">{selected.workflowConfig?.name ?? selected.trigger ?? selected.source}</p>
-              <p className="mt-1 text-xs text-slate-400">{selected.id}</p>
-              <p className="mt-3 text-sm">Status: <Badge tone={statusTone(selected.status)}>{selected.status}</Badge></p>
-              <p className="mt-1 text-sm text-slate-600">Started: {new Date(selected.startedAt).toLocaleString()}</p>
-              {selected.finishedAt ? <p className="text-sm text-slate-600">Finished: {new Date(selected.finishedAt).toLocaleString()}</p> : null}
-              <p className="text-sm text-slate-600">Retries: {selected.retryCount}</p>
-              {selected.error ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{selected.error}</p> : null}
-            </div>
-          </Card>
+      {nextCursor ? (
+        <div className="mt-4">
+          <Button variant="secondary" onClick={() => void load(nextCursor)}>
+            Load more
+          </Button>
         </div>
       ) : null}
     </ControlCenterLayout>

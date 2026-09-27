@@ -1,52 +1,32 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
-import { prisma } from "../lib/prisma";
 import { recomputeAllReadiness } from "../modules/workflows/readiness";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
+import { SETTINGS, getAllSettings, getSettingDefinition, setSetting, validateSetting } from "../modules/settings/schema";
 
 export const settingsRouter = Router();
 
-/** Known setting keys. Boolean ones feed the readiness engine (see
- * modules/workflows/manifest.ts, "setting:<key>") — they exist because some
- * requirements (Meta template approval, a real feedback form URL) cannot be
- * verified by an API call, only confirmed by a human. Everything else here
- * is a Video Generator default. */
-const DEFAULTS: Record<string, unknown> = {
-  whatsappTemplatesApproved: false,
-  autopilotSocialPostingEnabled: false,
-  feedbackFormConfigured: false,
-  defaultAiProvider: "groq",
-  defaultVideoProvider: "runway",
-  defaultVoiceProvider: "elevenlabs",
-  defaultLanguage: "en",
-  defaultTone: "Professional",
-  defaultDurationSec: 30,
-  defaultAspectRatio: "9:16",
-  maxRetries: 2,
-};
-
+/** Schema (for rendering) + current values. Settings with `n8nEnv` reach n8n
+ * automatically via the supervisor — no environment editing. */
 settingsRouter.get("/", async (_req, res) => {
-  const rows = await prisma.setting.findMany();
-  const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  res.json({ ...DEFAULTS, ...byKey });
+  res.json({ schema: SETTINGS, values: await getAllSettings() });
 });
 
-const setSchema = z.object({ value: z.unknown() });
+const setSchema = z.object({ value: z.union([z.string(), z.number(), z.boolean()]) });
 
 settingsRouter.put("/:key", async (req: AuthedRequest, res) => {
-  const key = req.params.key as string;
-  if (!(key in DEFAULTS)) return res.status(404).json({ message: "Unknown setting" });
+  const key = String(req.params.key);
+  const def = getSettingDefinition(key);
+  if (!def) return res.status(404).json({ message: "Unknown setting" });
   const parsed = setSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid body" });
+  const value = typeof parsed.data.value === "string" ? parsed.data.value.trim() : parsed.data.value;
+  const problem = validateSetting(def, value);
+  if (problem) return res.status(400).json({ message: `${def.label}: ${problem}` });
 
-  await prisma.setting.upsert({
-    where: { key },
-    update: { value: parsed.data.value as Prisma.InputJsonValue },
-    create: { key, value: parsed.data.value as Prisma.InputJsonValue },
-  });
+  await setSetting(key, value);
   await recomputeAllReadiness();
-  await recordAudit(req.admin?.email ?? "unknown", "setting.updated", "Setting", key, { value: parsed.data.value });
-  res.json({ ok: true });
+  await recordAudit(req.admin?.email ?? "unknown", "setting.updated", "Setting", key, { value });
+  res.json({ ok: true, appliesToN8n: Boolean(def.n8nEnv) });
 });

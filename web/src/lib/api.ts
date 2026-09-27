@@ -5,7 +5,8 @@
  * existing Eki admin panel does; it authenticates ONLY against
  * eki-automation-api, never against ekiapp-backend-main.
  */
-const API_BASE_URL = process.env.NEXT_PUBLIC_AUTOMATION_API_URL || "http://localhost:4100";
+// Same-origin: /api/* is proxied by this app to the private API (src/app/api/[...path]/route.ts).
+const API_BASE_URL = "";
 const TOKEN_KEY = "eki_automation_token";
 
 export class APIError extends Error {
