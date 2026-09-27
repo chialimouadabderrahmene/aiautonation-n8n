@@ -1,0 +1,300 @@
+// Eki AI Automation Control Center — standalone database.
+//
+// This is a NEW, independent Postgres database for the "ai automation italy"
+// project only. It shares nothing with the Eki marketplace's Prisma schema,
+// its database, or its migrations. Nothing here is imported by, or imports
+// from, ekiapp-backend-main.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- Auth
+
+/// A small, fixed set of operators for this control center. Deliberately not
+/// the Eki admin system: this product is standalone (see README/ARCHITECTURE).
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  lastLoginAt  DateTime?
+}
+
+// ---------------------------------------------------------- Integrations
+
+enum IntegrationCategory {
+  AI
+  ORCHESTRATION
+  MESSAGING
+  EMAIL
+  SOCIAL
+  RESEARCH
+  MEDIA
+}
+
+enum IntegrationStatus {
+  NOT_CONFIGURED
+  CONFIGURED
+  TEST_FAILED
+  CONNECTED
+  ACTION_REQUIRED
+}
+
+/// One row per provider (OpenAI, Runway, Telegram, n8n, ...). Never stores a
+/// secret value itself — see EncryptedCredential. `status` is always derived
+/// from real test results, never set optimistically on save.
+model Integration {
+  id              String              @id @default(cuid())
+  provider        String              @unique
+  category        IntegrationCategory
+  status          IntegrationStatus   @default(NOT_CONFIGURED)
+  config          Json                @default("{}")
+  lastTestedAt    DateTime?
+  lastTestOk      Boolean?
+  lastTestMessage String?
+  lastTestLatencyMs Int?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  credentials EncryptedCredential[]
+
+  @@index([category])
+}
+
+/// Each secret FIELD of a provider (e.g. OpenAI has one field "apiKey";
+/// WhatsApp has several) is its own row, AES-256-GCM encrypted with a key
+/// derived from AUTOMATION_SECRET_KEY (never committed, never logged).
+/// `maskedPreview` (e.g. "sk-...ab12") is the only representation ever
+/// returned by the API — the plaintext leaves the encryption module exactly
+/// once, at the moment a test-connection call needs it.
+model EncryptedCredential {
+  id            String      @id @default(cuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  fieldName     String
+  ciphertext    String
+  iv            String
+  authTag       String
+  maskedPreview String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([integrationId, fieldName])
+}
+
+// -------------------------------------------------------------- Workflows
+
+enum WorkflowReadiness {
+  READY
+  BLOCKED
+  ACTION_REQUIRED
+}
+
+/// Mirrors one file in ../n8n-workflows/*.json. `requiredProviders` /
+/// `optionalProviders` drive the readiness engine; `n8nWorkflowId` is filled
+/// in once the workflow has actually been imported into a real n8n instance
+/// (scripts/import-n8n-workflows.js) — null means "not imported anywhere".
+model WorkflowConfig {
+  id                String            @id @default(cuid())
+  key               String            @unique // e.g. "01-ai-content-generation"
+  name              String
+  category          String
+  requiredProviders String[]
+  optionalProviders String[]
+  n8nWorkflowId     String?
+  enabled           Boolean           @default(false)
+  readiness         WorkflowReadiness @default(BLOCKED)
+  readinessDetail   Json              @default("[]")
+  lastExecutionAt   DateTime?
+  lastExecutionOk   Boolean?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  executions AutomationExecution[]
+}
+
+enum ExecutionSource {
+  N8N
+  VIDEO_WORKER
+  CONTROL_CENTER
+}
+
+enum ExecutionStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+/// A unified execution log across n8n workflow runs AND our own video-worker
+/// jobs, so Executions/Reports read from one table regardless of source.
+model AutomationExecution {
+  id               String           @id @default(cuid())
+  source           ExecutionSource
+  workflowConfigId String?
+  workflowConfig   WorkflowConfig?  @relation(fields: [workflowConfigId], references: [id])
+  externalId       String? // n8n execution id, or video job id
+  trigger          String?
+  provider         String?
+  status           ExecutionStatus  @default(RUNNING)
+  startedAt        DateTime         @default(now())
+  finishedAt       DateTime?
+  durationMs       Int?
+  relatedEntityType String?
+  relatedEntityId   String?
+  error            String?
+  retryCount       Int              @default(0)
+
+  @@index([source, status])
+  @@index([startedAt])
+}
+
+// ------------------------------------------------------------ Video studio
+
+enum VideoJobState {
+  QUEUED
+  SCRIPT_GENERATING
+  STORYBOARD_READY
+  VOICE_GENERATING
+  VISUAL_GENERATING
+  ASSEMBLING
+  QUALITY_CHECK
+  READY
+  FAILED
+  CANCELLED
+}
+
+enum VideoAssetType {
+  VOICEOVER
+  SCENE
+  SUBTITLES
+  MUSIC
+  FINAL
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model VideoProject {
+  id            String   @id @default(cuid())
+  name          String
+  contentType   String // Instagram Reel, TikTok, ...
+  topic         String
+  prompt        String
+  audience      String?
+  language      String   @default("en")
+  tone          String   @default("Professional")
+  durationSec   Int      @default(30)
+  aspectRatio   String   @default("9:16")
+  visualStyle   String   @default("Realistic")
+  voicePreset   String? // ElevenLabs voice id, or "male"/"female" hint
+  music         String   @default("none") // none | background | <asset id>
+  subtitles     Boolean  @default(true)
+  brand         String   @default("Eki")
+  cta           String?
+  testMode      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  jobs VideoJob[]
+}
+
+model VideoJob {
+  id            String        @id @default(cuid())
+  projectId     String
+  project       VideoProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  state         VideoJobState @default(QUEUED)
+  script        Json?
+  storyboard    Json?
+  caption       String?
+  hashtags      String[]      @default([])
+  finalVideoUrl String?
+  error         String?
+  errorStage    String?
+  retryCount    Int           @default(0)
+  costMetadata  Json?
+  createdAt     DateTime      @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  scenes   VideoScene[]
+  assets   VideoAsset[]
+  approval Approval?
+}
+
+model VideoScene {
+  id             String   @id @default(cuid())
+  jobId          String
+  job            VideoJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  index          Int
+  visualPrompt   String
+  voiceoverText  String?
+  subtitleText   String?
+  durationSec    Int      @default(5)
+  provider       String   @default("runway")
+  providerJobId  String?
+  status         String   @default("PENDING") // PENDING | GENERATING | READY | FAILED
+  sceneVideoUrl  String?
+  error          String?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@unique([jobId, index])
+}
+
+model VideoAsset {
+  id            String         @id @default(cuid())
+  jobId         String
+  job           VideoJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type          VideoAssetType
+  provider      String?
+  providerJobId String?
+  url           String
+  sizeBytes     Int?
+  durationSec   Float?
+  createdAt     DateTime       @default(now())
+}
+
+model Approval {
+  id                String         @id @default(cuid())
+  videoJobId        String         @unique
+  videoJob          VideoJob       @relation(fields: [videoJobId], references: [id], onDelete: Cascade)
+  channel           String         @default("TELEGRAM")
+  status            ApprovalStatus @default(PENDING)
+  telegramChatId    String?
+  telegramMessageId String?
+  note              String?
+  decidedBy         String?
+  decidedAt         DateTime?
+  createdAt         DateTime       @default(now())
+}
+
+// ------------------------------------------------------------------ Misc
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
