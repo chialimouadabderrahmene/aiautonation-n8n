@@ -37,7 +37,7 @@ Details: `docs/ARCHITECTURE.md`.
 ## 2. Railway deployment
 
 - `railway/{api,worker,web,n8n}.json` — Dockerfile builds, healthchecks, restart policy, watch paths.
-- `scripts/railway-setup.sh` — creates Postgres, Redis, 4 services, public domains (web + n8n only), n8n volume, every variable (private-domain references, shared secrets).
+- `scripts/railway-setup.sh` → `scripts/railway-deploy.mjs` — idempotent Railway CLI v5 automation: Postgres, Redis, Bucket, 4 services, config-as-code, public domains (web + n8n only), n8n volume, every variable (secrets via stdin, never printed or rotated), ordered deploys that stop with logs on failure, then live verification (health, `n8n-verify` against n8n's API, FFmpeg self-test over `railway ssh`, security checks, smoke test).
 - `docs/DEPLOYMENT.md` — automated and manual paths, variable-by-variable.
 - Private networking: api/worker/Postgres/Redis have no public domain; the API's service-to-service endpoints listen on a separate internal port; Redis clients resolve IPv6 (`family: 0`); n8n and the supervisor listen on `::` by default.
 
@@ -146,7 +146,7 @@ Legend — **TESTED**: exercised for real on the local production-identical stac
 
 | COMPONENT | STATUS | EVIDENCE | CLIENT ACTION |
 |---|---|---|---|
-| Railway deployment (6 services) | BLOCKED | no Railway access in this session; `railway/*.json`, `scripts/railway-setup.sh` | Give Railway access or run `scripts/railway-setup.sh` once |
+| Railway deployment (6 services) | BLOCKED | no Railway CLI/token and Railway hosts blocked in the build session; `scripts/railway-deploy.mjs` tested against a CLI v5.62.1 mock + the real local stack | Run `ADMIN_EMAIL=… BUCKET_REGION=… bash scripts/railway-setup.sh` where the CLI is logged in |
 | Docker images api/worker/web/n8n | TESTED | built and run; healthchecks healthy | — |
 | Startup migrations + table verification | TESTED | fresh DB → 2 migrations applied on first boot, 16 tables verified before listening | — |
 | Web Control Center | TESTED | Playwright run, 0 console errors, all pages | — |

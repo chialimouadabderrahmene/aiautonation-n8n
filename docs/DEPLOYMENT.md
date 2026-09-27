@@ -42,34 +42,51 @@ n8n (n8n creates its schema itself — verified).
 
 ## Railway — automated path
 
-Prerequisites: Railway CLI v4+ (`railway login`), this repo pushed to GitHub,
-the GitHub app connected to Railway.
+Prerequisites: Railway CLI **v5+** logged in (`railway login`), Node.js 20+,
+this repository pushed to GitHub with Railway's GitHub app allowed to read it.
 
 ```bash
-GITHUB_REPO=owner/repo ADMIN_EMAIL=you@company.com bash scripts/railway-setup.sh
+railway link                     # the target project (or add --init "Eki AI Automation" below)
+ADMIN_EMAIL=you@company.com BUCKET_REGION=ams bash scripts/railway-setup.sh
 ```
 
-It creates Postgres, Redis, the four services, public domains for web and n8n,
-the n8n volume, all variables (secrets generated with `openssl` locally, shared
-ones as Railway shared variables, service addresses as `${{service.RAILWAY_PRIVATE_DOMAIN}}`
-references) and prints the admin + n8n-owner passwords **once**.
+(`scripts/railway-setup.sh` runs `node scripts/railway-deploy.mjs`; options in
+that file's header: `BUCKET_NAME`, `GITHUB_REPO`, `GITHUB_BRANCH`, `--init`,
+`--verify-only`, `--no-smoke`. `BUCKET_REGION`: `sjc`, `iad`, `ams` or `sin`.)
 
-Then, in the dashboard (not available through the CLI):
+What it does — everything looked up first, nothing duplicated, safe to re-run:
 
-1. **New → Bucket.** On the `api` **and** `worker` services set
-   `STORAGE_DRIVER=s3`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
-   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` from the bucket's credentials
-   (reference variables). Cloudflare R2 or AWS S3 work identically. If the
-   endpoint the services use differs from the one browsers/Instagram can reach,
-   also set `S3_PUBLIC_ENDPOINT` on the api and worker.
-2. For each service, **Settings → Config-as-code** → `/railway/<service>.json`
-   (healthchecks, restart policy, watch paths).
-3. Deploy.
+1. Postgres and Redis (`railway add --database`), their public TCP proxies
+   removed; a Bucket (`railway bucket create`) unless one exists.
+2. Empty services `api`, `worker`, `n8n`, `web`; config-as-code path
+   `/railway/<service>.json` on each (`railway environment edit --service-config`).
+3. Public domains for **web** (port 3200) and **n8n** (port 5678) only; volume
+   on n8n at `/home/node/.n8n`.
+4. Secrets `AUTOMATION_SECRET_KEY`, `JWT_SECRET`, `INTERNAL_API_TOKEN`,
+   `N8N_ENCRYPTION_KEY` generated locally and sent via `railway variable set --stdin`
+   (never on a command line, never printed). Existing values are reused, never
+   rotated. Admin and n8n-owner passwords go to
+   `~/.eki-control-center/<project>-credentials.txt` (mode 600).
+5. All variables below, S3 values read from `railway bucket credentials`.
+6. Deploys api → worker → n8n → web from GitHub, waiting for each to reach
+   SUCCESS; on a failed build/deploy it prints that deployment's build and
+   deploy logs and stops.
+7. Verifies the live deployment: admin login, all 6 components ONLINE, 22/22
+   workflows in n8n and 0 active (read directly from n8n's API by
+   `railway ssh --service api node dist/tools/n8n-verify.js`), n8n rejects
+   unauthenticated API calls, FFmpeg render + storage round-trip on the worker
+   (`railway ssh --service worker node dist/tools/selftest.js`), no secrets in
+   the frontend bundle or `/api/integrations`, private services unreachable,
+   then `scripts/smoke-test.mjs` with `SMOKE_EXPECT_ALL_INACTIVE=1`.
+   A report without secrets is written to `~/.eki-control-center/`.
 
-> `scripts/railway-setup.sh` was written against the Railway CLI's documented
-> commands but could **not** be executed from the build sandbox (no Railway
-> account/token there). Review it before running; the manual path below is
-> equivalent.
+Once the admin has changed the password in Settings, re-run verification with
+`ADMIN_PASSWORD=<current> bash scripts/railway-setup.sh --verify-only`.
+
+> Tested against a mock of the Railway CLI v5.62.1 (JSON shapes taken from its
+> source) with verification running against the real local stack: first run,
+> idempotent re-run (zero changes), and a forced failed deploy. It has not yet
+> been run against a real Railway account.
 
 ## Railway — manual path (dashboard)
 
@@ -122,6 +139,8 @@ API_INTERNAL_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4100
 ```
 PORT=5678
 RAILWAY_RUN_UID=0                     # lets n8n write the mounted volume
+N8N_USER_FOLDER=/home/node            # REQUIRED with RAILWAY_RUN_UID=0: as root n8n would
+                                      # otherwise use /root/.n8n and the volume stays empty
 DB_TYPE=postgresdb
 DB_POSTGRESDB_HOST=${{Postgres.PGHOST}}
 DB_POSTGRESDB_PORT=${{Postgres.PGPORT}}
