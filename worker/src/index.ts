@@ -1,4 +1,5 @@
 import "dotenv/config";
+import http from "node:http";
 import { Worker, Job } from "bullmq";
 import { prisma } from "./lib/prisma";
 import { getRedisConnection, VIDEO_QUEUE_NAME, VideoGenerationJobPayload } from "./lib/queue";
@@ -159,6 +160,14 @@ async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): Promise
   }
 }
 
+// Retry policy: deliberately NOT set to BullMQ's automatic attempts>1 here (or
+// at the producer, api/src/routes/video.ts — see its comment). This pipeline
+// has no per-stage checkpointing: an automatic retry would silently re-run
+// EVERY stage from Script generation again, including ones that already
+// succeeded and already spent real OpenAI/Runway/ElevenLabs credit. A human
+// re-running a known-failed job (POST /api/video/jobs/:id/retry, tracked via
+// VideoJob.retryCount) is the safe version of "retry handling" for a pipeline
+// that bills per call; see docs/VIDEO_PIPELINE.md "Known limitations".
 const worker = new Worker<VideoGenerationJobPayload>(VIDEO_QUEUE_NAME, processVideoJob, {
   connection: getRedisConnection(),
   concurrency: Number(process.env.VIDEO_WORKER_CONCURRENCY ?? 1),
@@ -172,6 +181,68 @@ worker.on("failed", (job, err) => {
   // eslint-disable-next-line no-console
   console.error(`[worker] video job ${job?.data.videoJobId} failed:`, err.message);
 });
+worker.on("error", (err) => {
+  // BullMQ connection-level errors (e.g. Redis dropped) - do not crash the
+  // process; the Worker retries its own connection internally.
+  // eslint-disable-next-line no-console
+  console.error("[worker] connection error:", err.message);
+});
+
+// Real startup/liveness health check, not a placeholder: reports DOWN unless
+// this process's actual Redis connection and Prisma/Postgres connection are
+// both reachable right now. Deploy platforms (Railway, k8s, etc.) that expect
+// an HTTP health check for a non-HTTP background worker should point here.
+const HEALTH_PORT = Number(process.env.WORKER_HEALTH_PORT ?? 4101);
+const healthServer = http.createServer((req, res) => {
+  if (req.url !== "/health") {
+    res.writeHead(404).end();
+    return;
+  }
+  Promise.all([
+    getRedisConnection().ping().then(() => true).catch(() => false),
+    prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
+  ]).then(([redisOk, dbOk]) => {
+    const ok = redisOk && dbOk && !isShuttingDown;
+    res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(
+      JSON.stringify({ ok, redis: redisOk, database: dbOk, shuttingDown: isShuttingDown }),
+    );
+  });
+});
+healthServer.listen(HEALTH_PORT, () => {
+  // eslint-disable-next-line no-console
+  console.log(`[eki-automation-worker] health check listening on :${HEALTH_PORT}/health`);
+});
+
+// Graceful shutdown: stop accepting new jobs and let any in-flight job finish
+// (worker.close() waits for active jobs) before the process exits, so a
+// deploy/restart never kills a video job mid-ffmpeg-assembly.
+let isShuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  // eslint-disable-next-line no-console
+  console.log(`[eki-automation-worker] ${signal} received, finishing in-flight jobs before exit...`);
+  const timeout = setTimeout(() => {
+    // eslint-disable-next-line no-console
+    console.error("[eki-automation-worker] graceful shutdown timed out after 30s, forcing exit");
+    process.exit(1);
+  }, 30_000);
+  timeout.unref();
+  try {
+    await worker.close();
+    await prisma.$disconnect();
+    healthServer.close();
+    // eslint-disable-next-line no-console
+    console.log("[eki-automation-worker] shut down cleanly");
+    process.exit(0);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[eki-automation-worker] error during shutdown:", err);
+    process.exit(1);
+  }
+}
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
 
 // eslint-disable-next-line no-console
-console.log("[eki-automation-worker] listening for video generation jobs");
+console.log(`[eki-automation-worker] listening for video generation jobs (concurrency=${Number(process.env.VIDEO_WORKER_CONCURRENCY ?? 1)})`);

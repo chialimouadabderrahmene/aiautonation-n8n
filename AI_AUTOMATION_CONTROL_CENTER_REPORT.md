@@ -1,5 +1,15 @@
 # Eki AI Automation Control Center — build report
 
+> **Update (this pass):** the sections below are the original build report,
+> unchanged. This pass picked up from that report's own "remaining actions"
+> and closed out several of the biggest ones with real evidence — most
+> notably, **the n8n import that was previously untested now imported all
+> 22 workflows into a real n8n 2.40.7 instance**, and **three real,
+> deploy-blocking bugs were found and fixed** by actually building and
+> running the Docker images (not by inspection). Full detail, the final
+> status table, and exact next steps: **§26 "This pass's additions" below,
+> read that first.**
+
 Scope: everything below lives inside `ai automation italy/` only. No file
 outside this directory was created, modified, or deleted by this project —
 verified with `git status` on `ekiapp-backend-main` (clean) and

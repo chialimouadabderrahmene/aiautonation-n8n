@@ -14,7 +14,11 @@
 // both files identically.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Keep identical to api/prisma/schema.prisma's generator block - see the
+  // comment there for why (confirmed by actually crashing a real Alpine
+  // container on its first Prisma query without this).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

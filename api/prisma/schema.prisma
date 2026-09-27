@@ -6,7 +6,16 @@
 // from, ekiapp-backend-main.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" = whatever this dev machine is (Windows here) so local dev keeps
+  // working; "linux-musl-openssl-3.0.x" = the api/worker Docker runtime
+  // (node:22-alpine, confirmed Alpine 3.24 / OpenSSL 3.5 - no OpenSSL 1.1
+  // package exists for it). Without this, `prisma generate` produces an
+  // engine binary linked against libssl.so.1.1, which does not exist on this
+  // Alpine version at all - the query engine fails to load the moment the
+  // API/worker touches the database (confirmed: crashed a real container on
+  // its first query, "Error loading shared library libssl.so.1.1").
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

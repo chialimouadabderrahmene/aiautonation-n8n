@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import IORedis from "ioredis";
+import { prisma } from "./lib/prisma";
+import { n8nClient } from "./modules/workflows/n8nClient";
 import { authRouter } from "./routes/auth";
 import { integrationsRouter } from "./routes/integrations";
 import { workflowsRouter } from "./routes/workflows";
@@ -25,7 +28,47 @@ export function createApp() {
     }),
   );
 
+  // Liveness only — the process is up and answering HTTP. Deliberately does
+  // NOT touch the database/Redis, so a container platform never restarts a
+  // perfectly healthy API process just because Postgres had a blip (that's
+  // what /health/detailed and the Dashboard's own status cards are for).
   app.get("/health", (_req, res) => res.json({ ok: true, service: "eki-automation-api" }));
+
+  // Readiness/dependency check — real checks, not a static "ok". Mirrors the
+  // Eki backend's own GET /api/health/detailed convention (see
+  // FINAL_TECHNICAL_HANDOVER.md), applied here to this project's own,
+  // separate dependencies. Never reports ONLINE for something unreachable.
+  app.get("/health/detailed", async (_req, res) => {
+    const database = await prisma
+      .$queryRaw`SELECT 1`
+      .then(() => ({ status: "ONLINE" as const }))
+      .catch((err: unknown) => ({ status: "OFFLINE" as const, error: err instanceof Error ? err.message : String(err) }));
+
+    const redisUrl = process.env.REDIS_URL;
+    const redis = !redisUrl
+      ? { status: "NOT_CONFIGURED" as const }
+      : await (async () => {
+          const client = new IORedis(redisUrl, { maxRetriesPerRequest: 1, connectTimeout: 2000, lazyConnect: true });
+          try {
+            await client.connect();
+            await client.ping();
+            return { status: "ONLINE" as const };
+          } catch (err) {
+            return { status: "OFFLINE" as const, error: err instanceof Error ? err.message : String(err) };
+          } finally {
+            client.disconnect();
+          }
+        })();
+
+    const n8nIntegration = await prisma.integration.findUnique({ where: { provider: "n8n" } });
+    const n8n =
+      !n8nIntegration || n8nIntegration.status === "NOT_CONFIGURED"
+        ? { status: "NOT_CONFIGURED" as const }
+        : { status: (await n8nClient.isReachable()) ? ("ONLINE" as const) : ("OFFLINE" as const) };
+
+    const overallOk = database.status === "ONLINE" && redis.status !== "OFFLINE";
+    res.status(overallOk ? 200 : 503).json({ ok: overallOk, service: "eki-automation-api", database, redis, n8n });
+  });
 
   // Telegram calls this directly — a separate router (never the admin one),
   // gated by its own shared-secret check inside the route.

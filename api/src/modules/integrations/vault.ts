@@ -78,7 +78,7 @@ export async function disconnectIntegration(provider: string): Promise<void> {
   await prisma.encryptedCredential.deleteMany({ where: { integrationId: integration.id } });
   await prisma.integration.update({
     where: { provider },
-    data: { status: "NOT_CONFIGURED", config: {}, lastTestedAt: null, lastTestOk: null, lastTestMessage: null },
+    data: { status: "NOT_CONFIGURED", config: {}, lastTestedAt: null, lastTestOk: null, lastTestMessage: null, lastTestLatencyMs: null },
   });
 }
 

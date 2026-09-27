@@ -40,7 +40,13 @@ services:
       - automation_redis_data:/data
 
   n8n:
-    image: n8nio/n8n:1.62.1
+    # docker.n8n.io is n8n's own registry (mirrors Docker Hub). Use it instead of
+    # n8nio/n8n on Docker Hub: some networks/registries intermittently fail the
+    # Hub pull with "tls: bad record MAC" (verified in this environment - a
+    # transient/registry issue, not a code defect); docker.n8n.io pulls clean.
+    # 2.40.7 is pinned to match the version the 22 workflows were already
+    # validated against (see staging/, docs/staging-test-report.md).
+    image: docker.n8n.io/n8nio/n8n:2.40.7
     restart: unless-stopped
     ports:
       - "5679:5678"
@@ -48,12 +54,19 @@ services:
       N8N_HOST: localhost
       N8N_PORT: "5678"
       N8N_PROTOCOL: http
-      WEBHOOK_URL: http://localhost:5679/
+      N8N_WEBHOOK_URL: http://localhost:5679/
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY, e.g. openssl rand -hex 32}
       N8N_API_KEY_ENABLED: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       GENERIC_TIMEZONE: Africa/Lagos
+      TZ: Africa/Lagos
     volumes:
       - automation_n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz/readiness || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   api:
     build:

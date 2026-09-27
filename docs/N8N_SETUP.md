@@ -1,18 +1,35 @@
 # n8n setup
 
-There is **no n8n instance deployed anywhere** as of this pass — only the
-throwaway local Docker staging stack under `staging/` that was used to
-harden the 22 workflow files (see `docs/production-readiness-report.md`).
-This document is what actually needs to happen to get a real instance the
+There is **no n8n instance deployed anywhere** (no Railway service exists)
+as of this pass. There IS strong local evidence n8n itself works correctly
+in this exact 22-workflow configuration: the `staging/` stack (see
+`docs/staging-test-report.md`) ran a real n8n 2.40.7 instance through 137/137
+automated checks — import, webhook triggers, real Schedule Trigger firing,
+activation of all 22 workflows — in an earlier session. This document is
+what actually needs to happen to get a **Railway-hosted** instance the
 Control Center can manage.
+
+**Docker registry note (real, reproduced issue in this sandbox):**
+`docker pull n8nio/n8n:<tag>` from Docker Hub (`registry-1.docker.io`)
+intermittently failed here with `tls: bad record MAC` / `ERR_SSL_CIPHER_OPERATION_FAILED`
+— a network-layer TLS corruption issue in this sandbox, not an n8n or code
+defect (the same class of error also hit unrelated `npm ci`/`apk add` calls
+during this pass). `docker.n8n.io` (n8n's own registry, identical images)
+pulled cleanly on retry and was used for the real import test above.
+`docker/docker-compose.yml` pins `docker.n8n.io/n8nio/n8n:2.40.7` for this
+reason (also matches the version the 22 workflows were validated against in
+`staging/`). This has no bearing on Railway, which pulls images on its own
+infrastructure — this note is about local `docker compose up` only, and if
+you hit the same error locally, it's worth simply retrying.
 
 ## 1. Deploy n8n (Railway)
 
 Following `RAILWAY_N8N_DEPLOYMENT.md` (already in this repo, pre-dating this
 project):
 
-1. New Railway service from the `n8nio/n8n` image (pin a version, e.g.
-   `1.62.1` — the same one the staging hardening pass validated against).
+1. New Railway service from the `n8nio/n8n` image, pinned to `2.40.7` — the
+   exact version validated by `staging/` (137/137 checks; see
+   `docs/staging-test-report.md`).
 2. Add a Railway Postgres plugin for n8n's own database (separate from the
    Control Center's Postgres — n8n manages its own schema).
 3. Environment: `N8N_HOST`, `N8N_PROTOCOL=https`, `WEBHOOK_URL`,
@@ -50,11 +67,42 @@ enable/disable them — this step is optional; you can also do it once from
 the Automations screen after importing (a future pass could add a "sync from
 n8n" button; not built in this one).
 
-**Status: implemented, not yet run against a real n8n instance** — this
-sandbox could not pull the n8n Docker image (network failure, not a code
-issue) to verify the round trip. The request shape matches n8n's documented
-Public API (`POST /api/v1/workflows`, `X-N8N-API-KEY` header); confirm
-against your instance's `/api/v1/docs` before relying on it in production.
+**Status: TESTED — this exact script, run against a real, freshly-provisioned
+n8n 2.40.7 instance, imported all 22/22 workflows successfully, every one
+confirmed `active: false` afterward via a separate `GET /api/v1/workflows`
+call.** Full transcript:
+
+```
+Importing 22 workflows into http://localhost:5679 (all created INACTIVE)...
+  ✓ 00-global-error-handler -> n8n id iSL4rL1AAVVTvJwh
+  ✓ 01-ai-content-generation -> n8n id 2sQHfR4ADk4RndbO
+  ... (all 22)
+  ✓ 22-performance-analyst-agent -> n8n id D3ZM4KpxDGhmTOsZ
+22/22 imported.
+```
+
+The Control Center's own `n8n` integration was then pointed at this same
+instance and tested live: `{"ok":true,"message":"Connected","latencyMs":25}`,
+and the Dashboard (in a real browser) flipped from `n8n: NOT CONFIGURED` /
+`SYSTEM: BLOCKED` to **`n8n: CONNECTED` / `SYSTEM: PARTIALLY READY`** in
+real time. This is as close to a full production rehearsal as this pass
+could get without a paid Railway service: real n8n binary, real Public API,
+real Control Center, real UI — the only thing missing is the deployment
+target being Railway instead of local Docker.
+
+**How the test instance was bootstrapped** (useful if you want to repeat
+this locally): `docker run` the pinned image with
+`N8N_API_KEY_ENABLED=true`, then `POST /rest/owner/setup` (the same
+undocumented-but-stable endpoint n8n's own first-run UI calls) to create the
+owner account non-interactively, `POST /rest/login` for a session cookie, then
+`POST /rest/api-keys` with `{"label":...,"expiresAt":null,"scopes":[...]}` —
+note the scopes array is validated against a curated subset, not n8n's full
+RBAC scope list; `workflow:create`, `workflow:read`, `workflow:update`,
+`workflow:list` is confirmed sufficient for this script. None of this
+replaces the real, one-time manual owner setup you'll still do on your actual
+Railway instance (§2 below) — it's documented here only because it's exactly
+what let this pass prove the import script for real instead of leaving it
+untested.
 
 ## 5. Configure each workflow's own credentials, in n8n
 

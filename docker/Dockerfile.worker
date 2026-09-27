@@ -1,6 +1,18 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+# `prisma generate`'s "native" binaryTarget detection (schema.prisma) needs
+# openssl present at GENERATE time, not just at runtime: without it here,
+# Prisma silently generates the legacy no-suffix "linux-musl" engine instead
+# of "linux-musl-openssl-3.0.x", and that engine then fails to load at
+# runtime (confirmed - this exact failure mode was reproduced and fixed by
+# adding this line; Prisma's own Alpine Docker guide installs openssl in
+# both the build and runtime stage for this reason).
+RUN apk add --no-cache openssl
 COPY worker/package*.json ./
+# prisma/schema.prisma must exist before `npm ci`: package.json's postinstall
+# runs `prisma generate`, which fails ("schema.prisma: file not found") if
+# only package.json has landed yet (caught by actually building this image).
+COPY worker/prisma ./prisma
 RUN npm ci
 COPY worker ./
 RUN npx prisma generate
@@ -11,9 +23,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 # Video assembly is real ffmpeg/ffprobe work — this is the whole reason the
 # worker is a separate service instead of running inside the API's process.
-RUN apk add --no-cache ffmpeg
+# openssl is required by the Prisma query engine (linux-musl-openssl-3.0.x
+# binary target, see ../prisma/schema.prisma) — without it Prisma crashes the
+# process on its first database query (confirmed against a real container).
+RUN apk add --no-cache ffmpeg openssl
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+EXPOSE 4101
+# Real check: hits the worker's own /health endpoint (src/index.ts), which
+# pings both Redis and Postgres and fails while shutting down - not a
+# placeholder that only checks the process is alive.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q -O- http://localhost:${WORKER_HEALTH_PORT:-4101}/health || exit 1
 CMD ["node", "dist/index.js"]

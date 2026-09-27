@@ -1,0 +1,16 @@
+# Never send these into a Docker build context. Their absence here was a real
+# bug: without it, `COPY api ./` / `COPY worker ./` / `COPY web ./` copied this
+# HOST machine's node_modules (Windows-native Prisma engine, host dist/ build
+# output) into the Linux build stage, silently overwriting the container's own
+# freshly-`npm ci`'d node_modules — confirmed to cause exactly the kind of
+# platform-mismatch failure the multi-stage build is supposed to prevent.
+**/node_modules
+**/.next
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/.git
+**/*.log
+staging/data
+staging/mock/certs

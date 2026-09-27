@@ -1,6 +1,15 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+# See docker/Dockerfile.worker's identical line for why: `prisma generate`
+# needs openssl present at GENERATE time (not just at runtime) for its
+# "native" binaryTarget detection to resolve to linux-musl-openssl-3.0.x
+# instead of silently falling back to the legacy engine that fails to load.
+RUN apk add --no-cache openssl
 COPY api/package*.json ./
+# prisma/schema.prisma must exist before `npm ci`: package.json's postinstall
+# runs `prisma generate`, which fails ("schema.prisma: file not found") if
+# only package.json has landed yet (caught by actually building this image).
+COPY api/prisma ./prisma
 RUN npm ci
 COPY api ./
 RUN npx prisma generate
@@ -9,9 +18,15 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# openssl is required by the Prisma query engine (linux-musl-openssl-3.0.x
+# binary target, see ../prisma/schema.prisma) — without it Prisma crashes the
+# process on its first database query (confirmed against a real container).
+RUN apk add --no-cache openssl
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 EXPOSE 4100
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q -O- http://localhost:${PORT:-4100}/health || exit 1
 CMD ["node", "dist/server.js"]

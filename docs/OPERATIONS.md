@@ -1,5 +1,53 @@
 # Operations
 
+## Real UI testing done this pass
+
+Earlier passes flagged the web UI as "implemented, not visually tested in a
+browser." This pass built `web`, ran it locally against a real running
+`api` (real Postgres + Redis), and drove it with an actual browser:
+
+- **Login** with the bootstrapped admin account — real JWT issued, real
+  redirect to Dashboard.
+- **Dashboard** — read real, live data (`0/13` integrations, `0/22`
+  automations, `SYSTEM: BLOCKED`, `n8n: NOT CONFIGURED`) matching the API
+  exactly. Later, after connecting a real n8n instance, re-checked and saw
+  it flip live to `n8n: CONNECTED` / `SYSTEM: PARTIALLY READY` — no page
+  reload needed beyond the dashboard's own polling.
+- **Integrations** — clicked "Configure" on OpenAI, typed a fake key into
+  the real password field, clicked "Save credentials" (status → `CONFIGURED`),
+  clicked "Test connection" (real call to `api.openai.com`, real 401,
+  status → `TEST FAILED — ✕ Unauthorized API key` with a live timestamp,
+  all through the UI, not the API directly).
+- **Automations** — confirmed the full 22-workflow readiness matrix renders
+  correctly, each with its own named blockers, matching the API.
+- **Content Studio, Video Generator, Approvals, Executions, Reports,
+  Settings** — all render correctly with real (empty) data, no crashes, no
+  stuck "Loading..." states, no console errors across the whole click-through.
+- **Video Generator readiness banner** specifically confirmed real, not
+  hardcoded: shows the exact missing providers (`openai or groq`, `runway`,
+  `elevenlabs`) matching `GET /api/video/readiness`.
+
+**A real, reproducible bug was found and fixed this way** (not by code
+inspection — by actually resizing the browser): `ControlCenterLayout.tsx`'s
+sidebar had no responsive breakpoint at all. At 375×812 (a phone), the fixed
+`w-64` sidebar left roughly half the viewport for content, clipping every
+page's headings and stat cards mid-word. Fixed: the sidebar is now an
+off-canvas drawer below the `md` breakpoint, with a hamburger toggle, a
+tap-outside-to-close backdrop, and auto-close on navigation; confirmed fixed
+by re-taking the same screenshot at the same width (clean layout, all text
+visible) and confirmed the drawer opens/closes correctly. Also checked at
+tablet width (768×1024) — sidebar returns to its normal static position,
+2-column integration card grid, no overlap.
+
+**Still not done:** clicking through with a *real* provider account (Runway,
+ElevenLabs, WhatsApp, etc. — all correctly show `NOT_CONFIGURED` since none
+were available), and a full mobile pass on every other screen beyond
+Dashboard (only Dashboard was screenshotted at 375px; Integrations was
+checked at tablet width only). The responsive *mechanism* (the layout
+component every page shares) is fixed and verified, which is the part most
+likely to have been broken per-page; a full per-page mobile screenshot pass
+is still worth doing before calling this "pixel-polished."
+
 ## Daily use
 
 1. **Dashboard** — check `System` and `Action required` first. Anything
