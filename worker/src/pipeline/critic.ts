@@ -11,8 +11,8 @@
  * Brand Brain — the admin may not have filled one in yet).
  */
 import { z } from "zod";
-import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../lib/http";
-import { chooseProvider } from "../lib/ai-provider";
+import { ProviderError } from "../lib/http";
+import { chooseProvider } from "../lib/providers";
 import { BrandContext } from "../lib/brand";
 
 export interface CriticResult<T> {
@@ -59,30 +59,7 @@ export async function reviewAgainstBrand<T>(content: T, brand: BrandContext, sch
   const userPrompt = [brand.promptBlock, "", `Content to review (${textFieldsHint}):`, JSON.stringify(content, null, 2)].filter(Boolean).join("\n");
 
   try {
-    const data = await withRetry(async () => {
-      const { res } = await timedFetch(
-        `${ai.baseUrl}/chat/completions`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${ai.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: ai.model,
-            response_format: { type: "json_object" },
-            temperature: 0.3,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
-          }),
-        },
-        60_000,
-      );
-      if (!res.ok) throw describeHttpFailure(ai.key === "openai" ? "OpenAI" : "Groq", res.status, await readErrorDetail(res));
-      return (await res.json()) as { choices: { message: { content: string } }[] };
-    }, { retries: 2 });
-
-    const raw = data.choices[0]?.message.content;
-    if (!raw) throw new ProviderError("Critic pass returned no content", null, true);
+    const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.3, timeoutMs: 60_000 });
     const parsed = criticResponseSchema.safeParse(JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")));
     if (!parsed.success) throw new ProviderError("Critic pass did not return valid JSON", null, true);
 

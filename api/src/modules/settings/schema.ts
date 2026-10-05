@@ -22,7 +22,7 @@ export interface SettingDefinition {
 }
 
 export const SETTINGS: SettingDefinition[] = [
-  { key: "aiProvider", label: "AI provider for the n8n workflows", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }], help: "The connected provider whose key and model every AI step in n8n uses." },
+  { key: "aiProvider", label: "AI provider (scripts, carousels, critic, n8n)", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }, { value: "anthropic", label: "Anthropic (Claude)" }], help: "The connected provider every generation call tries first — script/carousel writing, the brand critic, and every AI step in n8n. Falls back to the next connected provider if this one isn't." },
   { key: "launchDate", label: "Launch date (day 1 of the 30-day content calendar)", type: "date", group: "Business", default: "", n8nEnv: "LAUNCH_DATE" },
   { key: "appDownloadLink", label: "App download / public link", type: "url", group: "Business", default: "https://culinarytales.app", n8nEnv: "APP_DOWNLOAD_LINK" },
   { key: "appVendorLink", label: "Vendor sign-up link", type: "url", group: "Business", default: "https://culinarytales.app/sell", n8nEnv: "APP_VENDOR_LINK" },
