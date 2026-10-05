@@ -23,6 +23,10 @@
  *   --init "<name>"    create a new Railway project first
  *   --verify-only      skip provisioning/deploys, only run the verification
  *   --no-smoke         skip scripts/smoke-test.mjs
+ *   --check-cli        read-only: show which Railway executable is used, its
+ *                      version, login and linked project/environment, then exit
+ *   RAILWAY_CLI        path to the railway executable, if PATH lookup fails
+ *                      (see scripts/lib/railway-cli.mjs for the resolution order)
  *
  * Safety:
  *   - Secret values are generated here (crypto.randomBytes), sent to Railway
@@ -39,8 +43,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveRailwayCli } from "./lib/railway-cli.mjs";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+// fileURLToPath, not URL.pathname: the latter keeps %20 for spaces and yields
+// "/C:/..." on Windows — an invalid cwd, which Node reports as "spawnSync railway ENOENT".
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const flagValue = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -72,16 +80,31 @@ function step(name, detail) {
   log(`${name}${detail ? ` — ${detail}` : ""}`);
 }
 
+let cli;
+/** The Railway executable, resolved once from PATH without a shell (Windows: .exe or npm .cmd shim target). */
+function railwayCli() {
+  if (!cli) {
+    try {
+      cli = resolveRailwayCli();
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+  return cli;
+}
+
 /** Runs the Railway CLI. `secret: true` = output may contain secrets: never echoed. */
 function rw(cliArgs, { input, allowFail = false, secret = false, interactive = false } = {}) {
-  const res = spawnSync("railway", cliArgs, {
+  const { command, args: prefix } = railwayCli();
+  const res = spawnSync(command, [...prefix, ...cliArgs], {
     cwd: ROOT,
     input,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    windowsHide: true,
     stdio: interactive ? ["inherit", "pipe", "inherit"] : ["pipe", "pipe", "pipe"],
   });
-  if (res.error) fail(`could not run railway ${cliArgs[0]}: ${res.error.message}`);
+  if (res.error) fail(`could not run railway ${cliArgs[0]} (${command}): ${res.error.message}`);
   if (res.status !== 0 && !allowFail) {
     const detail = secret ? "(output suppressed: may contain secrets)" : `${res.stderr ?? ""}${res.stdout ?? ""}`.trim().slice(-1500);
     fail(`railway ${cliArgs.filter((a) => !a.includes("=")).join(" ")} exited ${res.status}\n${detail}`);
@@ -157,7 +180,7 @@ function githubRepo() {
 // ------------------------------------------------------------ provisioning
 async function provision() {
   const version = rw(["--version"]).stdout.trim();
-  step("Railway CLI", version);
+  step("Railway CLI", `${version} — ${railwayCli().source}`);
   const major = Number(/(\d+)\.\d+\.\d+/.exec(version)?.[1] ?? 0);
   if (major < 5) fail(`this script needs Railway CLI v5+ (bucket, tcp-proxy, service source, environment edit). Run: railway upgrade`);
   const who = rw(["whoami"], { allowFail: true });
@@ -620,7 +643,23 @@ async function verify() {
 }
 
 // ------------------------------------------------------------------ main
+async function checkCli() {
+  const { command, args: prefix, source } = railwayCli();
+  step("Railway executable", `${[command, ...prefix].join(" ")} (from ${source})`);
+  step("railway --version", rw(["--version"]).stdout.trim());
+  const who = rw(["whoami"], { allowFail: true });
+  step("railway whoami", who.ok ? who.stdout.trim().split("\n").pop() : "NOT logged in — run `railway login`");
+  const status = rw(["status"], { allowFail: true });
+  if (!status.ok) fail(`railway status failed — ${who.ok ? `run \`railway link\` in ${ROOT}` : "run `railway login` first"}\n${(status.stderr + status.stdout).trim().slice(0, 300)}`);
+  const lines = status.stdout.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim());
+  for (const l of lines.filter((l) => /^(Project|Environment|Service)\s*:/i.test(l))) step("railway status", l);
+  const projects = rwJson(["project", "list"], { allowFail: true });
+  step("railway project list", Array.isArray(projects) ? `${projects.length} project(s) visible to this login` : "not available");
+  log("CLI check passed — nothing was created or changed.");
+}
+
 (async () => {
+  if (flag("--check-cli")) return checkCli();
   if (!flag("--verify-only")) {
     const ctx = await provision();
     await deploy(ctx);

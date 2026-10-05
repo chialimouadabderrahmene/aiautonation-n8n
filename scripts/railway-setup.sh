@@ -17,6 +17,6 @@
 # Safe to re-run: existing secrets are reused, never rotated.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-command -v railway >/dev/null || { echo "Install the Railway CLI (v5+): https://docs.railway.com/guides/cli"; exit 1; }
+command -v railway >/dev/null || [ -n "${RAILWAY_CLI:-}" ] || { echo "Install the Railway CLI (v5+): https://docs.railway.com/guides/cli (or set RAILWAY_CLI)"; exit 1; }
 command -v node >/dev/null || { echo "Node.js 20+ is required"; exit 1; }
 exec node scripts/railway-deploy.mjs "$@"
