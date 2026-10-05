@@ -16,7 +16,8 @@ export interface CarouselGenerationJobPayload {
 export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
   | { kind: "publish"; videoJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
-  | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string };
+  | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string }
+  | { kind: "publish-carousel"; carouselJobId: string; target: string; connectedAccountId?: string; requestedBy: string };
 
 export function getRedisConnection(): IORedis {
   const url = process.env.REDIS_URL;

@@ -22,7 +22,8 @@ export interface CarouselGenerationJobPayload {
 export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
   | { kind: "publish"; videoJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
-  | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string };
+  | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string }
+  | { kind: "publish-carousel"; carouselJobId: string; target: string; connectedAccountId?: string; requestedBy: string };
 
 let connection: IORedis | null = null;
 let videoQueue: Queue<VideoGenerationJobPayload> | null = null;

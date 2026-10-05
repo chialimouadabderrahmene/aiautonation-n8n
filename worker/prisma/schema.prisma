@@ -420,7 +420,8 @@ model ConnectedAccount {
   connectedAt            DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
-  publications Publication[]
+  publications         Publication[]
+  carouselPublications CarouselPublication[]
 
   @@unique([provider, externalAccountId])
   @@index([provider])
@@ -573,19 +574,26 @@ model ProfileVersion {
 // voice/audience vocabulary injection, same Telegram approval pattern.
 
 model CarouselProject {
-  id         String   @id @default(cuid())
-  name       String
-  topic      String
-  prompt     String
-  audience   String?
-  language   String   @default("en")
-  tone       String   @default("Professional")
-  brand      String   @default("Eki")
-  cta        String?
-  slideCount Int      @default(6)
-  platform   String   @default("instagram") // drives export dimensions
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  topic             String
+  prompt            String
+  audience          String?
+  language          String   @default("en")
+  tone              String   @default("Professional")
+  brand             String   @default("Eki")
+  cta               String?
+  slideCount        Int      @default(6)
+  platform          String   @default("instagram") // drives export dimensions
+  /// Where an approved carousel is published: any of "instagram", "facebook",
+  /// "x", "linkedin". Empty = approval only, publish manually. Mirrors
+  /// VideoProject.publishTargets.
+  publishTargets    String[] @default([])
+  /// Specific ConnectedAccount ids to publish to, in addition to
+  /// publishTargets — mirrors VideoProject.publishAccountIds.
+  publishAccountIds String[] @default([])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   jobs CarouselJob[]
 }
@@ -613,8 +621,9 @@ model CarouselJob {
   createdAt   DateTime         @default(now())
   completedAt DateTime?
 
-  slides   CarouselSlide[]
-  approval CarouselApproval?
+  slides       CarouselSlide[]
+  approval     CarouselApproval?
+  publications CarouselPublication[]
 }
 
 model CarouselSlide {
@@ -645,6 +654,34 @@ model CarouselApproval {
   decidedBy         String?
   decidedAt         DateTime?
   createdAt         DateTime       @default(now())
+}
+
+/// One row per (approved carousel, target platform) — or, once
+/// `connectedAccountId` is set, one row per (approved carousel, specific
+/// connected account). Exact mirror of `Publication`, for carousels instead
+/// of videos — kept as its own model rather than widening `Publication`
+/// because `videoJobId` there is a required FK (see the note above
+/// CarouselProject on why carousels are a parallel model, not a reused one).
+model CarouselPublication {
+  id                 String            @id @default(cuid())
+  carouselJobId      String
+  carouselJob        CarouselJob       @relation(fields: [carouselJobId], references: [id], onDelete: Cascade)
+  target             String
+  /// Which connected account this was published through. Null = the legacy
+  /// per-provider path (no specific account chosen).
+  connectedAccountId String?
+  connectedAccount   ConnectedAccount? @relation(fields: [connectedAccountId], references: [id])
+  status             PublicationStatus @default(PENDING)
+  externalId         String?
+  externalUrl        String?
+  error              String?
+  attempts           Int               @default(0)
+  createdAt          DateTime          @default(now())
+  publishedAt        DateTime?
+
+  @@unique([carouselJobId, target])
+  @@unique([carouselJobId, connectedAccountId])
+  @@index([connectedAccountId])
 }
 
 // ------------------------------------------------------- WhatsApp onboarding

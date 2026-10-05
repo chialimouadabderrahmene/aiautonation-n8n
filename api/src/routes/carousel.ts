@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { enqueueCarouselJob } from "../lib/queue";
+import { enqueueCarouselJob, enqueueDelivery } from "../lib/queue";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { evaluateRequirements } from "../modules/workflows/readiness";
@@ -28,6 +28,8 @@ const createProjectSchema = z.object({
   cta: z.string().trim().max(200).optional(),
   slideCount: z.number().int().min(2).max(10).default(6),
   platform: z.enum(["instagram", "square", "linkedin", "story"]).default("instagram"),
+  publishTargets: z.array(z.enum(["instagram", "facebook", "x", "linkedin"])).default([]),
+  publishAccountIds: z.array(z.string()).default([]),
 });
 
 carouselRouter.post("/projects", async (req: AuthedRequest, res) => {
@@ -45,14 +47,14 @@ carouselRouter.post("/projects", async (req: AuthedRequest, res) => {
 
 carouselRouter.get("/projects", async (_req, res) => {
   const projects = await prisma.carouselProject.findMany({
-    include: { jobs: { orderBy: { createdAt: "desc" }, take: 1, include: { approval: true, slides: { orderBy: { index: "asc" } } } } },
+    include: { jobs: { orderBy: { createdAt: "desc" }, take: 1, include: { approval: true, slides: { orderBy: { index: "asc" } }, publications: true } } },
     orderBy: { createdAt: "desc" },
   });
   res.json(projects);
 });
 
 carouselRouter.get("/jobs/:id", async (req, res) => {
-  const job = await prisma.carouselJob.findUnique({ where: { id: String(req.params.id) }, include: { project: true, slides: { orderBy: { index: "asc" } }, approval: true } });
+  const job = await prisma.carouselJob.findUnique({ where: { id: String(req.params.id) }, include: { project: true, slides: { orderBy: { index: "asc" } }, approval: true, publications: true } });
   if (!job) return res.status(404).json({ message: "Not found" });
   res.json(job);
 });
@@ -81,11 +83,45 @@ export async function decideCarousel(carouselJobId: string, decision: "APPROVED"
     create: { carouselJobId, status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
   });
   await recordAudit(decidedBy, decision === "APPROVED" ? "carousel.approved" : "carousel.rejected", "CarouselJob", carouselJobId, { reason });
-  // v1 scope: approval is the deliverable. Distributing an approved carousel to
-  // connected accounts is a short, well-defined follow-on once ConnectedAccount
-  // publishing (built for video in this same pass) is extended to images.
+
+  if (decision === "APPROVED") {
+    const job = await prisma.carouselJob.findUniqueOrThrow({ where: { id: carouselJobId }, include: { project: true } });
+    for (const target of job.project.publishTargets) {
+      await prisma.carouselPublication.upsert({
+        where: { carouselJobId_target: { carouselJobId, target } },
+        update: { status: "PENDING", error: null },
+        create: { carouselJobId, target },
+      });
+      await enqueueDelivery({ kind: "publish-carousel", carouselJobId, target, requestedBy: decidedBy });
+    }
+    // Multi-account distribution: one CarouselPublication + delivery job per
+    // selected ConnectedAccount — exact mirror of the video path in
+    // approvals.ts's decide().
+    if (job.project.publishAccountIds.length) {
+      const connectedAccounts = await prisma.connectedAccount.findMany({ where: { id: { in: job.project.publishAccountIds } } });
+      for (const account of connectedAccounts) {
+        await prisma.carouselPublication.upsert({
+          where: { carouselJobId_connectedAccountId: { carouselJobId, connectedAccountId: account.id } },
+          update: { status: "PENDING", error: null },
+          create: { carouselJobId, target: account.provider, connectedAccountId: account.id },
+        });
+        await enqueueDelivery({ kind: "publish-carousel", carouselJobId, target: account.provider, connectedAccountId: account.id, requestedBy: decidedBy });
+      }
+    }
+  }
   return approval;
 }
+
+carouselRouter.post("/jobs/:id/publish/:target/retry", async (req: AuthedRequest, res) => {
+  const carouselJobId = String(req.params.id);
+  const target = String(req.params.target);
+  const pub = await prisma.carouselPublication.findUnique({ where: { carouselJobId_target: { carouselJobId, target } } });
+  if (!pub) return res.status(404).json({ message: "Not found" });
+  if (pub.status !== "FAILED") return res.status(409).json({ message: "Only a FAILED publication can be retried" });
+  await prisma.carouselPublication.update({ where: { id: pub.id }, data: { status: "PENDING", error: null } });
+  await enqueueDelivery({ kind: "publish-carousel", carouselJobId, target, requestedBy: req.admin?.email ?? "unknown" });
+  res.json({ ok: true });
+});
 
 carouselRouter.post("/jobs/:id/decision", async (req: AuthedRequest, res) => {
   const jobId = String(req.params.id);

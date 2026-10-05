@@ -10,9 +10,10 @@ import { getRedisConnection, VIDEO_QUEUE_NAME, DELIVERY_QUEUE_NAME, CAROUSEL_QUE
 import { startHeartbeat, stopHeartbeat, currentCapabilities } from "./lib/heartbeat";
 import { ProviderError, scrubSecrets } from "./lib/http";
 import { processVideoJob, audit } from "./pipeline/orchestrator";
-import { processCarouselJob } from "./pipeline/carousel-orchestrator";
+import { processCarouselJob, audit as carouselAudit } from "./pipeline/carousel-orchestrator";
 import { sendVideoForApproval, sendCarouselForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
+import { publishCarousel } from "./delivery/publish-carousel";
 
 /**
  * Eki video worker: consumes two BullMQ queues.
@@ -54,6 +55,55 @@ function publicationWhere(payload: { videoJobId: string; target: string; connect
     : { videoJobId_target: { videoJobId: payload.videoJobId, target: payload.target } };
 }
 
+/** Same pattern as publicationWhere, for CarouselPublication's own unique keys. */
+function carouselPublicationWhere(payload: { carouselJobId: string; target: string; connectedAccountId?: string }) {
+  return payload.connectedAccountId
+    ? { carouselJobId_connectedAccountId: { carouselJobId: payload.carouselJobId, connectedAccountId: payload.connectedAccountId } }
+    : { carouselJobId_target: { carouselJobId: payload.carouselJobId, target: payload.target } };
+}
+
+async function processCarouselPublish(payload: Extract<DeliveryJobPayload, { kind: "publish-carousel" }>, job: Job<DeliveryJobPayload>): Promise<void> {
+  const attempt = job.attemptsMade;
+  const maxAttempts = job.opts.attempts ?? 1;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "VIDEO_WORKER", externalId: `${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: {
+      source: "VIDEO_WORKER",
+      externalId: `${job.id}#${attempt}`,
+      trigger: `publish-carousel:${payload.target}`,
+      provider: payload.target,
+      relatedEntityType: "CarouselJob",
+      relatedEntityId: payload.carouselJobId,
+      retryCount: attempt,
+      mode: payload.kind,
+    },
+  });
+  const finish = (status: "SUCCESS" | "FAILED", error?: string) =>
+    prisma.automationExecution.update({ where: { id: execution.id }, data: { status, finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error } });
+
+  const where = carouselPublicationWhere(payload);
+  try {
+    await prisma.carouselPublication.update({ where, data: { status: "PUBLISHING", attempts: { increment: 1 } } });
+    const result = await publishCarousel(payload.carouselJobId, payload.target, payload.connectedAccountId);
+    await prisma.carouselPublication.update({ where, data: { status: "PUBLISHED", externalId: result.externalId, externalUrl: result.externalUrl ?? null, error: null, publishedAt: new Date() } });
+    await carouselAudit("carousel.published", payload.carouselJobId, { target: payload.target, connectedAccountId: payload.connectedAccountId, externalId: result.externalId });
+    await finish("SUCCESS");
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    const retryable = err instanceof ProviderError ? err.retryable : false;
+    const willRetry = retryable && attempt + 1 < maxAttempts;
+    await finish("FAILED", message);
+    await prisma.carouselPublication.update({ where, data: { status: willRetry ? "PENDING" : "FAILED", error: message } });
+    await carouselAudit("carousel.publish_failed", payload.carouselJobId, { message, willRetry, target: payload.target });
+    if (!willRetry) {
+      await notifyTeam(`Publishing carousel to ${payload.target} failed: ${message}`);
+      throw new UnrecoverableError(message);
+    }
+    throw err;
+  }
+}
+
 async function processCarouselDelivery(payload: Extract<DeliveryJobPayload, { kind: "send-carousel-approval" }>, job: Job<DeliveryJobPayload>): Promise<void> {
   const attempt = job.attemptsMade;
   const execution = await prisma.automationExecution.upsert({
@@ -74,6 +124,7 @@ async function processCarouselDelivery(payload: Extract<DeliveryJobPayload, { ki
 
 async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
   if (job.data.kind === "send-carousel-approval") return processCarouselDelivery(job.data, job);
+  if (job.data.kind === "publish-carousel") return processCarouselPublish(job.data, job);
   const payload = job.data;
   const attempt = job.attemptsMade;
   const maxAttempts = job.opts.attempts ?? 1;
