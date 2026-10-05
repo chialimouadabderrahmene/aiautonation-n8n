@@ -24,10 +24,10 @@ datasource db {
 /// A small, fixed set of operators for this control center. Deliberately not
 /// the Eki admin system: this product is standalone (see README/ARCHITECTURE).
 model AdminUser {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
 }
 
@@ -55,14 +55,14 @@ enum IntegrationStatus {
 /// secret value itself — see EncryptedCredential. `status` is always derived
 /// from real test results, never set optimistically on save.
 model Integration {
-  id              String              @id @default(cuid())
-  provider        String              @unique
-  category        IntegrationCategory
-  status          IntegrationStatus   @default(NOT_CONFIGURED)
-  config          Json                @default("{}")
-  lastTestedAt    DateTime?
-  lastTestOk      Boolean?
-  lastTestMessage String?
+  id                String              @id @default(cuid())
+  provider          String              @unique
+  category          IntegrationCategory
+  status            IntegrationStatus   @default(NOT_CONFIGURED)
+  config            Json                @default("{}")
+  lastTestedAt      DateTime?
+  lastTestOk        Boolean?
+  lastTestMessage   String?
   lastTestLatencyMs Int?
   /// "API_KEY" | "OAUTH" | "INFRA" — mirrors the provider registry's authType.
   authType          String              @default("API_KEY")
@@ -74,8 +74,8 @@ model Integration {
   /// Map of n8n credential name -> n8n credential id created from this
   /// integration by the n8n sync (see modules/n8n/credentials.ts).
   n8nCredentialIds  Json                @default("{}")
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   credentials EncryptedCredential[]
 
@@ -116,32 +116,32 @@ enum WorkflowReadiness {
 /// in once the workflow has actually been imported into a real n8n instance
 /// (scripts/import-n8n-workflows.js) — null means "not imported anywhere".
 model WorkflowConfig {
-  id                String            @id @default(cuid())
-  key               String            @unique // e.g. "01-ai-content-generation"
-  name              String
-  category          String
-  requiredProviders String[]
-  optionalProviders String[]
-  n8nWorkflowId     String?
-  enabled           Boolean           @default(false)
-  readiness         WorkflowReadiness @default(BLOCKED)
-  readinessDetail   Json              @default("[]")
-  lastExecutionAt   DateTime?
-  lastExecutionOk   Boolean?
+  id                 String            @id @default(cuid())
+  key                String            @unique // e.g. "01-ai-content-generation"
+  name               String
+  category           String
+  requiredProviders  String[]
+  optionalProviders  String[]
+  n8nWorkflowId      String?
+  enabled            Boolean           @default(false)
+  readiness          WorkflowReadiness @default(BLOCKED)
+  readinessDetail    Json              @default("[]")
+  lastExecutionAt    DateTime?
+  lastExecutionOk    Boolean?
   /// Live n8n state as last observed by the reconcile loop.
-  n8nPresent        Boolean           @default(false)
-  n8nActive         Boolean           @default(false)
-  n8nSyncedAt       DateTime?
+  n8nPresent         Boolean           @default(false)
+  n8nActive          Boolean           @default(false)
+  n8nSyncedAt        DateTime?
   /// Hash of the transformed definition last pushed to n8n; a mismatch means
   /// the workflow in n8n is out of date (credentials changed, file changed).
-  n8nDefinitionHash String?
+  n8nDefinitionHash  String?
   /// "manual" (has a Manual Trigger, runnable on demand), "webhook", "error".
-  triggerKind       String            @default("manual")
+  triggerKind        String            @default("manual")
   lastTestRunAt      DateTime?
   lastTestRunOk      Boolean?
   lastTestRunMessage String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   executions AutomationExecution[]
 }
@@ -150,6 +150,7 @@ enum ExecutionSource {
   N8N
   VIDEO_WORKER
   CONTROL_CENTER
+  AUTOMATION_ENGINE
 }
 
 enum ExecutionStatus {
@@ -162,23 +163,23 @@ enum ExecutionStatus {
 /// A unified execution log across n8n workflow runs AND our own video-worker
 /// jobs, so Executions/Reports read from one table regardless of source.
 model AutomationExecution {
-  id               String           @id @default(cuid())
-  source           ExecutionSource
-  workflowConfigId String?
-  workflowConfig   WorkflowConfig?  @relation(fields: [workflowConfigId], references: [id])
-  externalId       String? // n8n execution id, or video job id
-  trigger          String?
-  provider         String?
-  status           ExecutionStatus  @default(RUNNING)
-  startedAt        DateTime         @default(now())
-  finishedAt       DateTime?
-  durationMs       Int?
+  id                String          @id @default(cuid())
+  source            ExecutionSource
+  workflowConfigId  String?
+  workflowConfig    WorkflowConfig? @relation(fields: [workflowConfigId], references: [id])
+  externalId        String? // n8n execution id, or video job id
+  trigger           String?
+  provider          String?
+  status            ExecutionStatus @default(RUNNING)
+  startedAt         DateTime        @default(now())
+  finishedAt        DateTime?
+  durationMs        Int?
   relatedEntityType String?
   relatedEntityId   String?
-  error            String?
-  retryCount       Int              @default(0)
+  error             String?
+  retryCount        Int             @default(0)
   /// n8n execution mode (trigger, webhook, cli, error, ...) or worker stage.
-  mode             String?
+  mode              String?
 
   @@unique([source, externalId])
   @@index([source, status])
@@ -215,30 +216,35 @@ enum ApprovalStatus {
 }
 
 model VideoProject {
-  id            String   @id @default(cuid())
-  name          String
-  contentType   String // Instagram Reel, TikTok, ...
-  topic         String
-  prompt        String
-  audience      String?
-  language      String   @default("en")
-  tone          String   @default("Professional")
-  durationSec   Int      @default(30)
-  aspectRatio   String   @default("9:16")
-  visualStyle   String   @default("Realistic")
-  voicePreset   String? // ElevenLabs voice id, or "male"/"female" hint
-  music         String   @default("none") // none | background | <asset id>
-  subtitles     Boolean  @default(true)
-  brand         String   @default("Eki")
-  cta           String?
-  testMode      Boolean  @default(true)
+  id             String   @id @default(cuid())
+  name           String
+  contentType    String // Instagram Reel, TikTok, ...
+  topic          String
+  prompt         String
+  audience       String?
+  language       String   @default("en")
+  tone           String   @default("Professional")
+  durationSec    Int      @default(30)
+  aspectRatio    String   @default("9:16")
+  visualStyle    String   @default("Realistic")
+  voicePreset    String? // ElevenLabs voice id, or "male"/"female" hint
+  music          String   @default("none") // none | background | <asset id>
+  subtitles      Boolean  @default(true)
+  brand          String   @default("Eki")
+  cta            String?
+  testMode       Boolean  @default(true)
   /// MediaFile id of an uploaded music track, when music != "none".
-  musicFileId   String?
+  musicFileId    String?
   /// Where an approved video is published: any of "instagram", "facebook",
   /// "x", "linkedin". Empty = approval only, publish manually.
   publishTargets String[] @default([])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  /// Specific ConnectedAccount ids to publish to, in addition to the legacy
+  /// default-per-provider targets above — lets one project reach several
+  /// accounts of the same platform. Empty = publishTargets behaves exactly
+  /// as before (back-compat, no multi-account installs are affected).
+  publishAccountIds String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   jobs VideoJob[]
 }
@@ -270,25 +276,25 @@ model VideoJob {
 }
 
 model VideoScene {
-  id             String   @id @default(cuid())
-  jobId          String
-  job            VideoJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  index          Int
-  visualPrompt   String
-  voiceoverText  String?
-  subtitleText   String?
-  durationSec    Int      @default(5)
-  provider       String   @default("runway")
-  providerJobId  String?
-  status         String   @default("PENDING") // PENDING | GENERATING | READY | FAILED
+  id               String    @id @default(cuid())
+  jobId            String
+  job              VideoJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  index            Int
+  visualPrompt     String
+  voiceoverText    String?
+  subtitleText     String?
+  durationSec      Int       @default(5)
+  provider         String    @default("runway")
+  providerJobId    String?
+  status           String    @default("PENDING") // PENDING | GENERATING | READY | FAILED
   /// Storage key of the downloaded provider clip (never a provider URL — those expire).
-  sceneVideoUrl  String?
+  sceneVideoUrl    String?
   /// Storage key of this scene's voiceover audio + its measured length.
-  voiceKey       String?
+  voiceKey         String?
   voiceDurationSec Float?
-  error          String?
-  createdAt      DateTime @default(now())
-  completedAt    DateTime?
+  error            String?
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
 
   @@unique([jobId, index])
 }
@@ -335,21 +341,70 @@ enum PublicationStatus {
   SKIPPED
 }
 
-/// One row per (approved video, target platform).
+/// One row per (approved video, target platform) — or, once `connectedAccountId`
+/// is set, one row per (approved video, specific connected account). The old
+/// `[videoJobId, target]` uniqueness still holds for legacy/default-account
+/// rows (`connectedAccountId` null); Postgres never treats two NULLs as equal,
+/// so it does not collide with the new per-account uniqueness below.
 model Publication {
-  id          String            @id @default(cuid())
-  videoJobId  String
-  videoJob    VideoJob          @relation(fields: [videoJobId], references: [id], onDelete: Cascade)
-  target      String
-  status      PublicationStatus @default(PENDING)
-  externalId  String?
-  externalUrl String?
-  error       String?
-  attempts    Int               @default(0)
-  createdAt   DateTime          @default(now())
-  publishedAt DateTime?
+  id                 String            @id @default(cuid())
+  videoJobId         String
+  videoJob           VideoJob          @relation(fields: [videoJobId], references: [id], onDelete: Cascade)
+  target             String
+  /// Which connected account this was published through. Null = the legacy
+  /// single-account-per-provider path (back-compat; unaffected by this field).
+  connectedAccountId String?
+  connectedAccount   ConnectedAccount? @relation(fields: [connectedAccountId], references: [id])
+  status             PublicationStatus @default(PENDING)
+  externalId         String?
+  externalUrl        String?
+  error              String?
+  attempts           Int               @default(0)
+  createdAt          DateTime          @default(now())
+  publishedAt        DateTime?
 
   @@unique([videoJobId, target])
+  @@unique([videoJobId, connectedAccountId])
+  @@index([connectedAccountId])
+}
+
+enum ConnectedAccountStatus {
+  CONNECTED
+  ACTION_REQUIRED
+  DISCONNECTED
+}
+
+/// One row per social account an admin has connected — the multi-account
+/// successor to `Integration`'s single OAuth slot per provider.
+/// `Integration` keeps owning the OAuth *app* credentials (client id/secret,
+/// shared across every account of that provider); this model owns each
+/// individual account's own tokens, AES-256-GCM encrypted the same way
+/// (`lib/crypto.ts`), never the Integration vault (so existing single-account
+/// installs are untouched).
+model ConnectedAccount {
+  id                     String                 @id @default(cuid())
+  provider               String // "instagram" | "facebook" | "x" | "linkedin" | "tiktok"
+  label                  String // admin-facing name, e.g. "@eki.vendors"
+  externalAccountId      String // the platform's own id for this account/page
+  isDefault              Boolean                @default(false)
+  status                 ConnectedAccountStatus @default(CONNECTED)
+  tokenCiphertext        String
+  tokenIv                String
+  tokenAuthTag           String
+  refreshTokenCiphertext String?
+  refreshTokenIv         String?
+  refreshTokenAuthTag    String?
+  tokenExpiresAt         DateTime?
+  /// Provider-specific extra fields a publish call needs (pageAccessToken,
+  /// graphVersion, organizationId, ...) — same shape as Integration.config.
+  extra                  Json                   @default("{}")
+  connectedAt            DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  publications Publication[]
+
+  @@unique([provider, externalAccountId])
+  @@index([provider])
 }
 
 /// Uploaded media the admin manages from the Control Center (music beds).
@@ -366,11 +421,11 @@ model MediaFile {
 
 /// Short-lived server-side OAuth state (CSRF + PKCE verifier, encrypted).
 model OAuthState {
-  id                String   @id
-  provider          String
-  codeVerifierEnc   String?
-  createdAt         DateTime @default(now())
-  expiresAt         DateTime
+  id              String   @id
+  provider        String
+  codeVerifierEnc String?
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
 }
 
 /// Liveness + capability reports from background services (worker). The API
@@ -406,4 +461,217 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// --------------------------------------------------------- Brand Brain
+//
+// A reusable, persistent brand-voice and audience-vocabulary profile.
+// `modules/brand/loader.ts` reads the active row of each and injects it into
+// every script/slide-copy generation call automatically — nobody retypes
+// brand/tone/vocabulary per request. `isActive` keeps exactly one profile of
+// each kind "live" at a time; every save already goes through `recordAudit`,
+// so AuditLog is this model's change history (no separate version table).
+
+model BrandProfile {
+  id               String   @id @default(cuid())
+  name             String   @default("Default")
+  isActive         Boolean  @default(false)
+  voiceAdjectives  String[] @default([])
+  tone             String?
+  formality        String?
+  sentenceStyle    String?
+  preferredPhrases String[] @default([])
+  bannedWords      String[] @default([])
+  ctaStyle         String?
+  exampleSentences String[] @default([])
+  /// Hex colors (e.g. "#1A2B3C") for the carousel/slideshow renderer's
+  /// background and accents. Optional — the renderer falls back to a
+  /// neutral default template when none are set.
+  primaryColorHex   String?
+  secondaryColorHex String?
+  accentColorHex    String?
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model AudienceProfile {
+  id                String   @id @default(cuid())
+  name              String   @default("Default")
+  isActive          Boolean  @default(false)
+  language          String?
+  marketDescription String?
+  commonPhrases     String[] @default([])
+  objections        String[] @default([])
+  painPoints        String[] @default([])
+  version           Int      @default(1)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  vocabulary VocabularyEntry[]
+
+  @@index([isActive])
+}
+
+/// The literal words the audience uses — slang, product names, pain-point
+/// phrasing — queryable and editable one entry at a time, not buried in a
+/// paragraph of free text.
+model VocabularyEntry {
+  id                String          @id @default(cuid())
+  audienceProfileId String
+  audienceProfile   AudienceProfile @relation(fields: [audienceProfileId], references: [id], onDelete: Cascade)
+  term              String
+  meaning           String?
+  category          String? // "slang" | "product" | "painPoint" | "objection" | "other"
+  createdAt         DateTime        @default(now())
+
+  @@unique([audienceProfileId, term])
+}
+
+// ------------------------------------------------------------- Carousels
+//
+// Parallel to VideoProject/VideoJob/VideoScene/Approval, not merged into
+// them: a carousel's parent is a set of rendered images, not a rendered
+// video, and Publication/Approval's required `videoJobId` would need a
+// breaking migration to accept either. Same lifecycle shape, same brand
+// voice/audience vocabulary injection, same Telegram approval pattern.
+
+model CarouselProject {
+  id         String   @id @default(cuid())
+  name       String
+  topic      String
+  prompt     String
+  audience   String?
+  language   String   @default("en")
+  tone       String   @default("Professional")
+  brand      String   @default("Eki")
+  cta        String?
+  slideCount Int      @default(6)
+  platform   String   @default("instagram") // drives export dimensions
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  jobs CarouselJob[]
+}
+
+enum CarouselJobState {
+  QUEUED
+  SCRIPT_GENERATING
+  RENDERING
+  QUALITY_CHECK
+  READY
+  FAILED
+  CANCELLED
+}
+
+model CarouselJob {
+  id          String           @id @default(cuid())
+  projectId   String
+  project     CarouselProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  state       CarouselJobState @default(QUEUED)
+  script      Json?
+  caption     String?
+  hashtags    String[]         @default([])
+  error       String?
+  progress    Int              @default(0)
+  createdAt   DateTime         @default(now())
+  completedAt DateTime?
+
+  slides   CarouselSlide[]
+  approval CarouselApproval?
+}
+
+model CarouselSlide {
+  id              String      @id @default(cuid())
+  jobId           String
+  job             CarouselJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  index           Int
+  headline        String
+  body            String?
+  visualDirection String?
+  /// Storage key of the rendered PNG (never a provider URL).
+  imageUrl        String?
+  createdAt       DateTime    @default(now())
+
+  @@unique([jobId, index])
+}
+
+model CarouselApproval {
+  id                String         @id @default(cuid())
+  carouselJobId     String         @unique
+  carouselJob       CarouselJob    @relation(fields: [carouselJobId], references: [id], onDelete: Cascade)
+  channel           String         @default("TELEGRAM")
+  status            ApprovalStatus @default(PENDING)
+  telegramChatId    String?
+  telegramMessageId String?
+  note              String?
+  rejectionReason   String?
+  decidedBy         String?
+  decidedAt         DateTime?
+  createdAt         DateTime       @default(now())
+}
+
+// ------------------------------------------------------- WhatsApp onboarding
+//
+// Keyword -> group invite link -> group/community -> pinned CTA -> this 1:1
+// conversation -> signup -> product listing (the compliant flow from the
+// pivot gap analysis: the Cloud API cannot read or message inside a group,
+// so the actual signup/listing flow runs here, same as today's workflow 13).
+
+enum WhatsAppContactStatus {
+  NEW
+  AWAITING_ROLE
+  SIGNUP_IN_PROGRESS
+  LISTING_PRODUCT
+  COMPLETE
+  UNSUBSCRIBED
+}
+
+model WhatsAppContact {
+  id            String                @id @default(cuid())
+  phone         String                @unique
+  name          String?
+  role          String? // "vendor" | "buyer", once known
+  status        WhatsAppContactStatus @default(NEW)
+  entryKeyword  String?
+  source        String? // "instagram_comment" | "whatsapp_group" | "direct"
+  optIn         Boolean               @default(false)
+  lastMessageAt DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  messages WhatsAppMessage[]
+  listings ProductListing[]
+}
+
+model WhatsAppMessage {
+  id           String          @id @default(cuid())
+  contactId    String
+  contact      WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  direction    String // "in" | "out"
+  body         String
+  templateName String?
+  createdAt    DateTime        @default(now())
+
+  @@index([contactId, createdAt])
+}
+
+/// Deliberately minimal — name/description/price/category/photos only. No
+/// commission rate, reward, or qualification rule is encoded here: those are
+/// business decisions this change does not invent (see pivot report, Open
+/// questions).
+model ProductListing {
+  id          String          @id @default(cuid())
+  contactId   String
+  contact     WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  name        String?
+  description String?
+  price       String?
+  category    String?
+  photoKeys   String[]        @default([])
+  status      String          @default("DRAFT") // DRAFT | SUBMITTED | NEEDS_INFO
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }

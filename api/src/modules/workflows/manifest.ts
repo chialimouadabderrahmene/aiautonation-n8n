@@ -55,3 +55,5 @@ export const WORKFLOW_MANIFEST: WorkflowManifestEntry[] = [
 export const VIDEO_PIPELINE_REQUIREMENTS = [AI, "runway", "elevenlabs", "worker:ffmpeg", "storage"];
 /** Needed to send a finished video for APPROVE / REJECT. */
 export const VIDEO_APPROVAL_REQUIREMENTS = ["telegram", "telegram:webhook"];
+/** The carousel/slideshow pipeline — no Runway/ElevenLabs, it renders stills with ffmpeg. */
+export const CAROUSEL_PIPELINE_REQUIREMENTS = [AI, "worker:ffmpeg", "storage"];

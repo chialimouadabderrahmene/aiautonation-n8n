@@ -27,6 +27,7 @@ export const SETTINGS: SettingDefinition[] = [
   { key: "appDownloadLink", label: "App download / public link", type: "url", group: "Business", default: "https://culinarytales.app", n8nEnv: "APP_DOWNLOAD_LINK" },
   { key: "appVendorLink", label: "Vendor sign-up link", type: "url", group: "Business", default: "https://culinarytales.app/sell", n8nEnv: "APP_VENDOR_LINK" },
   { key: "whatsappCtaLink", label: "WhatsApp click-to-chat link (wa.me/...)", type: "url", group: "Business", default: "", n8nEnv: "WHATSAPP_CTA_LINK" },
+  { key: "whatsappGroupInviteLink", label: "WhatsApp community group invite link (chat.whatsapp.com/...)", type: "url", group: "Business", default: "", help: "Sent in reply to the JOIN keyword. The Cloud API cannot message people inside a WhatsApp group, so signup still happens in this 1:1 conversation — the group's own pinned message should point back here." },
   { key: "feedbackFormUrl", label: "Feedback survey URL", type: "url", group: "Business", default: "", n8nEnv: "FEEDBACK_FORM_URL" },
   { key: "feedbackRewardText", label: "Feedback reward sentence (leave empty unless a reward exists)", type: "text", group: "Business", default: "", n8nEnv: "FEEDBACK_REWARD_TEXT" },
   { key: "appStoreReviewUrl", label: "App Store review URL", type: "url", group: "Business", default: "", n8nEnv: "APP_STORE_REVIEW_URL" },

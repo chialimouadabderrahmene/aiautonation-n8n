@@ -8,8 +8,12 @@ import { clearToken, hasToken } from "@/lib/api";
 const NAV = [
   { name: "Dashboard", href: "/dashboard" },
   { name: "Integrations", href: "/integrations" },
+  { name: "Brand Brain", href: "/brand-brain" },
+  { name: "Connected Accounts", href: "/connected-accounts" },
   { name: "AI Content Studio", href: "/content-studio" },
   { name: "Video Generator", href: "/video" },
+  { name: "Carousels", href: "/carousels" },
+  { name: "WhatsApp Onboarding", href: "/whatsapp" },
   { name: "Automations", href: "/automations" },
   { name: "Approvals", href: "/approvals" },
   { name: "Executions", href: "/executions" },

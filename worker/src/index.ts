@@ -6,11 +6,12 @@ import path from "node:path";
 import { Worker, Job, UnrecoverableError } from "bullmq";
 import { prisma } from "./lib/prisma";
 import { logger } from "./lib/logger";
-import { getRedisConnection, VIDEO_QUEUE_NAME, DELIVERY_QUEUE_NAME, VideoGenerationJobPayload, DeliveryJobPayload } from "./lib/queue";
+import { getRedisConnection, VIDEO_QUEUE_NAME, DELIVERY_QUEUE_NAME, CAROUSEL_QUEUE_NAME, VideoGenerationJobPayload, DeliveryJobPayload, CarouselGenerationJobPayload } from "./lib/queue";
 import { startHeartbeat, stopHeartbeat, currentCapabilities } from "./lib/heartbeat";
 import { ProviderError, scrubSecrets } from "./lib/http";
 import { processVideoJob, audit } from "./pipeline/orchestrator";
-import { sendVideoForApproval, notifyTeam } from "./delivery/telegram";
+import { processCarouselJob } from "./pipeline/carousel-orchestrator";
+import { sendVideoForApproval, sendCarouselForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
 
 /**
@@ -45,7 +46,34 @@ async function cleanupStaleTemp(): Promise<void> {
   }
 }
 
+/** Picks the right Publication unique key: per-account when the job targets a
+ * specific ConnectedAccount, else the legacy per-(videoJob, provider) key. */
+function publicationWhere(payload: { videoJobId: string; target: string; connectedAccountId?: string }) {
+  return payload.connectedAccountId
+    ? { videoJobId_connectedAccountId: { videoJobId: payload.videoJobId, connectedAccountId: payload.connectedAccountId } }
+    : { videoJobId_target: { videoJobId: payload.videoJobId, target: payload.target } };
+}
+
+async function processCarouselDelivery(payload: Extract<DeliveryJobPayload, { kind: "send-carousel-approval" }>, job: Job<DeliveryJobPayload>): Promise<void> {
+  const attempt = job.attemptsMade;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "VIDEO_WORKER", externalId: `${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: { source: "VIDEO_WORKER", externalId: `${job.id}#${attempt}`, trigger: "telegram:send-carousel-approval", provider: "telegram", relatedEntityType: "CarouselJob", relatedEntityId: payload.carouselJobId, retryCount: attempt, mode: payload.kind },
+  });
+  try {
+    await sendCarouselForApproval(payload.carouselJobId);
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() } });
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message } });
+    await prisma.carouselApproval.updateMany({ where: { carouselJobId: payload.carouselJobId }, data: { note: `Telegram send failed: ${message}`.slice(0, 500) } });
+    throw new UnrecoverableError(message);
+  }
+}
+
 async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
+  if (job.data.kind === "send-carousel-approval") return processCarouselDelivery(job.data, job);
   const payload = job.data;
   const attempt = job.attemptsMade;
   const maxAttempts = job.opts.attempts ?? 1;
@@ -71,11 +99,11 @@ async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
       await sendVideoForApproval(payload.videoJobId);
       await audit("approval.sent_to_telegram", payload.videoJobId, { requestedBy: payload.requestedBy });
     } else {
-      const where = { videoJobId_target: { videoJobId: payload.videoJobId, target: payload.target } };
+      const where = publicationWhere(payload);
       await prisma.publication.update({ where, data: { status: "PUBLISHING", attempts: { increment: 1 } } });
-      const result = await publishVideo(payload.videoJobId, payload.target);
+      const result = await publishVideo(payload.videoJobId, payload.target, payload.connectedAccountId);
       await prisma.publication.update({ where, data: { status: "PUBLISHED", externalId: result.externalId, externalUrl: result.externalUrl ?? null, error: null, publishedAt: new Date() } });
-      await audit("video.published", payload.videoJobId, { target: payload.target, externalId: result.externalId });
+      await audit("video.published", payload.videoJobId, { target: payload.target, connectedAccountId: payload.connectedAccountId, externalId: result.externalId });
     }
     await finish("SUCCESS");
   } catch (err) {
@@ -87,7 +115,7 @@ async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
       await prisma.approval.updateMany({ where: { videoJobId: payload.videoJobId }, data: { note: `${willRetry ? "Retrying — " : ""}Telegram send failed: ${message}`.slice(0, 500) } });
     } else {
       await prisma.publication.update({
-        where: { videoJobId_target: { videoJobId: payload.videoJobId, target: payload.target } },
+        where: publicationWhere(payload),
         data: { status: willRetry ? "PENDING" : "FAILED", error: message },
       });
     }
@@ -117,13 +145,18 @@ async function main() {
     lockDuration: 5 * 60_000,
     maxStalledCount: 2,
   });
+  const carouselWorker = new Worker<CarouselGenerationJobPayload>(CAROUSEL_QUEUE_NAME, processCarouselJob, {
+    connection: getRedisConnection(),
+    concurrency: Number(process.env.VIDEO_WORKER_CONCURRENCY ?? 1),
+    lockDuration: 3 * 60_000,
+  });
   const deliveryWorker = new Worker<DeliveryJobPayload>(DELIVERY_QUEUE_NAME, processDelivery, {
     connection: getRedisConnection(),
     concurrency: 2,
     lockDuration: 10 * 60_000,
   });
 
-  for (const w of [videoWorker, deliveryWorker]) {
+  for (const w of [videoWorker, carouselWorker, deliveryWorker]) {
     w.on("failed", (job, err) => logger.warn({ queue: w.name, jobId: job?.id, err: scrubSecrets(err.message, []) }, "[worker] job failed"));
     w.on("completed", (job) => logger.info({ queue: w.name, jobId: job.id }, "[worker] job completed"));
     // Redis connection errors: BullMQ reconnects by itself; never crash the process.
@@ -156,7 +189,7 @@ async function main() {
     logger.info(`[worker] ${signal} received, finishing in-flight jobs`);
     const timeout = setTimeout(() => process.exit(1), 60_000);
     timeout.unref();
-    await Promise.allSettled([videoWorker.close(), deliveryWorker.close()]);
+    await Promise.allSettled([videoWorker.close(), carouselWorker.close(), deliveryWorker.close()]);
     await stopHeartbeat();
     await prisma.$disconnect();
     healthServer.close();
@@ -164,7 +197,7 @@ async function main() {
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
-  logger.info(`[worker] consuming ${VIDEO_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME}`);
+  logger.info(`[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME}`);
 }
 
 process.on("unhandledRejection", (err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, "unhandled rejection"));

@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { getDecryptedCredentials } from "../lib/credentials";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../lib/http";
+import { chooseProvider } from "../lib/ai-provider";
+import { getBrandContext } from "../lib/brand";
+import { reviewAgainstBrand } from "./critic";
 
 const sceneSchema = z.object({
   index: z.number().int().min(0),
@@ -33,24 +35,22 @@ export interface ScriptRequest {
   cta?: string | null;
 }
 
-async function chooseProvider() {
-  for (const [key, baseUrl, fallbackModel] of [
-    ["openai", "https://api.openai.com/v1", "gpt-4o-mini"],
-    ["groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"],
-  ] as const) {
-    const c = await getDecryptedCredentials(key);
-    if (c?.status === "CONNECTED" && c.secrets.apiKey) return { key, baseUrl, apiKey: c.secrets.apiKey, model: c.config.model || fallbackModel };
-  }
-  throw new ProviderError("Neither OpenAI nor Groq is connected — cannot write the script", null, false);
-}
-
 /**
  * Real OpenAI/Groq chat-completions call in JSON mode; the response is
  * validated with zod before the pipeline touches it. Scene lengths are kept
  * within what the video model can generate per clip (2–10 s).
  */
-export async function generateScript(request: ScriptRequest): Promise<GeneratedScript & { provider: string; model: string }> {
+export interface BrandReview {
+  reviewed: boolean;
+  onBrand: boolean;
+  score: number | null;
+  violations: string[];
+  corrected: boolean;
+}
+
+export async function generateScript(request: ScriptRequest): Promise<GeneratedScript & { provider: string; model: string; brandReview: BrandReview }> {
   const ai = await chooseProvider();
+  const brand = await getBrandContext();
   const sceneCount = Math.max(3, Math.min(12, Math.round(request.durationSec / 6)));
   const systemPrompt = [
     "You write short-form video scripts for a real product marketing team.",
@@ -64,7 +64,11 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
     `Write voiceoverText, subtitleText and caption in this language: ${request.language}.`,
   ].join(" ");
 
+  // The stored Brand Brain is the source of truth when configured; the
+  // per-request brand/tone/audience fields still ride along as this one
+  // video's own brief (topic-specific detail the stored profile won't have).
   const userPrompt = [
+    brand.promptBlock,
     `Brand: ${request.brand}`,
     `Platform: ${request.contentType}`,
     `Topic: ${request.topic}`,
@@ -116,5 +120,8 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
   const scenes = parsed.data.scenes
     .sort((a, b) => a.index - b.index)
     .map((s, i) => ({ ...s, index: i, durationSec: Math.max(2, Math.min(10, Math.round(s.durationSec))) }));
-  return { ...parsed.data, scenes, provider: ai.key, model: ai.model };
+  const draft = { ...parsed.data, scenes };
+
+  const review = await reviewAgainstBrand(draft, brand, scriptSchema, "hook, scene voiceover/subtitle text, caption, hashtags");
+  return { ...review.content, provider: ai.key, model: ai.model, brandReview: { reviewed: review.reviewed, onBrand: review.onBrand, score: review.score, violations: review.violations, corrected: review.corrected } };
 }

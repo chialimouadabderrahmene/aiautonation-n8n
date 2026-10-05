@@ -8,6 +8,10 @@ import { logger } from "./lib/logger";
 import { scrubSecrets } from "./lib/http";
 import { authRouter } from "./routes/auth";
 import { integrationsRouter, oauthPublicRouter } from "./routes/integrations";
+import { brandRouter } from "./routes/brand";
+import { accountsRouter } from "./routes/accounts";
+import { carouselRouter } from "./routes/carousel";
+import { whatsappRouter, whatsappPublicRouter } from "./routes/whatsapp";
 import { workflowsRouter } from "./routes/workflows";
 import { videoRouter } from "./routes/video";
 import { approvalsRouter, telegramPublicRouter } from "./routes/approvals";
@@ -38,7 +42,10 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } }));
   const origins = process.env.WEB_ORIGIN?.split(",").map((o) => o.trim()).filter(Boolean);
   app.use(cors({ origin: origins && origins.length ? origins : false, credentials: false }));
-  app.use(express.json({ limit: "1mb" }));
+  // `verify` stashes the raw bytes on every request — needed by the WhatsApp
+  // webhook's HMAC-SHA256 signature check (Meta signs the exact raw body;
+  // re-serializing the parsed JSON would not reproduce the same bytes).
+  app.use(express.json({ limit: "1mb", verify: (req, _res, buf) => void ((req as express.Request & { rawBody?: Buffer }).rawBody = buf) }));
   app.use(
     pinoHttp({
       logger,
@@ -60,12 +67,17 @@ export function createApp() {
   app.use("/api/telegram", telegramPublicRouter); // secret_token header
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
+  app.use("/api/whatsapp", whatsappPublicRouter); // GET challenge + X-Hub-Signature-256
 
   app.use("/api/auth", authRouter);
   app.use("/api/system/health", requireAdmin, async (_req, res) => res.json(await systemHealth()));
   app.use("/api/integrations", requireAdmin, integrationsRouter);
+  app.use("/api/brand", requireAdmin, brandRouter);
+  app.use("/api/accounts", requireAdmin, accountsRouter);
   app.use("/api/workflows", requireAdmin, workflowsRouter);
   app.use("/api/video", requireAdmin, videoRouter);
+  app.use("/api/carousel", requireAdmin, carouselRouter);
+  app.use("/api/whatsapp", requireAdmin, whatsappRouter);
   app.use("/api/approvals", requireAdmin, approvalsRouter);
   app.use("/api/executions", requireAdmin, executionsRouter);
   app.use("/api/reports", requireAdmin, reportsRouter);

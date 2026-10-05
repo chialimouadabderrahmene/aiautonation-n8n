@@ -78,6 +78,50 @@ export async function sendVideoForApproval(videoJobId: string): Promise<void> {
   });
 }
 
+/**
+ * Sends a READY carousel's slides as a Telegram media group (photos),
+ * followed by a separate message carrying the APPROVE / REJECT buttons —
+ * sendMediaGroup does not support reply_markup, unlike sendVideo above.
+ */
+export async function sendCarouselForApproval(carouselJobId: string): Promise<void> {
+  const tg = await requireConnected("telegram", "Telegram");
+  if (!tg.approvalChatId) throw new ProviderError("Telegram team chat ID is not set", null, false);
+  const job = await prisma.carouselJob.findUniqueOrThrow({ where: { id: carouselJobId }, include: { project: true, slides: { orderBy: { index: "asc" } } } });
+  if (job.state !== "READY") throw new ProviderError(`Carousel is ${job.state}, not READY`, null, false);
+  if (job.slides.some((s) => !s.imageUrl)) throw new ProviderError("Not every slide has a rendered image", null, false);
+
+  const tmpFiles: string[] = [];
+  try {
+    const form = new FormData();
+    form.set("chat_id", tg.approvalChatId);
+    const media = await Promise.all(
+      job.slides.map(async (slide, i) => {
+        const tmp = path.join(os.tmpdir(), `eki-tg-carousel-${job.id}-${i}.png`);
+        tmpFiles.push(tmp);
+        await getStorage().downloadToFile(slide.imageUrl!, tmp);
+        const field = `slide${i}`;
+        form.set(field, await fs.openAsBlob(tmp, { type: "image/png" }), `slide-${i}.png`);
+        return { type: "photo", media: `attach://${field}`, ...(i === 0 ? { caption: `🖼️ ${job.project.name}\nPlatform: ${job.project.platform} carousel\n\n${job.caption ?? ""}`.slice(0, 1024) } : {}) };
+      }),
+    );
+    form.set("media", JSON.stringify(media));
+    await telegram(tg.botToken ?? "", "sendMediaGroup", form);
+
+    const replyMarkup = { inline_keyboard: [[{ text: "✅ APPROVE", callback_data: `car:approve:${job.id}` }, { text: "❌ REJECT", callback_data: `car:reject:${job.id}` }]] };
+    const messageId = (
+      await telegram<{ message_id: number }>(tg.botToken ?? "", "sendMessage", { chat_id: tg.approvalChatId, text: `Approve this carousel for ${job.project.name}?`, reply_markup: replyMarkup })
+    ).message_id;
+
+    await prisma.carouselApproval.upsert({
+      where: { carouselJobId: job.id },
+      update: { status: "PENDING", channel: "TELEGRAM", telegramChatId: tg.approvalChatId, telegramMessageId: String(messageId), note: "Sent to Telegram", decidedAt: null, decidedBy: null },
+      create: { carouselJobId: job.id, channel: "TELEGRAM", telegramChatId: tg.approvalChatId, telegramMessageId: String(messageId), note: "Sent to Telegram" },
+    });
+  } finally {
+    await Promise.all(tmpFiles.map((f) => fs.promises.rm(f, { force: true })));
+  }
+}
+
 /** Failure alert to the team chat (never throws; respects Settings → notifications). */
 export async function notifyTeam(text: string): Promise<void> {
   try {

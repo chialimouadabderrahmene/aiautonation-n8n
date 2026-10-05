@@ -8,17 +8,25 @@ import IORedis from "ioredis";
 export const VIDEO_QUEUE_NAME = "video-generation";
 /** Short delivery jobs: send a finished video to Telegram, publish it. */
 export const DELIVERY_QUEUE_NAME = "video-delivery";
+/** Carousel/slideshow generation (script → render N slides → QA). */
+export const CAROUSEL_QUEUE_NAME = "carousel-generation";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
 }
 
+export interface CarouselGenerationJobPayload {
+  carouselJobId: string;
+}
+
 export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
-  | { kind: "publish"; videoJobId: string; target: string; requestedBy: string };
+  | { kind: "publish"; videoJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
+  | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string };
 
 let connection: IORedis | null = null;
 let videoQueue: Queue<VideoGenerationJobPayload> | null = null;
+let carouselQueue: Queue<CarouselGenerationJobPayload> | null = null;
 let deliveryQueue: Queue<DeliveryJobPayload> | null = null;
 
 function getConnection(): IORedis {
@@ -34,6 +42,11 @@ function getConnection(): IORedis {
 export function getVideoQueue(): Queue<VideoGenerationJobPayload> {
   if (!videoQueue) videoQueue = new Queue<VideoGenerationJobPayload>(VIDEO_QUEUE_NAME, { connection: getConnection() });
   return videoQueue;
+}
+
+export function getCarouselQueue(): Queue<CarouselGenerationJobPayload> {
+  if (!carouselQueue) carouselQueue = new Queue<CarouselGenerationJobPayload>(CAROUSEL_QUEUE_NAME, { connection: getConnection() });
+  return carouselQueue;
 }
 
 export function getDeliveryQueue(): Queue<DeliveryJobPayload> {
@@ -56,6 +69,20 @@ export async function enqueueVideoJob(videoJobId: string, run: number, attempts:
       jobId: `${videoJobId}-run${run}`,
       attempts: Math.max(1, Math.min(5, attempts)),
       backoff: { type: "exponential", delay: 30_000 },
+      removeOnComplete: { age: 7 * 86400 },
+      removeOnFail: { age: 30 * 86400 },
+    },
+  );
+}
+
+export async function enqueueCarouselJob(carouselJobId: string, run: number, attempts: number): Promise<void> {
+  await getCarouselQueue().add(
+    "generate",
+    { carouselJobId },
+    {
+      jobId: `${carouselJobId}-run${run}`,
+      attempts: Math.max(1, Math.min(5, attempts)),
+      backoff: { type: "exponential", delay: 20_000 },
       removeOnComplete: { age: 7 * 86400 },
       removeOnFail: { age: 30 * 86400 },
     },

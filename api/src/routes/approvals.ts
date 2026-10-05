@@ -8,6 +8,7 @@ import { evaluateRequirements } from "../modules/workflows/readiness";
 import { VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
 import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup } from "../modules/telegram/telegram";
 import { getProviderValues } from "../modules/integrations/vault";
+import { handleCarouselCallback } from "./carousel";
 import { getN8nConnection } from "../modules/n8n/client";
 import { timedFetch } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -69,6 +70,20 @@ export async function decide(videoJobId: string, decision: "APPROVED" | "REJECTE
       });
       await enqueueDelivery({ kind: "publish", videoJobId, target, requestedBy: decidedBy });
     }
+    // Multi-account distribution: one Publication + delivery job per
+    // selected ConnectedAccount, independent of (and additive to) the
+    // legacy per-provider targets above.
+    if (job.project.publishAccountIds.length) {
+      const connectedAccounts = await prisma.connectedAccount.findMany({ where: { id: { in: job.project.publishAccountIds } } });
+      for (const account of connectedAccounts) {
+        await prisma.publication.upsert({
+          where: { videoJobId_connectedAccountId: { videoJobId, connectedAccountId: account.id } },
+          update: { status: "PENDING", error: null },
+          create: { videoJobId, target: account.provider, connectedAccountId: account.id },
+        });
+        await enqueueDelivery({ kind: "publish", videoJobId, target: account.provider, connectedAccountId: account.id, requestedBy: decidedBy });
+      }
+    }
   }
   return approval;
 }
@@ -111,6 +126,10 @@ telegramPublicRouter.post("/webhook", async (req, res) => {
       callback_query?: { id: string; data?: string; from?: { id?: number; username?: string }; message?: { chat?: { id?: number }; message_id?: number } };
     };
     const cb = update.callback_query;
+    if (cb?.data?.startsWith("car:")) {
+      await handleCarouselCallback(cb);
+      return;
+    }
     const match = cb?.data?.match(/^vid:(approve|reject):([a-z0-9]+)$/);
     if (cb && match) {
       const telegram = await getProviderValues("telegram");
