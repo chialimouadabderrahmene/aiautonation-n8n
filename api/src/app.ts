@@ -22,7 +22,8 @@ import { auditRouter } from "./routes/audit";
 import { dashboardRouter } from "./routes/dashboard";
 import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { internalRouter } from "./routes/internal";
-import { requireAdmin } from "./modules/auth/auth";
+import { requireAdmin, requireWrite } from "./modules/auth/auth";
+import { usersRouter } from "./routes/users";
 import { systemHealth, checkDatabase } from "./modules/system/health";
 import { recordAudit } from "./modules/audit/audit";
 
@@ -70,21 +71,24 @@ export function createApp() {
   app.use("/api/whatsapp", whatsappPublicRouter); // GET challenge + X-Hub-Signature-256
 
   app.use("/api/auth", authRouter);
+  app.use("/api/users", requireAdmin, usersRouter); // requireOwner is per-route inside — list is readable by any admin
+  // requireWrite: server-side RBAC — a VIEWER token 403s on every non-GET
+  // below, not just a hidden button in the UI (modules/auth/auth.ts).
   app.use("/api/system/health", requireAdmin, async (_req, res) => res.json(await systemHealth()));
-  app.use("/api/integrations", requireAdmin, integrationsRouter);
-  app.use("/api/brand", requireAdmin, brandRouter);
-  app.use("/api/accounts", requireAdmin, accountsRouter);
-  app.use("/api/workflows", requireAdmin, workflowsRouter);
-  app.use("/api/video", requireAdmin, videoRouter);
-  app.use("/api/carousel", requireAdmin, carouselRouter);
-  app.use("/api/whatsapp", requireAdmin, whatsappRouter);
-  app.use("/api/approvals", requireAdmin, approvalsRouter);
-  app.use("/api/executions", requireAdmin, executionsRouter);
+  app.use("/api/integrations", requireAdmin, requireWrite, integrationsRouter);
+  app.use("/api/brand", requireAdmin, requireWrite, brandRouter);
+  app.use("/api/accounts", requireAdmin, requireWrite, accountsRouter);
+  app.use("/api/workflows", requireAdmin, requireWrite, workflowsRouter);
+  app.use("/api/video", requireAdmin, requireWrite, videoRouter);
+  app.use("/api/carousel", requireAdmin, requireWrite, carouselRouter);
+  app.use("/api/whatsapp", requireAdmin, requireWrite, whatsappRouter);
+  app.use("/api/approvals", requireAdmin, requireWrite, approvalsRouter);
+  app.use("/api/executions", requireAdmin, requireWrite, executionsRouter);
   app.use("/api/reports", requireAdmin, reportsRouter);
-  app.use("/api/settings", requireAdmin, settingsRouter);
+  app.use("/api/settings", requireAdmin, requireWrite, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);
-  app.use("/api/media", requireAdmin, mediaRouter);
+  app.use("/api/media", requireAdmin, requireWrite, mediaRouter);
 
   app.use((_req, res) => res.status(404).json({ message: "Not found" }));
   app.use(errorHandler);

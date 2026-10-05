@@ -3,6 +3,8 @@ import { z } from "zod";
 import { AuthedRequest } from "../modules/auth/auth";
 import { recordAudit } from "../modules/audit/audit";
 import * as brand from "../modules/brand/service";
+import { testBrandProfile } from "../modules/brand/testProfile";
+import { safeErrorMessage } from "../lib/http";
 
 export const brandRouter = Router();
 
@@ -55,9 +57,23 @@ brandRouter.put("/profiles/:id", async (req: AuthedRequest, res) => {
   const id = String(req.params.id);
   const parsed = brandProfileSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
-  const row = await brand.updateBrandProfile(id, parsed.data);
+  const row = await brand.updateBrandProfile(id, parsed.data, req.admin?.email ?? "unknown");
   await recordAudit(req.admin?.email ?? "unknown", "brand.profile.updated", "BrandProfile", id);
   res.json(row);
+});
+
+brandRouter.get("/profiles/:id/versions", async (req, res) => {
+  res.json(await brand.listBrandProfileVersions(String(req.params.id)));
+});
+
+brandRouter.post("/profiles/:id/rollback/:versionId", async (req: AuthedRequest, res) => {
+  try {
+    const row = await brand.rollbackBrandProfile(String(req.params.id), String(req.params.versionId), req.admin?.email ?? "unknown");
+    await recordAudit(req.admin?.email ?? "unknown", "brand.profile.rolled_back", "BrandProfile", String(req.params.id), { versionId: req.params.versionId });
+    res.json(row);
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Rollback failed" });
+  }
 });
 
 brandRouter.delete("/profiles/:id", async (req: AuthedRequest, res) => {
@@ -88,9 +104,23 @@ brandRouter.put("/audiences/:id", async (req: AuthedRequest, res) => {
   const id = String(req.params.id);
   const parsed = audienceProfileSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
-  const row = await brand.updateAudienceProfile(id, parsed.data);
+  const row = await brand.updateAudienceProfile(id, parsed.data, req.admin?.email ?? "unknown");
   await recordAudit(req.admin?.email ?? "unknown", "brand.audience.updated", "AudienceProfile", id);
   res.json(row);
+});
+
+brandRouter.get("/audiences/:id/versions", async (req, res) => {
+  res.json(await brand.listAudienceProfileVersions(String(req.params.id)));
+});
+
+brandRouter.post("/audiences/:id/rollback/:versionId", async (req: AuthedRequest, res) => {
+  try {
+    const row = await brand.rollbackAudienceProfile(String(req.params.id), String(req.params.versionId), req.admin?.email ?? "unknown");
+    await recordAudit(req.admin?.email ?? "unknown", "brand.audience.rolled_back", "AudienceProfile", String(req.params.id), { versionId: req.params.versionId });
+    res.json(row);
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Rollback failed" });
+  }
 });
 
 brandRouter.delete("/audiences/:id", async (req: AuthedRequest, res) => {
@@ -117,4 +147,19 @@ brandRouter.delete("/vocabulary/:id", async (req: AuthedRequest, res) => {
   await brand.deleteVocabularyEntry(String(req.params.id));
   await recordAudit(req.admin?.email ?? "unknown", "brand.vocabulary.deleted", "VocabularyEntry", String(req.params.id));
   res.json({ ok: true });
+});
+
+const testSchema = z.object({ brief: z.string().trim().min(1).max(500), brandId: z.string().optional(), audienceId: z.string().optional() });
+
+/** "Test profile against sample content" — a real AI call, synchronous, never a fake PASS. */
+brandRouter.post("/test", async (req: AuthedRequest, res) => {
+  const parsed = testSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+  try {
+    const result = await testBrandProfile(parsed.data.brief, { brandId: parsed.data.brandId, audienceId: parsed.data.audienceId });
+    await recordAudit(req.admin?.email ?? "unknown", "brand.profile.tested", undefined, undefined, { score: result.score, onBrand: result.onBrand });
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ message: safeErrorMessage(err) });
+  }
 });

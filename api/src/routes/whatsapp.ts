@@ -1,9 +1,15 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma";
 import { getWhatsAppConfig, sendWhatsAppText } from "../modules/whatsapp/cloud-api";
 import { handleInboundMessage } from "../modules/whatsapp/conversation";
 import { logger } from "../lib/logger";
+
+// Generous but bounded: real traffic from Meta is one webhook call per
+// inbound message, never a burst; this exists to cap abuse of a public,
+// unauthenticated-until-signature-checked endpoint, not to throttle Meta.
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
 
 export const whatsappRouter = Router(); // admin-facing: contacts/listings
 /** Public — Meta calls this directly; GET is the subscription challenge, POST is signed. */
@@ -28,7 +34,7 @@ whatsappPublicRouter.get("/webhook", async (req, res) => {
   res.status(200).send(String(challenge ?? ""));
 });
 
-whatsappPublicRouter.post("/webhook", async (req, res) => {
+whatsappPublicRouter.post("/webhook", webhookLimiter, async (req, res) => {
   const config = await getWhatsAppConfig();
   if (!config) return res.status(503).json({ message: "WhatsApp is not configured" });
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
@@ -37,13 +43,17 @@ whatsappPublicRouter.post("/webhook", async (req, res) => {
 
   try {
     const body = req.body as {
-      entry?: { changes?: { value?: { messages?: { from: string; type: string; text?: { body: string } }[] } }[] }[];
+      entry?: { changes?: { value?: { messages?: { id?: string; from: string; type: string; text?: { body: string } }[] } }[] }[];
     };
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
         for (const message of change.value?.messages ?? []) {
           if (message.type !== "text" || !message.text?.body) continue; // v1: text replies only, same scope as the ported workflow 13
-          const { reply } = await handleInboundMessage(message.from, message.text.body);
+          const { reply, duplicate } = await handleInboundMessage(message.from, message.text.body, "whatsapp", message.id);
+          if (duplicate) {
+            logger.info({ messageId: message.id }, "[whatsapp] duplicate webhook delivery, skipped");
+            continue;
+          }
           if (reply) await sendWhatsAppText(config, message.from, reply).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[whatsapp] reply send failed"));
         }
       }

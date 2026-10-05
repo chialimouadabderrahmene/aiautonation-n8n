@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma";
 import { enqueueDelivery } from "../lib/queue";
 import { recordAudit } from "../modules/audit/audit";
@@ -115,7 +116,9 @@ approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRe
  * n8n workflow 02 (content approval commands). Always answers 200 so
  * Telegram never retries forever.
  */
-telegramPublicRouter.post("/webhook", async (req, res) => {
+const telegramWebhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
+
+telegramPublicRouter.post("/webhook", telegramWebhookLimiter, async (req, res) => {
   const header = req.headers["x-telegram-bot-api-secret-token"];
   const expected = await getTelegramWebhookSecret();
   if (typeof header !== "string" || !secretsEqual(header, expected)) return res.status(403).json({ message: "Forbidden" });

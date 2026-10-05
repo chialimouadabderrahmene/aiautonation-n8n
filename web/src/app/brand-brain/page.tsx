@@ -277,6 +277,113 @@ function VocabularyEditor({ audience, onChanged }: { audience: AudienceProfile; 
   );
 }
 
+interface Version {
+  id: string;
+  createdBy: string;
+  createdAt: string;
+  snapshot: Record<string, unknown>;
+}
+
+function VersionHistory({ kind, profileId, onChanged }: { kind: "profiles" | "audiences"; profileId: string; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [versions, setVersions] = useState<Version[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function toggle() {
+    if (!open && !versions) {
+      const v = await api.get<Version[]>(`/api/brand/${kind}/${profileId}/versions`).catch(() => []);
+      setVersions(v);
+    }
+    setOpen(!open);
+  }
+
+  return (
+    <div className="mt-2">
+      <button type="button" className="text-xs font-semibold text-brand-600 hover:underline" onClick={toggle}>
+        {open ? "Hide version history" : "Version history"}
+      </button>
+      {open ? (
+        <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-xs text-slate-500">
+          {(versions ?? []).map((v) => (
+            <li key={v.id} className="flex items-center justify-between gap-2">
+              <span>
+                {new Date(v.createdAt).toLocaleString()} · {v.createdBy} · &ldquo;{String(v.snapshot.name ?? "")}&rdquo;
+              </span>
+              <button
+                type="button"
+                className="font-semibold text-brand-600 hover:underline disabled:opacity-50"
+                disabled={busy === v.id}
+                onClick={async () => {
+                  setBusy(v.id);
+                  try {
+                    await api.post(`/api/brand/${kind}/${profileId}/rollback/${v.id}`);
+                    setVersions(null);
+                    setOpen(false);
+                    await onChanged();
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                {busy === v.id ? "Restoring…" : "Restore this version"}
+              </button>
+            </li>
+          ))}
+          {versions && versions.length === 0 ? <li>No prior versions — nothing has been edited yet.</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function TestProfilePanel({ brandId, audienceId }: { brandId?: string; audienceId?: string }) {
+  const [brief, setBrief] = useState("");
+  const [result, setResult] = useState<{ sample: string; score: number; onBrand: boolean; violations: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setError(null);
+    setResult(null);
+    setBusy(true);
+    try {
+      setResult(await api.post("/api/brand/test", { brief, brandId, audienceId }));
+    } catch (err) {
+      setError(err instanceof APIError ? err.message : "Test failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mt-4">
+      <h3 className="mb-2 text-sm font-bold text-slate-700">Test this profile against sample content</h3>
+      <p className="mb-2 text-xs text-slate-500">Runs a real AI call through the active brand + audience profiles and the same critic the pipeline uses — never a fake pass.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <input className={`${inputClass} mt-0 flex-1`} placeholder="e.g. a caption announcing a new vendor feature" value={brief} onChange={(e) => setBrief(e.target.value)} />
+        <Button variant="secondary" onClick={run} disabled={busy || !brief.trim()}>
+          {busy ? "Testing…" : "Run test"}
+        </Button>
+      </div>
+      {error ? (
+        <div className="mt-2">
+          <Notice tone="red">{error}</Notice>
+        </div>
+      ) : null}
+      {result ? (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+          <p className="italic">&ldquo;{result.sample}&rdquo;</p>
+          <div className="mt-2 flex items-center gap-2">
+            <Badge tone={result.onBrand ? "green" : "amber"}>{result.onBrand ? "On brand" : "Drifted"}</Badge>
+            <span className="text-xs text-slate-500">score {result.score}/100</span>
+          </div>
+          {result.violations.length ? <p className="mt-1 text-xs text-amber-700">Violations: {result.violations.join(", ")}</p> : null}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 export default function BrandBrainPage() {
   const [brands, setBrands] = useState<BrandProfile[] | null>(null);
   const [audiences, setAudiences] = useState<AudienceProfile[] | null>(null);
@@ -317,6 +424,7 @@ export default function BrandBrainPage() {
                         <span className="text-xs text-slate-400">v{b.version}</span>
                       </div>
                       {b.voiceAdjectives.length ? <p className="mt-1 text-sm text-slate-600">{b.voiceAdjectives.join(", ")}</p> : null}
+                      <VersionHistory kind="profiles" profileId={b.id} onChanged={load} />
                     </div>
                     <div className="flex gap-2">
                       {!b.isActive ? (
@@ -363,6 +471,7 @@ export default function BrandBrainPage() {
                         <span className="text-xs text-slate-400">v{a.version}</span>
                       </div>
                       {a.marketDescription ? <p className="mt-1 text-sm text-slate-600">{a.marketDescription}</p> : null}
+                      <VersionHistory kind="audiences" profileId={a.id} onChanged={load} />
                     </div>
                     <div className="flex gap-2">
                       {!a.isActive ? (
@@ -396,6 +505,8 @@ export default function BrandBrainPage() {
               <AudienceForm onSaved={load} />
             </Card>
           </section>
+
+          <TestProfilePanel brandId={brands.find((b) => b.isActive)?.id} audienceId={audiences.find((a) => a.isActive)?.id} />
         </div>
       )}
     </ControlCenterLayout>

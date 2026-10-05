@@ -26,6 +26,8 @@ const FOOTER = "\n\nReply STOP anytime to opt out.";
 export interface ConversationResult {
   reply: string | null;
   contact: WhatsAppContact;
+  /** true when `providerMessageId` was already seen — a Meta webhook retry, not reprocessed. */
+  duplicate?: boolean;
 }
 
 async function upsertContact(phone: string, source: string): Promise<WhatsAppContact> {
@@ -36,8 +38,8 @@ async function upsertContact(phone: string, source: string): Promise<WhatsAppCon
   });
 }
 
-async function log(contactId: string, direction: "in" | "out", body: string): Promise<void> {
-  await prisma.whatsAppMessage.create({ data: { contactId, direction, body: body.slice(0, 4096) } });
+async function log(contactId: string, direction: "in" | "out", body: string, providerMessageId?: string): Promise<void> {
+  await prisma.whatsAppMessage.create({ data: { contactId, direction, body: body.slice(0, 4096), providerMessageId } });
 }
 
 async function setStatus(id: string, data: Partial<{ status: WhatsAppContactStatus; role: string; optIn: boolean; entryKeyword: string; name: string }>): Promise<WhatsAppContact> {
@@ -50,10 +52,15 @@ async function setStatus(id: string, data: Partial<{ status: WhatsAppContactStat
  * caller (the webhook route) persists nothing else — every state change
  * happens here so the logic stays testable without the HTTP layer.
  */
-export async function handleInboundMessage(phone: string, text: string, source = "whatsapp"): Promise<ConversationResult> {
+export async function handleInboundMessage(phone: string, text: string, source = "whatsapp", providerMessageId?: string): Promise<ConversationResult> {
   const trimmed = text.trim();
   let contact = await upsertContact(phone, source);
-  await log(contact.id, "in", trimmed);
+  // Webhook replay/retry guard: Meta redelivers on a slow or dropped ack.
+  // Checked before any state change — a retry must never double-process.
+  if (providerMessageId && (await prisma.whatsAppMessage.findUnique({ where: { providerMessageId } }))) {
+    return { reply: null, contact, duplicate: true };
+  }
+  await log(contact.id, "in", trimmed, providerMessageId);
 
   if (contact.status === "UNSUBSCRIBED" && !/^start$/i.test(trimmed)) {
     return { reply: null, contact };

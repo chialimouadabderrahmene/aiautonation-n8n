@@ -23,10 +23,19 @@ datasource db {
 
 /// A small, fixed set of operators for this control center. Deliberately not
 /// the Eki admin system: this product is standalone (see README/ARCHITECTURE).
+enum AdminRole {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique
   passwordHash String
+  /// OWNER/ADMIN may write; VIEWER is read-only, enforced server-side by
+  /// requireWrite() (modules/auth/auth.ts), not just hidden in the UI.
+  role         AdminRole @default(OWNER)
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
 }
@@ -216,35 +225,35 @@ enum ApprovalStatus {
 }
 
 model VideoProject {
-  id             String   @id @default(cuid())
-  name           String
-  contentType    String // Instagram Reel, TikTok, ...
-  topic          String
-  prompt         String
-  audience       String?
-  language       String   @default("en")
-  tone           String   @default("Professional")
-  durationSec    Int      @default(30)
-  aspectRatio    String   @default("9:16")
-  visualStyle    String   @default("Realistic")
-  voicePreset    String? // ElevenLabs voice id, or "male"/"female" hint
-  music          String   @default("none") // none | background | <asset id>
-  subtitles      Boolean  @default(true)
-  brand          String   @default("Eki")
-  cta            String?
-  testMode       Boolean  @default(true)
+  id                String   @id @default(cuid())
+  name              String
+  contentType       String // Instagram Reel, TikTok, ...
+  topic             String
+  prompt            String
+  audience          String?
+  language          String   @default("en")
+  tone              String   @default("Professional")
+  durationSec       Int      @default(30)
+  aspectRatio       String   @default("9:16")
+  visualStyle       String   @default("Realistic")
+  voicePreset       String? // ElevenLabs voice id, or "male"/"female" hint
+  music             String   @default("none") // none | background | <asset id>
+  subtitles         Boolean  @default(true)
+  brand             String   @default("Eki")
+  cta               String?
+  testMode          Boolean  @default(true)
   /// MediaFile id of an uploaded music track, when music != "none".
-  musicFileId    String?
+  musicFileId       String?
   /// Where an approved video is published: any of "instagram", "facebook",
   /// "x", "linkedin". Empty = approval only, publish manually.
-  publishTargets String[] @default([])
+  publishTargets    String[] @default([])
   /// Specific ConnectedAccount ids to publish to, in addition to the legacy
   /// default-per-provider targets above — lets one project reach several
   /// accounts of the same platform. Empty = publishTargets behaves exactly
   /// as before (back-compat, no multi-account installs are affected).
   publishAccountIds String[] @default([])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   jobs VideoJob[]
 }
@@ -473,26 +482,26 @@ model AuditLog {
 // so AuditLog is this model's change history (no separate version table).
 
 model BrandProfile {
-  id               String   @id @default(cuid())
-  name             String   @default("Default")
-  isActive         Boolean  @default(false)
-  voiceAdjectives  String[] @default([])
-  tone             String?
-  formality        String?
-  sentenceStyle    String?
-  preferredPhrases String[] @default([])
-  bannedWords      String[] @default([])
-  ctaStyle         String?
-  exampleSentences String[] @default([])
+  id                String   @id @default(cuid())
+  name              String   @default("Default")
+  isActive          Boolean  @default(false)
+  voiceAdjectives   String[] @default([])
+  tone              String?
+  formality         String?
+  sentenceStyle     String?
+  preferredPhrases  String[] @default([])
+  bannedWords       String[] @default([])
+  ctaStyle          String?
+  exampleSentences  String[] @default([])
   /// Hex colors (e.g. "#1A2B3C") for the carousel/slideshow renderer's
   /// background and accents. Optional — the renderer falls back to a
   /// neutral default template when none are set.
   primaryColorHex   String?
   secondaryColorHex String?
   accentColorHex    String?
-  version          Int      @default(1)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  version           Int      @default(1)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([isActive])
 }
@@ -528,6 +537,21 @@ model VocabularyEntry {
   createdAt         DateTime        @default(now())
 
   @@unique([audienceProfileId, term])
+}
+
+/// One row per save of a BrandProfile or AudienceProfile — the FULL prior
+/// state, snapshotted before the update is applied, so rollback can restore
+/// it exactly. One table for both kinds (discriminated by `profileType`)
+/// rather than two near-identical ones.
+model ProfileVersion {
+  id          String   @id @default(cuid())
+  profileType String // "brand" | "audience"
+  profileId   String
+  snapshot    Json
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  @@index([profileType, profileId, createdAt])
 }
 
 // ------------------------------------------------------------- Carousels
@@ -647,13 +671,17 @@ model WhatsAppContact {
 }
 
 model WhatsAppMessage {
-  id           String          @id @default(cuid())
-  contactId    String
-  contact      WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  direction    String // "in" | "out"
-  body         String
-  templateName String?
-  createdAt    DateTime        @default(now())
+  id                String          @id @default(cuid())
+  contactId         String
+  contact           WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  direction         String // "in" | "out"
+  body              String
+  templateName      String?
+  /// Meta's own message id (inbound "wamid...") — a webhook retry carries
+  /// the same id, so this unique constraint is the dedup/replay guard:
+  /// the handler checks it before processing, never after.
+  providerMessageId String?         @unique
+  createdAt         DateTime        @default(now())
 
   @@index([contactId, createdAt])
 }
