@@ -4,6 +4,9 @@ import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma";
 import { getWhatsAppConfig, sendWhatsAppText } from "../modules/whatsapp/cloud-api";
 import { handleInboundMessage } from "../modules/whatsapp/conversation";
+import { enqueueWhatsAppNurtureRun } from "../lib/queue";
+import { recordAudit } from "../modules/audit/audit";
+import { AuthedRequest } from "../modules/auth/auth";
 import { logger } from "../lib/logger";
 
 // Generous but bounded: real traffic from Meta is one webhook call per
@@ -61,6 +64,13 @@ whatsappPublicRouter.post("/webhook", webhookLimiter, async (req, res) => {
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[whatsapp] webhook handling failed");
   }
+});
+
+/** Manual run of the nurture sweep (native port of n8n workflow 19's Manual Run node) — the worker's own daily 08:00 UTC schedule covers the automatic path. */
+whatsappRouter.post("/nurture/run", async (req: AuthedRequest, res) => {
+  await enqueueWhatsAppNurtureRun();
+  await recordAudit(req.admin?.email ?? "unknown", "whatsapp.nurture_run_requested", "WhatsAppContact", "bulk");
+  res.status(202).json({ ok: true, message: "Queued — the worker runs the nurture sweep next" });
 });
 
 whatsappRouter.get("/contacts", async (req, res) => {

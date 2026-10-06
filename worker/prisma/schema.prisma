@@ -701,17 +701,26 @@ enum WhatsAppContactStatus {
 }
 
 model WhatsAppContact {
-  id            String                @id @default(cuid())
-  phone         String                @unique
-  name          String?
-  role          String? // "vendor" | "buyer", once known
-  status        WhatsAppContactStatus @default(NEW)
-  entryKeyword  String?
-  source        String? // "instagram_comment" | "whatsapp_group" | "direct"
-  optIn         Boolean               @default(false)
-  lastMessageAt DateTime?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  id               String                @id @default(cuid())
+  phone            String                @unique
+  name             String?
+  role             String? // "vendor" | "buyer", once known
+  status           WhatsAppContactStatus @default(NEW)
+  entryKeyword     String?
+  source           String? // "instagram_comment" | "whatsapp_group" | "direct"
+  optIn            Boolean               @default(false)
+  /// First time `optIn` turned true — the nurture sequence's day-count
+  /// anchor (falls back to `createdAt` for contacts that predate this
+  /// field). Native port of n8n workflow 19's `opt_in_at`.
+  optInAt          DateTime?
+  lastMessageAt    DateTime?
+  /// How many nurture-sequence days have been sent (0 = none yet) — native
+  /// port of n8n workflow 19's `nurture_day`/`last_nurture`/`last_wa_error`.
+  nurtureDay       Int                   @default(0)
+  lastNurtureAt    DateTime?
+  lastNurtureError String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
   messages WhatsAppMessage[]
   listings ProductListing[]

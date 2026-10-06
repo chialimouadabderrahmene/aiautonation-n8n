@@ -3,14 +3,25 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Worker, Job, UnrecoverableError } from "bullmq";
+import { Worker, Queue, Job, UnrecoverableError } from "bullmq";
 import { prisma } from "./lib/prisma";
 import { logger } from "./lib/logger";
-import { getRedisConnection, VIDEO_QUEUE_NAME, DELIVERY_QUEUE_NAME, CAROUSEL_QUEUE_NAME, VideoGenerationJobPayload, DeliveryJobPayload, CarouselGenerationJobPayload } from "./lib/queue";
+import {
+  getRedisConnection,
+  VIDEO_QUEUE_NAME,
+  DELIVERY_QUEUE_NAME,
+  CAROUSEL_QUEUE_NAME,
+  WHATSAPP_NURTURE_QUEUE_NAME,
+  VideoGenerationJobPayload,
+  DeliveryJobPayload,
+  CarouselGenerationJobPayload,
+  WhatsAppNurtureJobPayload,
+} from "./lib/queue";
 import { startHeartbeat, stopHeartbeat, currentCapabilities } from "./lib/heartbeat";
 import { ProviderError, scrubSecrets } from "./lib/http";
 import { processVideoJob, audit } from "./pipeline/orchestrator";
 import { processCarouselJob, audit as carouselAudit } from "./pipeline/carousel-orchestrator";
+import { runWhatsAppNurture } from "./pipeline/whatsapp-nurture";
 import { sendVideoForApproval, sendCarouselForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
 import { publishCarousel } from "./delivery/publish-carousel";
@@ -179,6 +190,37 @@ async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
   }
 }
 
+async function processWhatsAppNurture(job: Job<WhatsAppNurtureJobPayload>): Promise<void> {
+  const attempt = job.attemptsMade;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}`, trigger: `whatsapp-nurture:${job.data.trigger}`, provider: "whatsapp", retryCount: attempt, mode: "whatsapp-nurture" },
+  });
+  try {
+    const summary = await runWhatsAppNurture();
+    await prisma.automationExecution.update({
+      where: { id: execution.id },
+      data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() },
+    });
+    if (summary.failed > 0 || summary.missingTemplates.length) {
+      const parts = [`WhatsApp nurture: ${summary.sent} sent, ${summary.failed} failed (of ${summary.eligible} due)`];
+      if (summary.missingTemplates.length) parts.push(`Missing approved templates: ${summary.missingTemplates.join(", ")} — configure them in Integrations.`);
+      if (summary.firstError) parts.push(`First error: ${summary.firstError}`);
+      await notifyTeam(parts.join("\n"));
+    }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    await prisma.automationExecution.update({
+      where: { id: execution.id },
+      data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message },
+    });
+    // Not connected / misconfigured is expected until the admin sets up WhatsApp — never alert-spam for that, same restraint as the rest of the delivery pipeline.
+    if (!message.includes("is not connected")) await notifyTeam(`WhatsApp nurture run failed: ${message}`);
+    throw err;
+  }
+}
+
 let isShuttingDown = false;
 
 async function main() {
@@ -206,8 +248,18 @@ async function main() {
     concurrency: 2,
     lockDuration: 10 * 60_000,
   });
+  const whatsappNurtureWorker = new Worker<WhatsAppNurtureJobPayload>(WHATSAPP_NURTURE_QUEUE_NAME, processWhatsAppNurture, {
+    connection: getRedisConnection(),
+    concurrency: 1,
+    lockDuration: 5 * 60_000,
+  });
+  // Registers the daily 08:00 UTC sweep (native port of n8n workflow 19's
+  // schedule trigger). BullMQ keys a repeatable job by its name+pattern, so
+  // re-registering on every worker restart is a no-op, not a duplicate.
+  const whatsappNurtureSchedule = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_NURTURE_QUEUE_NAME, { connection: getRedisConnection() });
+  await whatsappNurtureSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 8 * * *" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 
-  for (const w of [videoWorker, carouselWorker, deliveryWorker]) {
+  for (const w of [videoWorker, carouselWorker, deliveryWorker, whatsappNurtureWorker]) {
     w.on("failed", (job, err) => logger.warn({ queue: w.name, jobId: job?.id, err: scrubSecrets(err.message, []) }, "[worker] job failed"));
     w.on("completed", (job) => logger.info({ queue: w.name, jobId: job.id }, "[worker] job completed"));
     // Redis connection errors: BullMQ reconnects by itself; never crash the process.
@@ -240,7 +292,7 @@ async function main() {
     logger.info(`[worker] ${signal} received, finishing in-flight jobs`);
     const timeout = setTimeout(() => process.exit(1), 60_000);
     timeout.unref();
-    await Promise.allSettled([videoWorker.close(), carouselWorker.close(), deliveryWorker.close()]);
+    await Promise.allSettled([videoWorker.close(), carouselWorker.close(), deliveryWorker.close(), whatsappNurtureWorker.close(), whatsappNurtureSchedule.close()]);
     await stopHeartbeat();
     await prisma.$disconnect();
     healthServer.close();
@@ -248,7 +300,7 @@ async function main() {
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
-  logger.info(`[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME}`);
+  logger.info(`[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME} + ${WHATSAPP_NURTURE_QUEUE_NAME} (daily 08:00 UTC)`);
 }
 
 process.on("unhandledRejection", (err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, "unhandled rejection"));

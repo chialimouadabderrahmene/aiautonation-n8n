@@ -42,8 +42,14 @@ async function log(contactId: string, direction: "in" | "out", body: string, pro
   await prisma.whatsAppMessage.create({ data: { contactId, direction, body: body.slice(0, 4096), providerMessageId } });
 }
 
-async function setStatus(id: string, data: Partial<{ status: WhatsAppContactStatus; role: string; optIn: boolean; entryKeyword: string; name: string }>): Promise<WhatsAppContact> {
-  return prisma.whatsAppContact.update({ where: { id }, data });
+async function setStatus(
+  contact: WhatsAppContact,
+  data: Partial<{ status: WhatsAppContactStatus; role: string; optIn: boolean; entryKeyword: string; name: string }>,
+): Promise<WhatsAppContact> {
+  // optInAt anchors the nurture sequence (worker/src/pipeline/whatsapp-nurture.ts) —
+  // set once, the first time optIn turns true, never overwritten after.
+  const optInAt = data.optIn && !contact.optInAt ? new Date() : undefined;
+  return prisma.whatsAppContact.update({ where: { id: contact.id }, data: optInAt ? { ...data, optInAt } : data });
 }
 
 /**
@@ -67,7 +73,7 @@ export async function handleInboundMessage(phone: string, text: string, source =
   }
 
   if (STOP.test(trimmed)) {
-    contact = await setStatus(contact.id, { status: "UNSUBSCRIBED", optIn: false });
+    contact = await setStatus(contact, { status: "UNSUBSCRIBED", optIn: false });
     const reply = `You're unsubscribed — you won't receive further messages. Reply START anytime to come back.${FOOTER}`;
     await log(contact.id, "out", reply);
     return { reply, contact };
@@ -81,7 +87,7 @@ export async function handleInboundMessage(phone: string, text: string, source =
     const reply = link
       ? `Here's the Eki community group: ${link}\n\nWhen you're ready to sign up and list a product, just message VENDOR or BUYER here.${FOOTER}`
       : `Thanks for your interest! The community group link isn't set up yet — message VENDOR or BUYER and we'll get you started directly.${FOOTER}`;
-    contact = await setStatus(contact.id, { entryKeyword: "JOIN", optIn: true });
+    contact = await setStatus(contact, { entryKeyword: "JOIN", optIn: true });
     await log(contact.id, "out", reply);
     return { reply, contact };
   }
@@ -91,14 +97,14 @@ export async function handleInboundMessage(phone: string, text: string, source =
     // behaviour) both land on AWAITING_ROLE; anything further along its own
     // flow (SIGNUP_IN_PROGRESS etc.) is left where it is.
     const revive = contact.status === "NEW" || contact.status === "UNSUBSCRIBED";
-    contact = await setStatus(contact.id, { optIn: true, status: revive ? "AWAITING_ROLE" : contact.status });
+    contact = await setStatus(contact, { optIn: true, status: revive ? "AWAITING_ROLE" : contact.status });
     const reply = `Hi! 👋 Eki is a marketplace connecting African foodstuff vendors with buyers worldwide. Are you a Buyer or a Vendor?${FOOTER}`;
     await log(contact.id, "out", reply);
     return { reply, contact };
   }
 
   if (VENDOR.test(trimmed)) {
-    contact = await setStatus(contact.id, { role: "vendor", status: "SIGNUP_IN_PROGRESS", optIn: true, entryKeyword: contact.entryKeyword ?? "VENDOR" });
+    contact = await setStatus(contact, { role: "vendor", status: "SIGNUP_IN_PROGRESS", optIn: true, entryKeyword: contact.entryKeyword ?? "VENDOR" });
     const reply = `Great — let's get your store started. What's your name, your country, and what do you sell?${FOOTER}`;
     await log(contact.id, "out", reply);
     await notifyAdmin(`🔥 High-intent vendor lead on WhatsApp: ${phone}`).catch(() => undefined);
@@ -106,14 +112,14 @@ export async function handleInboundMessage(phone: string, text: string, source =
   }
 
   if (BUYER.test(trimmed)) {
-    contact = await setStatus(contact.id, { role: "buyer", status: "SIGNUP_IN_PROGRESS", optIn: true, entryKeyword: contact.entryKeyword ?? "BUYER" });
+    contact = await setStatus(contact, { role: "buyer", status: "SIGNUP_IN_PROGRESS", optIn: true, entryKeyword: contact.entryKeyword ?? "BUYER" });
     const reply = `Welcome! What's your name and country? We'll help you find trusted vendors for what you're after.${FOOTER}`;
     await log(contact.id, "out", reply);
     return { reply, contact };
   }
 
   if (contact.status === "SIGNUP_IN_PROGRESS" && contact.role === "vendor") {
-    contact = await setStatus(contact.id, { name: trimmed.slice(0, 200), status: "LISTING_PRODUCT" });
+    contact = await setStatus(contact, { name: trimmed.slice(0, 200), status: "LISTING_PRODUCT" });
     await prisma.productListing.create({ data: { contactId: contact.id, status: "DRAFT" } });
     const reply = `Thanks! Now let's list your first product. What is it called?${FOOTER}`;
     await log(contact.id, "out", reply);
@@ -121,7 +127,7 @@ export async function handleInboundMessage(phone: string, text: string, source =
   }
 
   if (contact.status === "SIGNUP_IN_PROGRESS" && contact.role === "buyer") {
-    contact = await setStatus(contact.id, { name: trimmed.slice(0, 200), status: "COMPLETE" });
+    contact = await setStatus(contact, { name: trimmed.slice(0, 200), status: "COMPLETE" });
     const appLink = await getSetting<string>("appDownloadLink");
     const reply = `Thanks, ${trimmed.split(/\s+/)[0]}! A member of the Eki team will follow up.${appLink ? ` In the meantime: ${appLink}` : ""}${FOOTER}`;
     await log(contact.id, "out", reply);
@@ -139,7 +145,7 @@ async function continueProductListing(contact: WhatsAppContact, text: string): P
   const listing = await prisma.productListing.findFirst({ where: { contactId: contact.id, status: "DRAFT" }, orderBy: { createdAt: "desc" } });
   if (!listing) {
     // Shouldn't happen (status implies a draft exists) — fail safe back to the general flow rather than losing the message.
-    const updated = await setStatus(contact.id, { status: "COMPLETE" });
+    const updated = await setStatus(contact, { status: "COMPLETE" });
     return { reply: "Thanks! A member of the Eki team will follow up.", contact: updated };
   }
   let reply: string;
@@ -156,7 +162,7 @@ async function continueProductListing(contact: WhatsAppContact, text: string): P
   } else {
     reply = "Thanks — that's noted.";
   }
-  const updated = reply.startsWith("Your listing is in") ? await setStatus(contact.id, { status: "COMPLETE" }) : contact;
+  const updated = reply.startsWith("Your listing is in") ? await setStatus(contact, { status: "COMPLETE" }) : contact;
   await log(contact.id, "out", `${reply}${FOOTER}`);
   return { reply: `${reply}${FOOTER}`, contact: updated };
 }

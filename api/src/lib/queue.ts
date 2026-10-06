@@ -10,6 +10,8 @@ export const VIDEO_QUEUE_NAME = "video-generation";
 export const DELIVERY_QUEUE_NAME = "video-delivery";
 /** Carousel/slideshow generation (script → render N slides → QA). */
 export const CAROUSEL_QUEUE_NAME = "carousel-generation";
+/** WhatsApp nurture sweep — scheduled daily by the worker (BullMQ repeatable job), native port of n8n workflow 19. */
+export const WHATSAPP_NURTURE_QUEUE_NAME = "whatsapp-nurture";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
@@ -17,6 +19,10 @@ export interface VideoGenerationJobPayload {
 
 export interface CarouselGenerationJobPayload {
   carouselJobId: string;
+}
+
+export interface WhatsAppNurtureJobPayload {
+  trigger: "scheduled" | "manual";
 }
 
 export type DeliveryJobPayload =
@@ -29,6 +35,7 @@ let connection: IORedis | null = null;
 let videoQueue: Queue<VideoGenerationJobPayload> | null = null;
 let carouselQueue: Queue<CarouselGenerationJobPayload> | null = null;
 let deliveryQueue: Queue<DeliveryJobPayload> | null = null;
+let whatsappNurtureQueue: Queue<WhatsAppNurtureJobPayload> | null = null;
 
 function getConnection(): IORedis {
   if (!connection) {
@@ -53,6 +60,16 @@ export function getCarouselQueue(): Queue<CarouselGenerationJobPayload> {
 export function getDeliveryQueue(): Queue<DeliveryJobPayload> {
   if (!deliveryQueue) deliveryQueue = new Queue<DeliveryJobPayload>(DELIVERY_QUEUE_NAME, { connection: getConnection() });
   return deliveryQueue;
+}
+
+export function getWhatsAppNurtureQueue(): Queue<WhatsAppNurtureJobPayload> {
+  if (!whatsappNurtureQueue) whatsappNurtureQueue = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_NURTURE_QUEUE_NAME, { connection: getConnection() });
+  return whatsappNurtureQueue;
+}
+
+/** Admin-triggered one-off run (mirrors n8n workflow 19's Manual Run node) — the worker's own daily repeatable job (set up at startup) covers the scheduled path. */
+export async function enqueueWhatsAppNurtureRun(): Promise<void> {
+  await getWhatsAppNurtureQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 }
 
 /**

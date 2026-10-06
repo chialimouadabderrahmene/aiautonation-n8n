@@ -4,6 +4,7 @@ import IORedis from "ioredis";
 export const VIDEO_QUEUE_NAME = "video-generation";
 export const DELIVERY_QUEUE_NAME = "video-delivery";
 export const CAROUSEL_QUEUE_NAME = "carousel-generation";
+export const WHATSAPP_NURTURE_QUEUE_NAME = "whatsapp-nurture";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
@@ -11,6 +12,10 @@ export interface VideoGenerationJobPayload {
 
 export interface CarouselGenerationJobPayload {
   carouselJobId: string;
+}
+
+export interface WhatsAppNurtureJobPayload {
+  trigger: "scheduled" | "manual";
 }
 
 export type DeliveryJobPayload =
