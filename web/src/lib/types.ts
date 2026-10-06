@@ -133,8 +133,20 @@ export interface VideoProject {
   brand: string;
   cta: string | null;
   publishTargets: string[];
+  publishAccountIds: string[];
   createdAt: string;
   jobs?: (VideoJob & { approval?: Approval | null })[];
+}
+
+export interface ConnectedAccount {
+  id: string;
+  provider: string;
+  label: string;
+  externalAccountId: string;
+  isDefault: boolean;
+  status: "CONNECTED" | "ACTION_REQUIRED" | "DISCONNECTED";
+  connectedAt: string;
+  maskedToken: string;
 }
 
 export interface VideoScene {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
 import { Badge, Button, Card, ErrorState, LoadingState, Notice, PageHeader, StatusBadge, inputClass, labelClass } from "@/components/ui";
 import { api, APIError } from "@/lib/api";
-import { Integration } from "@/lib/types";
+import { ConnectedAccount, Integration } from "@/lib/types";
 
 const TARGETS = [
   { value: "instagram", label: "Instagram carousel", provider: "meta" },
@@ -60,13 +60,14 @@ function SlideThumb({ slide }: { slide: Slide }) {
   return <img src={url} alt={slide.headline} className="h-24 w-20 rounded border border-slate-200 object-cover" />;
 }
 
-function CreateForm({ connected, onCreated }: { connected: Set<string>; onCreated: () => Promise<void> }) {
+function CreateForm({ connected, connectedAccounts, onCreated }: { connected: Set<string>; connectedAccounts: ConnectedAccount[]; onCreated: () => Promise<void> }) {
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [prompt, setPrompt] = useState("");
   const [platform, setPlatform] = useState("instagram");
   const [slideCount, setSlideCount] = useState(6);
   const [publishTargets, setPublishTargets] = useState<string[]>([]);
+  const [publishAccountIds, setPublishAccountIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -75,11 +76,12 @@ function CreateForm({ connected, onCreated }: { connected: Set<string>; onCreate
     setError(null);
     setBusy(true);
     try {
-      await api.post("/api/carousel/projects", { name, topic, prompt, platform, slideCount, publishTargets });
+      await api.post("/api/carousel/projects", { name, topic, prompt, platform, slideCount, publishTargets, publishAccountIds });
       setName("");
       setTopic("");
       setPrompt("");
       setPublishTargets([]);
+      setPublishAccountIds([]);
       await onCreated();
     } catch (err) {
       setError(err instanceof APIError ? err.message : "Create failed");
@@ -137,6 +139,24 @@ function CreateForm({ connected, onCreated }: { connected: Set<string>; onCreate
           })}
         </div>
       </div>
+      {connectedAccounts.length ? (
+        <div>
+          <p className={labelClass}>Or publish to specific connected accounts</p>
+          <p className="text-xs text-slate-400">Additive to the platforms above — lets you reach more than one account of the same platform.</p>
+          <div className="mt-2 flex flex-wrap gap-4">
+            {connectedAccounts.map((acc) => (
+              <label key={acc.id} className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={publishAccountIds.includes(acc.id)}
+                  onChange={(e) => setPublishAccountIds(e.target.checked ? [...publishAccountIds, acc.id] : publishAccountIds.filter((x) => x !== acc.id))}
+                />
+                {acc.label} <span className="text-xs text-slate-400">({acc.provider})</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {error ? <Notice tone="red">{error}</Notice> : null}
       <Button type="submit" disabled={busy}>
         {busy ? "Starting…" : "Generate carousel"}
@@ -148,13 +168,19 @@ function CreateForm({ connected, onCreated }: { connected: Set<string>; onCreate
 export default function CarouselsPage() {
   const [projects, setProjects] = useState<CarouselProject[] | null>(null);
   const [connected, setConnected] = useState<Set<string>>(new Set());
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
-      const [p, i] = await Promise.all([api.get<CarouselProject[]>("/api/carousel/projects"), api.get<Integration[]>("/api/integrations").catch(() => [])]);
+      const [p, i, a] = await Promise.all([
+        api.get<CarouselProject[]>("/api/carousel/projects"),
+        api.get<Integration[]>("/api/integrations").catch(() => []),
+        api.get<ConnectedAccount[]>("/api/accounts").catch(() => []),
+      ]);
       setProjects(p);
       setConnected(new Set(i.filter((x) => x.status === "CONNECTED").map((x) => x.provider)));
+      setConnectedAccounts(a.filter((x) => x.status === "CONNECTED"));
     } catch (err) {
       setError(err instanceof APIError ? err.message : "Failed to load");
     }
@@ -175,7 +201,7 @@ export default function CarouselsPage() {
       ) : (
         <div className="space-y-6">
           <Card>
-            <CreateForm connected={connected} onCreated={load} />
+            <CreateForm connected={connected} connectedAccounts={connectedAccounts} onCreated={load} />
           </Card>
           <div className="space-y-4">
             {projects.map((p) => {
