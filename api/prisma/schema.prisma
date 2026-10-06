@@ -749,3 +749,25 @@ model ProductListing {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
+
+/// Public waitlist signups (native port of n8n workflow 04) — deliberately
+/// its own model, not WhatsAppContact: a waitlist signup may give only an
+/// email (no phone), which WhatsAppContact's required-unique `phone` can't
+/// represent, and it tracks its own referral program (position, code,
+/// referral count) that has no equivalent on a contact.
+model WaitlistEntry {
+  id             String   @id @default(cuid())
+  email          String?
+  whatsapp       String?
+  name           String
+  /// 1-based signup order, assigned at creation — never reassigned.
+  position       Int
+  referralCode   String   @unique
+  referralsCount Int      @default(0)
+  userType       String // "Vendor" | "Buyer"
+  consent        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([email])
+  @@index([whatsapp])
+}

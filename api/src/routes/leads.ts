@@ -1,9 +1,10 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma";
 import { getSetting } from "../modules/settings/schema";
 import { secretsEqual, notifyAdmin } from "../modules/telegram/telegram";
 import { validateLeadPayload, mergeLeadUpdate } from "../modules/leads/capture";
+import { validateWaitlistSignup, buildWaitlistRecord } from "../modules/leads/waitlist";
 import { recordAudit } from "../modules/audit/audit";
 
 /** Public — external systems only, gated by the leadCaptureApiKey setting (never admin-session auth). */
@@ -13,12 +14,21 @@ export const leadsPublicRouter = Router();
 // traffic here is a handful of form submissions, never a burst.
 const leadCaptureLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 
-leadsPublicRouter.post("/capture", leadCaptureLimiter, async (req, res) => {
+async function requireIntakeKey(req: Request, res: Response, next: NextFunction) {
   const configured = await getSetting<string>("leadCaptureApiKey");
-  if (!configured) return res.status(503).json({ message: "Lead capture is not configured" });
+  if (!configured) {
+    res.status(503).json({ message: "This endpoint is not configured" });
+    return;
+  }
   const given = req.headers["x-api-key"];
-  if (typeof given !== "string" || !secretsEqual(given, configured)) return res.status(401).json({ message: "Invalid API key" });
+  if (typeof given !== "string" || !secretsEqual(given, configured)) {
+    res.status(401).json({ message: "Invalid API key" });
+    return;
+  }
+  next();
+}
 
+leadsPublicRouter.post("/capture", leadCaptureLimiter, requireIntakeKey, async (req, res) => {
   const parsed = validateLeadPayload((req.body as Record<string, unknown>) ?? {});
   if (!parsed.valid) return res.status(400).json({ message: parsed.errors.join("; ") });
   const { incoming } = parsed;
@@ -43,4 +53,29 @@ leadsPublicRouter.post("/capture", leadCaptureLimiter, async (req, res) => {
   );
 
   res.status(200).json({ status: "ok", duplicate: isDuplicate, stored: Boolean(incoming.phone) });
+});
+
+leadsPublicRouter.post("/waitlist", leadCaptureLimiter, requireIntakeKey, async (req, res) => {
+  const parsed = validateWaitlistSignup((req.body as Record<string, unknown>) ?? {});
+  if (!parsed.valid) return res.status(400).json({ message: parsed.errors.join("; ") });
+  const { signup } = parsed;
+
+  const [match, existingCount] = await Promise.all([
+    prisma.waitlistEntry.findFirst({
+      where: { OR: [signup.email ? { email: signup.email } : undefined, signup.whatsapp ? { whatsapp: signup.whatsapp } : undefined].filter((c): c is NonNullable<typeof c> => Boolean(c)) },
+      select: { position: true, referralCode: true },
+    }),
+    prisma.waitlistEntry.count(),
+  ]);
+
+  const result = buildWaitlistRecord(signup, existingCount, match);
+  if (result.isDuplicate) {
+    return res.status(200).json({ status: "already_registered", position: result.position, referralCode: result.referralCode, message: "You are already on the Eki waitlist." });
+  }
+
+  await prisma.waitlistEntry.create({ data: result.record });
+  await recordAudit("lead-capture-api", "waitlist.joined", "WaitlistEntry", result.record.referralCode, { userType: result.record.userType, position: result.record.position });
+  await notifyAdmin(`New waitlist signup (#${result.record.position})\nName: ${result.record.name}\nEmail: ${result.record.email || "-"}\nWhatsApp: ${result.record.whatsapp || "-"}\nType: ${result.record.userType}`);
+
+  res.status(200).json({ status: "success", position: result.record.position, referralCode: result.record.referralCode, message: "Waitlist registration complete." });
 });

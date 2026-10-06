@@ -39,7 +39,7 @@ export const SETTINGS: SettingDefinition[] = [
 
   { key: "whatsappTemplatesApproved", label: "I confirm Meta approved the WhatsApp templates entered in Integrations", type: "boolean", group: "Confirmations", default: false, help: "Meta's approval cannot be checked by API; this confirmation unblocks the WhatsApp sequences." },
 
-  { key: "leadCaptureApiKey", label: "Lead capture API key", type: "text", group: "Automation safety", default: "", help: "Shared secret external systems (landing pages, ad forms) send as the X-Api-Key header to POST /api/leads/capture. Empty = that endpoint is disabled." },
+  { key: "leadCaptureApiKey", label: "External intake API key", type: "text", group: "Automation safety", default: "", help: "Shared secret external systems (landing pages, ad forms) send as the X-Api-Key header to POST /api/leads/capture and /api/leads/waitlist. Empty = both endpoints are disabled." },
 
   { key: "defaultLanguage", label: "Default video language", type: "text", group: "Video defaults", default: "en" },
   { key: "defaultTone", label: "Default tone", type: "text", group: "Video defaults", default: "Professional" },
