@@ -7,7 +7,18 @@ import { validateLeadPayload, mergeLeadUpdate } from "../modules/leads/capture";
 import { validateWaitlistSignup, buildWaitlistRecord } from "../modules/leads/waitlist";
 import { recordAudit } from "../modules/audit/audit";
 
-/** Public — external systems only, gated by the leadCaptureApiKey setting (never admin-session auth). */
+/**
+ * Public — external systems only, gated by the leadCaptureApiKey setting
+ * (never admin-session auth).
+ *
+ * Server-to-server only: the shared secret must never be embedded in a
+ * landing page's client-side JS (anyone viewing page source could read and
+ * reuse it). The external system's own backend should hold the key and
+ * call this endpoint itself — CORS is deliberately NOT opened for these
+ * routes (same global `cors()` policy as the rest of the API), which is
+ * correct, not a bug: a browser calling this directly would need the key
+ * in client-side code either way.
+ */
 export const leadsPublicRouter = Router();
 
 // Bounded the same way the other public webhooks are: real external
