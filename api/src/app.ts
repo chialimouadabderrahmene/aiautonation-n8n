@@ -21,6 +21,7 @@ import { settingsRouter } from "./routes/settings";
 import { auditRouter } from "./routes/audit";
 import { dashboardRouter } from "./routes/dashboard";
 import { mediaRouter, mediaPublicRouter } from "./routes/media";
+import { leadsPublicRouter } from "./routes/leads";
 import { internalRouter } from "./routes/internal";
 import { requireAdmin, requireWrite } from "./modules/auth/auth";
 import { usersRouter } from "./routes/users";
@@ -69,6 +70,7 @@ export function createApp() {
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
   app.use("/api/whatsapp", whatsappPublicRouter); // GET challenge + X-Hub-Signature-256
+  app.use("/api/leads", leadsPublicRouter); // X-Api-Key header, checked against Settings
 
   app.use("/api/auth", authRouter);
   app.use("/api/users", requireAdmin, usersRouter); // requireOwner is per-route inside — list is readable by any admin
