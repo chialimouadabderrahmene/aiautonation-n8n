@@ -6,7 +6,8 @@ import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { evaluateRequirements } from "../modules/workflows/readiness";
 import { CAROUSEL_PIPELINE_REQUIREMENTS } from "../modules/workflows/manifest";
-import { answerCallback, editDecisionMarkup, secretsEqual } from "../modules/telegram/telegram";
+import { answerCallback, editDecisionMarkup, secretsEqual, notifyAdmin } from "../modules/telegram/telegram";
+import { checkAutopilot } from "../modules/automation/autopilot";
 import { getProviderValues } from "../modules/integrations/vault";
 import { getStorage } from "../lib/storage";
 import { logger } from "../lib/logger";
@@ -86,7 +87,18 @@ export async function decideCarousel(carouselJobId: string, decision: "APPROVED"
 
   if (decision === "APPROVED") {
     const job = await prisma.carouselJob.findUniqueOrThrow({ where: { id: carouselJobId }, include: { project: true } });
+    const manual: string[] = [];
     for (const target of job.project.publishTargets) {
+      const autopilot = await checkAutopilot(target);
+      if (!autopilot.allowed) {
+        await prisma.carouselPublication.upsert({
+          where: { carouselJobId_target: { carouselJobId, target } },
+          update: { status: "SKIPPED", error: autopilot.reason ?? null },
+          create: { carouselJobId, target, status: "SKIPPED", error: autopilot.reason },
+        });
+        manual.push(target);
+        continue;
+      }
       await prisma.carouselPublication.upsert({
         where: { carouselJobId_target: { carouselJobId, target } },
         update: { status: "PENDING", error: null },
@@ -100,6 +112,16 @@ export async function decideCarousel(carouselJobId: string, decision: "APPROVED"
     if (job.project.publishAccountIds.length) {
       const connectedAccounts = await prisma.connectedAccount.findMany({ where: { id: { in: job.project.publishAccountIds } } });
       for (const account of connectedAccounts) {
+        const autopilot = await checkAutopilot(account.provider);
+        if (!autopilot.allowed) {
+          await prisma.carouselPublication.upsert({
+            where: { carouselJobId_connectedAccountId: { carouselJobId, connectedAccountId: account.id } },
+            update: { status: "SKIPPED", error: autopilot.reason ?? null },
+            create: { carouselJobId, target: account.provider, connectedAccountId: account.id, status: "SKIPPED", error: autopilot.reason },
+          });
+          manual.push(`${account.provider} (${account.label})`);
+          continue;
+        }
         await prisma.carouselPublication.upsert({
           where: { carouselJobId_connectedAccountId: { carouselJobId, connectedAccountId: account.id } },
           update: { status: "PENDING", error: null },
@@ -107,6 +129,10 @@ export async function decideCarousel(carouselJobId: string, decision: "APPROVED"
         });
         await enqueueDelivery({ kind: "publish-carousel", carouselJobId, target: account.provider, connectedAccountId: account.id, requestedBy: decidedBy });
       }
+    }
+    // Native port of n8n workflow 10's "Manual Post Alert".
+    if (manual.length) {
+      await notifyAdmin(`Ready to post manually (autopilot off): ${manual.join(", ")}\n\nCarousel: ${job.project.name}\n\nCaption:\n${job.caption ?? ""}\n\nHashtags: ${job.hashtags.join(" ") || "none"}`);
     }
   }
   return approval;
@@ -117,7 +143,7 @@ carouselRouter.post("/jobs/:id/publish/:target/retry", async (req: AuthedRequest
   const target = String(req.params.target);
   const pub = await prisma.carouselPublication.findUnique({ where: { carouselJobId_target: { carouselJobId, target } } });
   if (!pub) return res.status(404).json({ message: "Not found" });
-  if (pub.status !== "FAILED") return res.status(409).json({ message: "Only a FAILED publication can be retried" });
+  if (pub.status !== "FAILED" && pub.status !== "SKIPPED") return res.status(409).json({ message: "Only a FAILED or SKIPPED (autopilot-blocked) publication can be retried" });
   await prisma.carouselPublication.update({ where: { id: pub.id }, data: { status: "PENDING", error: null } });
   await enqueueDelivery({ kind: "publish-carousel", carouselJobId, target, requestedBy: req.admin?.email ?? "unknown" });
   res.json({ ok: true });
