@@ -12,16 +12,19 @@ import {
   DELIVERY_QUEUE_NAME,
   CAROUSEL_QUEUE_NAME,
   WHATSAPP_NURTURE_QUEUE_NAME,
+  WEEKLY_REPORT_QUEUE_NAME,
   VideoGenerationJobPayload,
   DeliveryJobPayload,
   CarouselGenerationJobPayload,
   WhatsAppNurtureJobPayload,
+  WeeklyReportJobPayload,
 } from "./lib/queue";
 import { startHeartbeat, stopHeartbeat, currentCapabilities } from "./lib/heartbeat";
 import { ProviderError, scrubSecrets } from "./lib/http";
 import { processVideoJob, audit } from "./pipeline/orchestrator";
 import { processCarouselJob, audit as carouselAudit } from "./pipeline/carousel-orchestrator";
 import { runWhatsAppNurture } from "./pipeline/whatsapp-nurture";
+import { runWeeklyReport, formatTelegramDigest } from "./pipeline/weekly-report";
 import { sendVideoForApproval, sendCarouselForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
 import { publishCarousel } from "./delivery/publish-carousel";
@@ -221,6 +224,33 @@ async function processWhatsAppNurture(job: Job<WhatsAppNurtureJobPayload>): Prom
   }
 }
 
+async function processWeeklyReport(job: Job<WeeklyReportJobPayload>): Promise<void> {
+  const attempt = job.attemptsMade;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}`, trigger: `weekly-report:${job.data.trigger}`, retryCount: attempt, mode: "weekly-report" },
+  });
+  try {
+    const analytics = await runWeeklyReport();
+    await prisma.automationExecution.update({
+      where: { id: execution.id },
+      data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() },
+    });
+    // Unlike the other scheduled jobs, this one's whole purpose is the
+    // digest itself — it always sends, not just on failure/blockage.
+    await notifyTeam(formatTelegramDigest(analytics));
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    await prisma.automationExecution.update({
+      where: { id: execution.id },
+      data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message },
+    });
+    await notifyTeam(`Weekly report failed: ${message}`);
+    throw err;
+  }
+}
+
 let isShuttingDown = false;
 
 async function main() {
@@ -259,7 +289,16 @@ async function main() {
   const whatsappNurtureSchedule = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_NURTURE_QUEUE_NAME, { connection: getRedisConnection() });
   await whatsappNurtureSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 8 * * *" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 
-  for (const w of [videoWorker, carouselWorker, deliveryWorker, whatsappNurtureWorker]) {
+  const weeklyReportWorker = new Worker<WeeklyReportJobPayload>(WEEKLY_REPORT_QUEUE_NAME, processWeeklyReport, {
+    connection: getRedisConnection(),
+    concurrency: 1,
+    lockDuration: 5 * 60_000,
+  });
+  // Monday 09:00 UTC — same day/time as n8n workflow 09's schedule trigger.
+  const weeklyReportSchedule = new Queue<WeeklyReportJobPayload>(WEEKLY_REPORT_QUEUE_NAME, { connection: getRedisConnection() });
+  await weeklyReportSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 9 * * 1" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+
+  for (const w of [videoWorker, carouselWorker, deliveryWorker, whatsappNurtureWorker, weeklyReportWorker]) {
     w.on("failed", (job, err) => logger.warn({ queue: w.name, jobId: job?.id, err: scrubSecrets(err.message, []) }, "[worker] job failed"));
     w.on("completed", (job) => logger.info({ queue: w.name, jobId: job.id }, "[worker] job completed"));
     // Redis connection errors: BullMQ reconnects by itself; never crash the process.
@@ -292,7 +331,15 @@ async function main() {
     logger.info(`[worker] ${signal} received, finishing in-flight jobs`);
     const timeout = setTimeout(() => process.exit(1), 60_000);
     timeout.unref();
-    await Promise.allSettled([videoWorker.close(), carouselWorker.close(), deliveryWorker.close(), whatsappNurtureWorker.close(), whatsappNurtureSchedule.close()]);
+    await Promise.allSettled([
+      videoWorker.close(),
+      carouselWorker.close(),
+      deliveryWorker.close(),
+      whatsappNurtureWorker.close(),
+      whatsappNurtureSchedule.close(),
+      weeklyReportWorker.close(),
+      weeklyReportSchedule.close(),
+    ]);
     await stopHeartbeat();
     await prisma.$disconnect();
     healthServer.close();
@@ -300,7 +347,9 @@ async function main() {
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
-  logger.info(`[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME} + ${WHATSAPP_NURTURE_QUEUE_NAME} (daily 08:00 UTC)`);
+  logger.info(
+    `[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME} + ${WHATSAPP_NURTURE_QUEUE_NAME} (daily 08:00 UTC) + ${WEEKLY_REPORT_QUEUE_NAME} (Monday 09:00 UTC)`,
+  );
 }
 
 process.on("unhandledRejection", (err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, "unhandled rejection"));

@@ -5,6 +5,7 @@ export const VIDEO_QUEUE_NAME = "video-generation";
 export const DELIVERY_QUEUE_NAME = "video-delivery";
 export const CAROUSEL_QUEUE_NAME = "carousel-generation";
 export const WHATSAPP_NURTURE_QUEUE_NAME = "whatsapp-nurture";
+export const WEEKLY_REPORT_QUEUE_NAME = "weekly-report";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
@@ -15,6 +16,10 @@ export interface CarouselGenerationJobPayload {
 }
 
 export interface WhatsAppNurtureJobPayload {
+  trigger: "scheduled" | "manual";
+}
+
+export interface WeeklyReportJobPayload {
   trigger: "scheduled" | "manual";
 }
 

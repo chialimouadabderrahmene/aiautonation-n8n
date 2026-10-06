@@ -12,6 +12,8 @@ export const DELIVERY_QUEUE_NAME = "video-delivery";
 export const CAROUSEL_QUEUE_NAME = "carousel-generation";
 /** WhatsApp nurture sweep — scheduled daily by the worker (BullMQ repeatable job), native port of n8n workflow 19. */
 export const WHATSAPP_NURTURE_QUEUE_NAME = "whatsapp-nurture";
+/** Weekly growth report — scheduled Monday 09:00 UTC by the worker, native port of n8n workflow 09. */
+export const WEEKLY_REPORT_QUEUE_NAME = "weekly-report";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
@@ -22,6 +24,10 @@ export interface CarouselGenerationJobPayload {
 }
 
 export interface WhatsAppNurtureJobPayload {
+  trigger: "scheduled" | "manual";
+}
+
+export interface WeeklyReportJobPayload {
   trigger: "scheduled" | "manual";
 }
 
@@ -36,6 +42,7 @@ let videoQueue: Queue<VideoGenerationJobPayload> | null = null;
 let carouselQueue: Queue<CarouselGenerationJobPayload> | null = null;
 let deliveryQueue: Queue<DeliveryJobPayload> | null = null;
 let whatsappNurtureQueue: Queue<WhatsAppNurtureJobPayload> | null = null;
+let weeklyReportQueue: Queue<WeeklyReportJobPayload> | null = null;
 
 function getConnection(): IORedis {
   if (!connection) {
@@ -70,6 +77,16 @@ export function getWhatsAppNurtureQueue(): Queue<WhatsAppNurtureJobPayload> {
 /** Admin-triggered one-off run (mirrors n8n workflow 19's Manual Run node) — the worker's own daily repeatable job (set up at startup) covers the scheduled path. */
 export async function enqueueWhatsAppNurtureRun(): Promise<void> {
   await getWhatsAppNurtureQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+}
+
+export function getWeeklyReportQueue(): Queue<WeeklyReportJobPayload> {
+  if (!weeklyReportQueue) weeklyReportQueue = new Queue<WeeklyReportJobPayload>(WEEKLY_REPORT_QUEUE_NAME, { connection: getConnection() });
+  return weeklyReportQueue;
+}
+
+/** Admin-triggered one-off run (mirrors n8n workflow 09/22's Manual Run node) — the worker's own Monday 09:00 UTC repeatable job covers the scheduled path. */
+export async function enqueueWeeklyReportRun(): Promise<void> {
+  await getWeeklyReportQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 }
 
 /**
