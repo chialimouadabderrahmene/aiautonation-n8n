@@ -75,6 +75,26 @@ carouselRouter.post("/jobs/:id/retry", async (req: AuthedRequest, res) => {
   res.status(202).json({ ok: true });
 });
 
+const regenerateSchema = z.object({ prompt: z.string().trim().min(1).max(2000).optional(), note: z.string().trim().max(500).optional() });
+
+/** After a REJECT: start a fresh job for the same project (optionally with an edited brief) — mirrors video.ts's regenerate, closing the gap n8n workflow 02's "AI Revise" covered and this app's carousel detail page didn't have until now. */
+carouselRouter.post("/projects/:id/regenerate", async (req: AuthedRequest, res) => {
+  const id = String(req.params.id);
+  const parsed = regenerateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ message: "Invalid body" });
+  const project = await prisma.carouselProject.findUnique({ where: { id } });
+  if (!project) return res.status(404).json({ message: "Not found" });
+  const readiness = await evaluateRequirements(CAROUSEL_PIPELINE_REQUIREMENTS);
+  if (readiness.readiness !== "READY") return res.status(409).json({ message: "Carousel pipeline is not READY", ...readiness });
+
+  const prompt = parsed.data.prompt ?? (parsed.data.note ? `${project.prompt}\n\nRevision request: ${parsed.data.note}` : project.prompt);
+  if (prompt !== project.prompt) await prisma.carouselProject.update({ where: { id }, data: { prompt } });
+  const job = await prisma.carouselJob.create({ data: { projectId: id, state: "QUEUED" } });
+  await enqueueCarouselJob(job.id, 0, 2);
+  await recordAudit(req.admin?.email ?? "unknown", "carousel.regenerated", "CarouselProject", id, { jobId: job.id });
+  res.status(201).json({ job });
+});
+
 const decideSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]), reason: z.string().trim().max(500).optional() });
 
 export async function decideCarousel(carouselJobId: string, decision: "APPROVED" | "REJECTED", decidedBy: string, reason?: string) {

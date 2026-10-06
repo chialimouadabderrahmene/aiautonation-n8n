@@ -15,7 +15,8 @@
  */
 import { prisma } from "../lib/prisma";
 import { requireConnected } from "../lib/credentials";
-import { timedFetch, describeHttpFailure, readErrorDetail, ProviderError } from "../lib/http";
+import { ProviderError } from "../lib/http";
+import { WhatsAppCreds, sendWhatsAppTemplate } from "../lib/whatsapp-template";
 import { WhatsAppContact } from "@prisma/client";
 
 export interface NurtureStep {
@@ -75,37 +76,6 @@ export function nextNurtureStep(contact: NurtureContact, now: Date = new Date())
   return next;
 }
 
-interface WhatsAppCreds {
-  accessToken: string;
-  phoneNumberId: string;
-  graphVersion?: string;
-  templateLang?: string;
-  maxPerRun?: string;
-  [templateField: string]: string | undefined;
-}
-
-async function sendTemplate(creds: WhatsAppCreds, toPhone: string, templateName: string, bodyParams: string[]): Promise<void> {
-  const ver = creds.graphVersion || "v23.0";
-  const lang = creds.templateLang || "en";
-  const clean = (s: string) => s.replace(/[\r\n\t]+/g, " ").slice(0, 900) || "-";
-  const { res } = await timedFetch(
-    `https://graph.facebook.com/${ver}/${encodeURIComponent(creds.phoneNumberId)}/messages`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${creds.accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: toPhone.replace(/\D/g, ""),
-        type: "template",
-        template: { name: templateName, language: { code: lang }, components: [{ type: "body", parameters: bodyParams.map((p) => ({ type: "text", text: clean(p) })) }] },
-      }),
-    },
-    15_000,
-  );
-  if (!res.ok) throw describeHttpFailure("WhatsApp", res.status, await readErrorDetail(res));
-}
-
 export interface NurtureRunSummary {
   eligible: number;
   sent: number;
@@ -150,7 +120,7 @@ export async function runWhatsAppNurture(): Promise<NurtureRunSummary> {
     dispatched += 1;
     const link = next.linkKind === "vendor" ? vendorLink : appLink;
     try {
-      await sendTemplate(creds as WhatsAppCreds, contact.phone, templateName, [contact.name || "there", link]);
+      await sendWhatsAppTemplate(creds as WhatsAppCreds, contact.phone, templateName, [contact.name || "there", link]);
       await prisma.whatsAppContact.update({ where: { phone: contact.phone }, data: { nurtureDay: next.day, lastNurtureAt: now, lastNurtureError: null } });
       await prisma.whatsAppMessage.create({
         data: { contact: { connect: { phone: contact.phone } }, direction: "out", body: `[${templateName}] day ${next.day}`, templateName },

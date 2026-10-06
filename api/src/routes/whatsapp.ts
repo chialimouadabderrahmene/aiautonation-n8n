@@ -4,7 +4,7 @@ import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma";
 import { getWhatsAppConfig, sendWhatsAppText } from "../modules/whatsapp/cloud-api";
 import { handleInboundMessage } from "../modules/whatsapp/conversation";
-import { enqueueWhatsAppNurtureRun } from "../lib/queue";
+import { enqueueWhatsAppNurtureRun, enqueueWhatsAppWelcomeRun, enqueueWhatsAppEngagementRun } from "../lib/queue";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { logger } from "../lib/logger";
@@ -71,6 +71,20 @@ whatsappRouter.post("/nurture/run", async (req: AuthedRequest, res) => {
   await enqueueWhatsAppNurtureRun();
   await recordAudit(req.admin?.email ?? "unknown", "whatsapp.nurture_run_requested", "WhatsAppContact", "bulk");
   res.status(202).json({ ok: true, message: "Queued — the worker runs the nurture sweep next" });
+});
+
+/** Manual run of the welcome sequence (native port of n8n workflow 05's Manual Run node). */
+whatsappRouter.post("/welcome/run", async (req: AuthedRequest, res) => {
+  await enqueueWhatsAppWelcomeRun();
+  await recordAudit(req.admin?.email ?? "unknown", "whatsapp.welcome_run_requested", "WhatsAppContact", "bulk");
+  res.status(202).json({ ok: true, message: "Queued — the worker runs the welcome sweep next" });
+});
+
+/** Manual run of the engagement follow-up (native port of n8n workflow 06's Manual Run node). */
+whatsappRouter.post("/engagement/run", async (req: AuthedRequest, res) => {
+  await enqueueWhatsAppEngagementRun();
+  await recordAudit(req.admin?.email ?? "unknown", "whatsapp.engagement_run_requested", "WhatsAppContact", "bulk");
+  res.status(202).json({ ok: true, message: "Queued — the worker runs the engagement sweep next" });
 });
 
 whatsappRouter.get("/contacts", async (req, res) => {

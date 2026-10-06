@@ -709,6 +709,18 @@ model WhatsAppContact {
   nurtureDay       Int                   @default(0)
   lastNurtureAt    DateTime?
   lastNurtureError String?
+  /// Native port of n8n workflow 05's `wa_day` — distinct from nurtureDay:
+  /// welcome targets status=NEW opted-in contacts (days 1-3), nurture
+  /// targets status=COMPLETE ones (days 1-14) — two different lifecycle
+  /// stages that never overlap, not a duplicate tracking axis.
+  welcomeDay       Int                   @default(0)
+  lastWelcomeAt    DateTime?
+  /// Native port of n8n workflow 06's `reengage_step`/`last_reengage` —
+  /// re-engages contacts that finished the nurture sequence (see
+  /// worker/src/pipeline/whatsapp-engagement.ts for the "finished" check,
+  /// computed from nurtureDay rather than a redundant status flag).
+  reengageStep     Int                   @default(0)
+  lastReengageAt   DateTime?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -756,18 +768,53 @@ model ProductListing {
 /// represent, and it tracks its own referral program (position, code,
 /// referral count) that has no equivalent on a contact.
 model WaitlistEntry {
-  id             String   @id @default(cuid())
+  id             String     @id @default(cuid())
   email          String?
   whatsapp       String?
   name           String
   /// 1-based signup order, assigned at creation — never reassigned.
   position       Int
-  referralCode   String   @unique
-  referralsCount Int      @default(0)
+  referralCode   String     @unique
+  referralsCount Int        @default(0)
   userType       String // "Vendor" | "Buyer"
-  consent        Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  consent        Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  referrals      Referral[]
 
   @@index([email])
   @@index([whatsapp])
+}
+
+/// One row per credited referral (native port of n8n workflow 07) — the
+/// referrer is a WaitlistEntry (the only place a referralCode exists in
+/// this app); `referredEmail` is globally unique so the same new signup
+/// can never be credited twice, matching n8n's own duplicate check.
+model Referral {
+  id               String        @id @default(cuid())
+  referrerId       String
+  referrer         WaitlistEntry @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+  referredEmail    String        @unique
+  referredName     String?
+  /// "none" | "VIP Access" (3rd referral) | "Free Escrow" (5th referral) — n8n's own milestone thresholds.
+  milestoneReached String        @default("none")
+  createdAt        DateTime      @default(now())
+
+  @@index([referrerId])
+}
+
+/// One row per AI-generated format variant from one content idea — native
+/// port of n8n workflow 18. Deliberately a flat review queue (status
+/// pending/used), not a new approval state machine: nothing downstream
+/// consumes these automatically, the social team picks copy from here
+/// manually, same terminal scope as n8n's "queue to sheet" step.
+model ContentVariant {
+  id        String   @id @default(cuid())
+  idea      String
+  /// "reel_script" | "tiktok_adaptation" | "carousel" | "story_sequence" | "fb_post" | "hook_variation_N" | "caption_variation_N"
+  format    String
+  content   String
+  status    String   @default("pending") // pending | used
+  createdAt DateTime @default(now())
+
+  @@index([idea])
 }

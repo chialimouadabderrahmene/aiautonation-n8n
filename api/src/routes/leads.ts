@@ -5,6 +5,7 @@ import { getSetting } from "../modules/settings/schema";
 import { secretsEqual, notifyAdmin } from "../modules/telegram/telegram";
 import { validateLeadPayload, mergeLeadUpdate } from "../modules/leads/capture";
 import { validateWaitlistSignup, buildWaitlistRecord } from "../modules/leads/waitlist";
+import { validateReferralPayload, matchReferrer } from "../modules/leads/referral";
 import { recordAudit } from "../modules/audit/audit";
 
 /**
@@ -89,4 +90,31 @@ leadsPublicRouter.post("/waitlist", leadCaptureLimiter, requireIntakeKey, async 
   await notifyAdmin(`New waitlist signup (#${result.record.position})\nName: ${result.record.name}\nEmail: ${result.record.email || "-"}\nWhatsApp: ${result.record.whatsapp || "-"}\nType: ${result.record.userType}`);
 
   res.status(200).json({ status: "success", position: result.record.position, referralCode: result.record.referralCode, message: "Waitlist registration complete." });
+});
+
+leadsPublicRouter.post("/referral", leadCaptureLimiter, requireIntakeKey, async (req, res) => {
+  const parsed = validateReferralPayload((req.body as Record<string, unknown>) ?? {});
+  if (!parsed.valid) return res.status(400).json({ message: parsed.errors.join("; ") });
+  const { referral } = parsed;
+
+  const [referrer, alreadyReferred] = await Promise.all([
+    prisma.waitlistEntry.findUnique({ where: { referralCode: referral.code }, select: { id: true, name: true, referralsCount: true } }),
+    prisma.referral.findUnique({ where: { referredEmail: referral.newEmail }, select: { id: true } }),
+  ]);
+  const outcome = matchReferrer(referrer, Boolean(alreadyReferred));
+
+  if (outcome.result !== "credited") {
+    return res.status(200).json({ status: outcome.result === "unmatched" ? "completed" : "duplicate", message: outcome.message });
+  }
+
+  await prisma.$transaction([
+    prisma.referral.create({ data: { referrerId: referrer!.id, referredEmail: referral.newEmail, referredName: referral.newName, milestoneReached: outcome.milestone } }),
+    prisma.waitlistEntry.update({ where: { id: referrer!.id }, data: { referralsCount: outcome.newCount } }),
+  ]);
+  await recordAudit("lead-capture-api", "referral.credited", "WaitlistEntry", referrer!.id, { referredEmail: referral.newEmail, newCount: outcome.newCount, milestone: outcome.milestone });
+  if (outcome.milestone !== "none") {
+    await notifyAdmin(`Referral milestone: ${referrer!.name} just unlocked "${outcome.milestone}" (${outcome.newCount} referrals)`);
+  }
+
+  res.status(200).json({ status: "credited", referralsCount: outcome.newCount, milestone: outcome.milestone });
 });

@@ -12,8 +12,16 @@ export const DELIVERY_QUEUE_NAME = "video-delivery";
 export const CAROUSEL_QUEUE_NAME = "carousel-generation";
 /** WhatsApp nurture sweep — scheduled daily by the worker (BullMQ repeatable job), native port of n8n workflow 19. */
 export const WHATSAPP_NURTURE_QUEUE_NAME = "whatsapp-nurture";
+/** WhatsApp welcome sequence — scheduled daily 09:00 UTC, native port of n8n workflow 05. */
+export const WHATSAPP_WELCOME_QUEUE_NAME = "whatsapp-welcome";
+/** WhatsApp engagement follow-up — scheduled daily 10:00 UTC, native port of n8n workflow 06. */
+export const WHATSAPP_ENGAGEMENT_QUEUE_NAME = "whatsapp-engagement";
 /** Weekly growth report — scheduled Monday 09:00 UTC by the worker, native port of n8n workflow 09. */
 export const WEEKLY_REPORT_QUEUE_NAME = "weekly-report";
+/** On-demand content-idea expansion — native port of n8n workflow 18. */
+export const CONTENT_MULTIPLICATION_QUEUE_NAME = "content-multiplication";
+/** Daily autopilot status + health digest — scheduled 08:00 UTC by the worker, native port of n8n workflow 14. */
+export const AUTOPILOT_CONTROLLER_QUEUE_NAME = "autopilot-controller";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
@@ -31,6 +39,15 @@ export interface WeeklyReportJobPayload {
   trigger: "scheduled" | "manual";
 }
 
+export interface ContentMultiplicationJobPayload {
+  idea: string;
+  requestedBy: string;
+}
+
+export interface AutopilotControllerJobPayload {
+  trigger: "scheduled" | "manual";
+}
+
 export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
   | { kind: "publish"; videoJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
@@ -42,7 +59,11 @@ let videoQueue: Queue<VideoGenerationJobPayload> | null = null;
 let carouselQueue: Queue<CarouselGenerationJobPayload> | null = null;
 let deliveryQueue: Queue<DeliveryJobPayload> | null = null;
 let whatsappNurtureQueue: Queue<WhatsAppNurtureJobPayload> | null = null;
+let whatsappWelcomeQueue: Queue<WhatsAppNurtureJobPayload> | null = null;
+let whatsappEngagementQueue: Queue<WhatsAppNurtureJobPayload> | null = null;
 let weeklyReportQueue: Queue<WeeklyReportJobPayload> | null = null;
+let contentMultiplicationQueue: Queue<ContentMultiplicationJobPayload> | null = null;
+let autopilotControllerQueue: Queue<AutopilotControllerJobPayload> | null = null;
 
 function getConnection(): IORedis {
   if (!connection) {
@@ -79,6 +100,26 @@ export async function enqueueWhatsAppNurtureRun(): Promise<void> {
   await getWhatsAppNurtureQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 }
 
+export function getWhatsAppWelcomeQueue(): Queue<WhatsAppNurtureJobPayload> {
+  if (!whatsappWelcomeQueue) whatsappWelcomeQueue = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_WELCOME_QUEUE_NAME, { connection: getConnection() });
+  return whatsappWelcomeQueue;
+}
+
+/** Admin-triggered one-off run (mirrors n8n workflow 05's Manual Run node). */
+export async function enqueueWhatsAppWelcomeRun(): Promise<void> {
+  await getWhatsAppWelcomeQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+}
+
+export function getWhatsAppEngagementQueue(): Queue<WhatsAppNurtureJobPayload> {
+  if (!whatsappEngagementQueue) whatsappEngagementQueue = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_ENGAGEMENT_QUEUE_NAME, { connection: getConnection() });
+  return whatsappEngagementQueue;
+}
+
+/** Admin-triggered one-off run (mirrors n8n workflow 06's Manual Run node). */
+export async function enqueueWhatsAppEngagementRun(): Promise<void> {
+  await getWhatsAppEngagementQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+}
+
 export function getWeeklyReportQueue(): Queue<WeeklyReportJobPayload> {
   if (!weeklyReportQueue) weeklyReportQueue = new Queue<WeeklyReportJobPayload>(WEEKLY_REPORT_QUEUE_NAME, { connection: getConnection() });
   return weeklyReportQueue;
@@ -87,6 +128,32 @@ export function getWeeklyReportQueue(): Queue<WeeklyReportJobPayload> {
 /** Admin-triggered one-off run (mirrors n8n workflow 09/22's Manual Run node) — the worker's own Monday 09:00 UTC repeatable job covers the scheduled path. */
 export async function enqueueWeeklyReportRun(): Promise<void> {
   await getWeeklyReportQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+}
+
+export function getContentMultiplicationQueue(): Queue<ContentMultiplicationJobPayload> {
+  if (!contentMultiplicationQueue) contentMultiplicationQueue = new Queue<ContentMultiplicationJobPayload>(CONTENT_MULTIPLICATION_QUEUE_NAME, { connection: getConnection() });
+  return contentMultiplicationQueue;
+}
+
+/**
+ * n8n workflow 18's webhook ran the AI call synchronously before
+ * responding. This queues it instead — the AI provider abstraction lives
+ * only in the worker (by design, see worker/src/lib/providers/), and
+ * blocking an API request on a model call is the pattern this codebase
+ * avoids everywhere else — so the admin endpoint returns 202 immediately.
+ */
+export async function enqueueContentMultiplication(idea: string, requestedBy: string): Promise<void> {
+  await getContentMultiplicationQueue().add("multiply", { idea, requestedBy }, { attempts: 2, backoff: { type: "exponential", delay: 15_000 }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+}
+
+export function getAutopilotControllerQueue(): Queue<AutopilotControllerJobPayload> {
+  if (!autopilotControllerQueue) autopilotControllerQueue = new Queue<AutopilotControllerJobPayload>(AUTOPILOT_CONTROLLER_QUEUE_NAME, { connection: getConnection() });
+  return autopilotControllerQueue;
+}
+
+/** Admin-triggered one-off run (mirrors n8n workflow 14's Manual Run node) — the worker's own daily 08:00 UTC repeatable job covers the scheduled path. */
+export async function enqueueAutopilotControllerRun(): Promise<void> {
+  await getAutopilotControllerQueue().add("run", { trigger: "manual" }, { removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 }
 
 /**

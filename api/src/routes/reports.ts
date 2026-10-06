@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { enqueueWeeklyReportRun } from "../lib/queue";
+import { enqueueWeeklyReportRun, enqueueAutopilotControllerRun } from "../lib/queue";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 
@@ -11,6 +11,13 @@ reportsRouter.post("/weekly/run", async (req: AuthedRequest, res) => {
   await enqueueWeeklyReportRun();
   await recordAudit(req.admin?.email ?? "unknown", "reports.weekly_run_requested", "AutomationExecution", "weekly-report");
   res.status(202).json({ ok: true, message: "Queued — the worker sends the weekly digest to Telegram next" });
+});
+
+/** Manual run of the daily autopilot status digest (native port of n8n workflow 14's Manual Run node) — the worker's own daily 08:00 UTC schedule covers the automatic path. */
+reportsRouter.post("/autopilot/run", async (req: AuthedRequest, res) => {
+  await enqueueAutopilotControllerRun();
+  await recordAudit(req.admin?.email ?? "unknown", "reports.autopilot_run_requested", "AutomationExecution", "autopilot-controller");
+  res.status(202).json({ ok: true, message: "Queued — the worker sends the autopilot digest to Telegram next" });
 });
 
 function rangeStart(period: string): Date {

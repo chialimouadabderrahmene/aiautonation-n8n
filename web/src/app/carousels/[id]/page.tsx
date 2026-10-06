@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
 import { Button, Card, ErrorState, LoadingState, Notice, PageHeader, StatusBadge, inputClass } from "@/components/ui";
 import { api, APIError } from "@/lib/api";
@@ -42,7 +42,7 @@ interface CarouselJobDetail {
   slides: Slide[];
   approval: Approval | null;
   publications: Publication[];
-  project: { name: string; topic: string; platform: string; slideCount: number; publishTargets: string[] };
+  project: { id: string; name: string; topic: string; platform: string; slideCount: number; publishTargets: string[] };
 }
 
 const ACTIVE_CAROUSEL_STATES = ["QUEUED", "SCRIPT_GENERATING", "RENDERING", "QUALITY_CHECK"];
@@ -68,6 +68,7 @@ function SlideThumb({ slide }: { slide: Slide }) {
 
 export default function CarouselJobPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [job, setJob] = useState<CarouselJobDetail | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -94,7 +95,11 @@ export default function CarouselJobPage() {
     setBusy(label);
     setMsg(null);
     try {
-      const r = await api.post<{ message?: string }>(path, body);
+      const r = await api.post<{ message?: string; job?: { id: string } }>(path, body);
+      if (r?.job?.id) {
+        router.push(`/carousels/${r.job.id}`);
+        return;
+      }
       if (r?.message) setMsg({ ok: true, text: r.message });
     } catch (err) {
       setMsg({ ok: false, text: err instanceof APIError ? err.message : "Failed" });
@@ -187,7 +192,13 @@ export default function CarouselJobPage() {
 
           {approval?.status === "REJECTED" ? (
             <div className="mt-4">
-              <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} placeholder="Rejection reason" />
+              <p className="text-sm font-semibold text-slate-700">Regenerate with changes</p>
+              <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} placeholder="What should change? (added to the brief)" />
+              <div className="mt-2">
+                <Button onClick={() => void act("regenerate", `/api/carousel/projects/${job.project.id}/regenerate`, { note: note || undefined })} disabled={Boolean(busy)}>
+                  {busy === "regenerate" ? "Queuing…" : "Regenerate carousel"}
+                </Button>
+              </div>
             </div>
           ) : null}
 

@@ -22,6 +22,7 @@ import { auditRouter } from "./routes/audit";
 import { dashboardRouter } from "./routes/dashboard";
 import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { leadsPublicRouter } from "./routes/leads";
+import { contentRouter } from "./routes/content";
 import { internalRouter } from "./routes/internal";
 import { requireAdmin, requireWrite } from "./modules/auth/auth";
 import { usersRouter } from "./routes/users";
@@ -86,7 +87,8 @@ export function createApp() {
   app.use("/api/whatsapp", requireAdmin, requireWrite, whatsappRouter);
   app.use("/api/approvals", requireAdmin, requireWrite, approvalsRouter);
   app.use("/api/executions", requireAdmin, requireWrite, executionsRouter);
-  app.use("/api/reports", requireAdmin, reportsRouter);
+  app.use("/api/reports", requireAdmin, requireWrite, reportsRouter);
+  app.use("/api/content", requireAdmin, requireWrite, contentRouter);
   app.use("/api/settings", requireAdmin, requireWrite, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);

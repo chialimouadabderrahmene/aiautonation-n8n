@@ -12,19 +12,29 @@ import {
   DELIVERY_QUEUE_NAME,
   CAROUSEL_QUEUE_NAME,
   WHATSAPP_NURTURE_QUEUE_NAME,
+  WHATSAPP_WELCOME_QUEUE_NAME,
+  WHATSAPP_ENGAGEMENT_QUEUE_NAME,
   WEEKLY_REPORT_QUEUE_NAME,
+  CONTENT_MULTIPLICATION_QUEUE_NAME,
+  AUTOPILOT_CONTROLLER_QUEUE_NAME,
   VideoGenerationJobPayload,
   DeliveryJobPayload,
   CarouselGenerationJobPayload,
   WhatsAppNurtureJobPayload,
   WeeklyReportJobPayload,
+  ContentMultiplicationJobPayload,
+  AutopilotControllerJobPayload,
 } from "./lib/queue";
 import { startHeartbeat, stopHeartbeat, currentCapabilities } from "./lib/heartbeat";
 import { ProviderError, scrubSecrets } from "./lib/http";
 import { processVideoJob, audit } from "./pipeline/orchestrator";
 import { processCarouselJob, audit as carouselAudit } from "./pipeline/carousel-orchestrator";
 import { runWhatsAppNurture } from "./pipeline/whatsapp-nurture";
+import { runWhatsAppWelcome } from "./pipeline/whatsapp-welcome";
+import { runWhatsAppEngagement } from "./pipeline/whatsapp-engagement";
 import { runWeeklyReport, formatTelegramDigest } from "./pipeline/weekly-report";
+import { multiplyContent } from "./pipeline/content-multiplication";
+import { runAutopilotController, formatAutopilotDigest } from "./pipeline/autopilot-controller";
 import { sendVideoForApproval, sendCarouselForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
 import { publishCarousel } from "./delivery/publish-carousel";
@@ -196,9 +206,9 @@ async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
 async function processWhatsAppNurture(job: Job<WhatsAppNurtureJobPayload>): Promise<void> {
   const attempt = job.attemptsMade;
   const execution = await prisma.automationExecution.upsert({
-    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}` } },
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `whatsapp-nurture:${job.id}#${attempt}` } },
     update: { status: "RUNNING", startedAt: new Date() },
-    create: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}`, trigger: `whatsapp-nurture:${job.data.trigger}`, provider: "whatsapp", retryCount: attempt, mode: "whatsapp-nurture" },
+    create: { source: "AUTOMATION_ENGINE", externalId: `whatsapp-nurture:${job.id}#${attempt}`, trigger: `whatsapp-nurture:${job.data.trigger}`, provider: "whatsapp", retryCount: attempt, mode: "whatsapp-nurture" },
   });
   try {
     const summary = await runWhatsAppNurture();
@@ -227,9 +237,9 @@ async function processWhatsAppNurture(job: Job<WhatsAppNurtureJobPayload>): Prom
 async function processWeeklyReport(job: Job<WeeklyReportJobPayload>): Promise<void> {
   const attempt = job.attemptsMade;
   const execution = await prisma.automationExecution.upsert({
-    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}` } },
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `weekly-report:${job.id}#${attempt}` } },
     update: { status: "RUNNING", startedAt: new Date() },
-    create: { source: "AUTOMATION_ENGINE", externalId: `${job.id}#${attempt}`, trigger: `weekly-report:${job.data.trigger}`, retryCount: attempt, mode: "weekly-report" },
+    create: { source: "AUTOMATION_ENGINE", externalId: `weekly-report:${job.id}#${attempt}`, trigger: `weekly-report:${job.data.trigger}`, retryCount: attempt, mode: "weekly-report" },
   });
   try {
     const analytics = await runWeeklyReport();
@@ -247,6 +257,82 @@ async function processWeeklyReport(job: Job<WeeklyReportJobPayload>): Promise<vo
       data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message },
     });
     await notifyTeam(`Weekly report failed: ${message}`);
+    throw err;
+  }
+}
+
+/** Shared by welcome/engagement — identical AUTOMATION_ENGINE logging + not-connected-is-expected restraint as processWhatsAppNurture. */
+async function runWaSequenceJob(
+  job: Job<WhatsAppNurtureJobPayload>,
+  mode: string,
+  run: () => Promise<{ sent: number; failed: number; eligible: number; missingTemplates: string[]; firstError?: string }>,
+  label: string,
+): Promise<void> {
+  const attempt = job.attemptsMade;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `${mode}:${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: { source: "AUTOMATION_ENGINE", externalId: `${mode}:${job.id}#${attempt}`, trigger: `${mode}:${job.data.trigger}`, provider: "whatsapp", retryCount: attempt, mode },
+  });
+  try {
+    const summary = await run();
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() } });
+    if (summary.failed > 0 || summary.missingTemplates.length) {
+      const parts = [`${label}: ${summary.sent} sent, ${summary.failed} failed (of ${summary.eligible} due)`];
+      if (summary.missingTemplates.length) parts.push(`Missing approved templates: ${summary.missingTemplates.join(", ")} — configure them in Integrations.`);
+      if (summary.firstError) parts.push(`First error: ${summary.firstError}`);
+      await notifyTeam(parts.join("\n"));
+    }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message } });
+    if (!message.includes("is not connected")) await notifyTeam(`${label} run failed: ${message}`);
+    throw err;
+  }
+}
+
+async function processWhatsAppWelcome(job: Job<WhatsAppNurtureJobPayload>): Promise<void> {
+  await runWaSequenceJob(job, "whatsapp-welcome", runWhatsAppWelcome, "WhatsApp welcome sequence");
+}
+
+async function processWhatsAppEngagement(job: Job<WhatsAppNurtureJobPayload>): Promise<void> {
+  await runWaSequenceJob(job, "whatsapp-engagement", runWhatsAppEngagement, "WhatsApp engagement follow-up");
+}
+
+async function processContentMultiplication(job: Job<ContentMultiplicationJobPayload>): Promise<void> {
+  const attempt = job.attemptsMade;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `content-multiplication:${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: { source: "AUTOMATION_ENGINE", externalId: `content-multiplication:${job.id}#${attempt}`, trigger: "content-multiplication:manual", retryCount: attempt, mode: "content-multiplication" },
+  });
+  try {
+    const { variantsCreated } = await multiplyContent(job.data.idea);
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() } });
+    await notifyTeam(`Content multiplied: "${job.data.idea.slice(0, 80)}" -> ${variantsCreated} variants ready for review.`);
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message } });
+    await notifyTeam(`Content multiplication failed for "${job.data.idea.slice(0, 80)}": ${message}`);
+    throw err;
+  }
+}
+
+async function processAutopilotController(job: Job<AutopilotControllerJobPayload>): Promise<void> {
+  const attempt = job.attemptsMade;
+  const execution = await prisma.automationExecution.upsert({
+    where: { source_externalId: { source: "AUTOMATION_ENGINE", externalId: `autopilot-controller:${job.id}#${attempt}` } },
+    update: { status: "RUNNING", startedAt: new Date() },
+    create: { source: "AUTOMATION_ENGINE", externalId: `autopilot-controller:${job.id}#${attempt}`, trigger: `autopilot-controller:${job.data.trigger}`, retryCount: attempt, mode: "autopilot-controller" },
+  });
+  try {
+    const summary = await runAutopilotController();
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime() } });
+    await notifyTeam(formatAutopilotDigest(summary));
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
+    await prisma.automationExecution.update({ where: { id: execution.id }, data: { status: "FAILED", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error: message } });
+    await notifyTeam(`Autopilot controller run failed: ${message}`);
     throw err;
   }
 }
@@ -298,7 +384,35 @@ async function main() {
   const weeklyReportSchedule = new Queue<WeeklyReportJobPayload>(WEEKLY_REPORT_QUEUE_NAME, { connection: getRedisConnection() });
   await weeklyReportSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 9 * * 1" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
 
-  for (const w of [videoWorker, carouselWorker, deliveryWorker, whatsappNurtureWorker, weeklyReportWorker]) {
+  const whatsappWelcomeWorker = new Worker<WhatsAppNurtureJobPayload>(WHATSAPP_WELCOME_QUEUE_NAME, processWhatsAppWelcome, { connection: getRedisConnection(), concurrency: 1, lockDuration: 5 * 60_000 });
+  // Daily 09:00 UTC — same time as n8n workflow 05's schedule trigger.
+  const whatsappWelcomeSchedule = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_WELCOME_QUEUE_NAME, { connection: getRedisConnection() });
+  await whatsappWelcomeSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 9 * * *" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+
+  const whatsappEngagementWorker = new Worker<WhatsAppNurtureJobPayload>(WHATSAPP_ENGAGEMENT_QUEUE_NAME, processWhatsAppEngagement, { connection: getRedisConnection(), concurrency: 1, lockDuration: 5 * 60_000 });
+  // Daily 10:00 UTC — same time as n8n workflow 06's schedule trigger.
+  const whatsappEngagementSchedule = new Queue<WhatsAppNurtureJobPayload>(WHATSAPP_ENGAGEMENT_QUEUE_NAME, { connection: getRedisConnection() });
+  await whatsappEngagementSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 10 * * *" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+
+  // On-demand only (admin-triggered) — no repeatable schedule, native port of n8n workflow 18.
+  const contentMultiplicationWorker = new Worker<ContentMultiplicationJobPayload>(CONTENT_MULTIPLICATION_QUEUE_NAME, processContentMultiplication, { connection: getRedisConnection(), concurrency: 1, lockDuration: 5 * 60_000 });
+
+  const autopilotControllerWorker = new Worker<AutopilotControllerJobPayload>(AUTOPILOT_CONTROLLER_QUEUE_NAME, processAutopilotController, { connection: getRedisConnection(), concurrency: 1, lockDuration: 5 * 60_000 });
+  // Daily 08:00 UTC — same time as n8n workflow 14's schedule trigger.
+  const autopilotControllerSchedule = new Queue<AutopilotControllerJobPayload>(AUTOPILOT_CONTROLLER_QUEUE_NAME, { connection: getRedisConnection() });
+  await autopilotControllerSchedule.add("run", { trigger: "scheduled" }, { repeat: { pattern: "0 8 * * *" }, removeOnComplete: { age: 7 * 86400 }, removeOnFail: { age: 30 * 86400 } });
+
+  for (const w of [
+    videoWorker,
+    carouselWorker,
+    deliveryWorker,
+    whatsappNurtureWorker,
+    weeklyReportWorker,
+    whatsappWelcomeWorker,
+    whatsappEngagementWorker,
+    contentMultiplicationWorker,
+    autopilotControllerWorker,
+  ]) {
     w.on("failed", (job, err) => logger.warn({ queue: w.name, jobId: job?.id, err: scrubSecrets(err.message, []) }, "[worker] job failed"));
     w.on("completed", (job) => logger.info({ queue: w.name, jobId: job.id }, "[worker] job completed"));
     // Redis connection errors: BullMQ reconnects by itself; never crash the process.
@@ -339,6 +453,13 @@ async function main() {
       whatsappNurtureSchedule.close(),
       weeklyReportWorker.close(),
       weeklyReportSchedule.close(),
+      whatsappWelcomeWorker.close(),
+      whatsappWelcomeSchedule.close(),
+      whatsappEngagementWorker.close(),
+      whatsappEngagementSchedule.close(),
+      contentMultiplicationWorker.close(),
+      autopilotControllerWorker.close(),
+      autopilotControllerSchedule.close(),
     ]);
     await stopHeartbeat();
     await prisma.$disconnect();
@@ -348,7 +469,8 @@ async function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
   logger.info(
-    `[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME} + ${WHATSAPP_NURTURE_QUEUE_NAME} (daily 08:00 UTC) + ${WEEKLY_REPORT_QUEUE_NAME} (Monday 09:00 UTC)`,
+    `[worker] consuming ${VIDEO_QUEUE_NAME} + ${CAROUSEL_QUEUE_NAME} + ${DELIVERY_QUEUE_NAME} + ${WHATSAPP_NURTURE_QUEUE_NAME} (daily 08:00 UTC) + ${WEEKLY_REPORT_QUEUE_NAME} (Monday 09:00 UTC) + ` +
+      `${WHATSAPP_WELCOME_QUEUE_NAME} (daily 09:00 UTC) + ${WHATSAPP_ENGAGEMENT_QUEUE_NAME} (daily 10:00 UTC) + ${CONTENT_MULTIPLICATION_QUEUE_NAME} (on-demand) + ${AUTOPILOT_CONTROLLER_QUEUE_NAME} (daily 08:00 UTC)`,
   );
 }
 
