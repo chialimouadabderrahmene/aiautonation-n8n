@@ -1,6 +1,6 @@
 # AI Content Engine — status
 
-Pivot from the n8n-based acquisition machine to a standalone content engine on the existing `api`/`worker`/`web` codebase. See [docs/IMPLEMENTATION_GRAPH.md](IMPLEMENTATION_GRAPH.md) for the node-by-node graph, [docs/INTEGRATION_STATUS.md](INTEGRATION_STATUS.md) for the provider-by-provider matrix, and [the pivot gap analysis doc](https://claude.ai/code/artifact/a5764675-6d5d-4e07-8808-ef7e58fd2bb1) for why each decision was made.
+Pivot from the n8n-based acquisition machine to a standalone content engine on the existing `api`/`worker`/`web` codebase. See [docs/IMPLEMENTATION_GRAPH.md](IMPLEMENTATION_GRAPH.md) for the node-by-node graph, [docs/INTEGRATION_STATUS.md](INTEGRATION_STATUS.md) for the provider-by-provider matrix, [docs/N8N_RETIREMENT_MATRIX.md](N8N_RETIREMENT_MATRIX.md) for the workflow-by-workflow n8n classification (the single source of truth for that — not duplicated here), and [the pivot gap analysis doc](https://claude.ai/code/artifact/a5764675-6d5d-4e07-8808-ef7e58fd2bb1) for why each decision was made.
 
 ## What's real right now
 
@@ -10,9 +10,9 @@ Everything below was exercised live against the real local stack (Postgres, Redi
 - **Carousel renderer + multi-account publish**: rendered real slide PNGs; an approved carousel now actually publishes to Instagram/Facebook/X/LinkedIn and to specific `ConnectedAccount`s, gated by the same autopilot safety switch as video.
 - **WhatsApp onboarding** (`/whatsapp`): a full live conversation (`hi` → `vendor` → signup → product listing), HMAC-verified webhook, dedup-safe against Meta retries.
 - **Provider abstraction**: OpenAI, Groq and Anthropic behind one `AIProvider` interface, admin-selectable in Settings with auto-fallback — script/slide generation and the brand critic all go through it.
-- **Five n8n workflows natively ported** (see the retirement matrix below) and live-verified end to end: a BullMQ job fires, real Postgres queries run, a real Telegram digest/alert is attempted (or correctly skipped when a dependency isn't connected), logged to `AutomationExecution`.
+- **10 n8n workflows natively ported, all done and live-verified** (03, 04, 05, 06, 07, 09, 10, 14, 18, 19 — full detail and the other 12's classification in [docs/N8N_RETIREMENT_MATRIX.md](N8N_RETIREMENT_MATRIX.md)): a BullMQ job fires, real Postgres queries run, a real Telegram digest/alert is attempted (or correctly skipped when a dependency isn't connected), logged to `AutomationExecution`.
 - **ConnectedAccount selection UI**: browser-verified (Playwright against the live containers) on both `/video` and `/carousels`.
-- Full `vitest` suites: `api` 70/70, `worker` 30/30. `tsc --noEmit` clean on `api`, `worker`, `web`. All three builds clean.
+- Full `vitest` suites: `api` 79/79, `worker` 49/49. `tsc --noEmit` clean on `api`, `worker`, `web`. All three builds clean.
 
 ## Features completed
 
@@ -30,49 +30,32 @@ Everything below was exercised live against the real local stack (Postgres, Redi
 | Generic external lead capture webhook | `api/src/routes/leads.ts` — n8n workflow 03 |
 | Waitlist signup + referral codes | `api/src/modules/leads/waitlist.ts` — n8n workflow 04 |
 | Weekly growth report (Telegram digest, scheduled) | `worker/src/pipeline/weekly-report.ts` — n8n workflows 09 + 22 |
+| WhatsApp welcome sequence (native, scheduled) | `worker/src/pipeline/whatsapp-welcome.ts` — n8n workflow 05 |
+| WhatsApp engagement follow-up (native, scheduled) | `worker/src/pipeline/whatsapp-engagement.ts` — n8n workflow 06 |
+| Referral crediting + milestones | `api/src/modules/leads/referral.ts` — n8n workflow 07 |
+| Daily autopilot status + health digest | `worker/src/pipeline/autopilot-controller.ts` — n8n workflow 14 |
+| Content idea → format multiplication | `worker/src/pipeline/content-multiplication.ts` — n8n workflow 18 |
+| Carousel regenerate-with-feedback (parity with video) | `api/src/routes/carousel.ts` (`/projects/:id/regenerate`) |
 
-## n8n workflow retirement matrix (P10)
+## n8n workflow retirement matrix
 
-**Not acted on this pass.** The brief's own sequence — *port → test → switch native execution → verify → remove dependency* — is per workflow, and only a third of the 22 are through all four steps. Pulling n8n now would silently drop whatever the other workflows still serve in production. This table is the readiness assessment the removal decision needs, not the removal itself.
-
-| # | Workflow | Status | Safe to retire in n8n? |
-|---|---|---|---|
-| 13 | WhatsApp Lead Funnel | Superseded (prior pass) | Yes |
-| 19 | WhatsApp Nurture Sequences | Ported + live-verified | Yes |
-| 10 | Social Post Scheduler | Core rule (autopilot gate) ported; the Google-Sheets/Buffer posting loop itself is superseded by native `ConnectedAccount` publish, not reimplemented | Yes, for the parts native publish already replaces |
-| 03 | Lead Capture Webhook | Ported + live-verified (email-only leads not persisted — see module docstring) | Yes |
-| 04 | Waitlist Management | Ported + live-verified (confirmation sends not ported) | Yes |
-| 09 | Weekly Analytics Report | Ported + live-verified (feedback/waitlist/referral lines dropped, not faked) | Yes |
-| 22 | Performance Analyst Agent | Folded into 09's native port (same metrics, its AI narrative wasn't ported) | Yes |
-| 01 | AI Content Generation | Not inspected this pass, but the native script/slide pipeline (brand-reviewed, provider-abstracted) is almost certainly its superior replacement already | Needs a quick confirm, not a port |
-| 02 | Content Approval Handler | Not inspected this pass, but native `Approval`/`CarouselApproval` + Telegram buttons almost certainly already replace it | Needs a quick confirm, not a port |
-| 05 | WhatsApp Welcome Sequence | **Not ported** — distinct `WELCOME_D1/D2/D3` templates, not covered by workflow 19's nurture sequence | No |
-| 06 | WhatsApp Engagement Follow-up | **Not ported** — distinct `REENGAGE_7/14/21` templates | No |
-| 07 | Referral Campaign Tracker | **Not ported** — needs a referral-code-on-lead concept this app doesn't have yet | No |
-| 08 | Feedback Collection | **Not ported** — may be intentionally out of native scope (`feedbackFormUrl` setting implies an external form) | No, needs an owner decision first |
-| 12 | AI Social Autopilot | Not inspected this pass | Unknown |
-| 14 | Autopilot Controller | Not inspected this pass — worth checking against P5's native gate before assuming overlap | Unknown |
-| 15 | Viral Intelligence Engine | Needs Apify — not an integrated provider | No |
-| 16 | Pain Discovery Engine | Needs Reddit API — not an integrated provider | No |
-| 17 | ManyChat Comment Funnel | Needs ManyChat — not an integrated provider | No |
-| 18 | Content Multiplication Engine | Not inspected this pass | Unknown |
-| 20 | A/B Testing Engine | Not inspected this pass | Unknown |
-| 21 | Social Proof Engine | Needs an external event-source shape that isn't specified anywhere | No, needs a spec first |
+See [docs/N8N_RETIREMENT_MATRIX.md](N8N_RETIREMENT_MATRIX.md) for the full, current, single-source-of-truth classification of all 22 workflows — not duplicated here to avoid the two docs drifting out of sync (which happened once already; this section used to hold its own copy of that table). Summary: 10 of 22 are ported and live-verified, 6 are REDUNDANT (native equivalents already exist), 4 are PROVIDER_BLOCKED, 2 are SPEC_BLOCKED. n8n is untouched and still running everything — nothing has been retired yet, that's an owner decision per workflow.
 
 ## Owner decisions required
 
-1. **n8n's fate** — the matrix above is the input; a go/no-go per remaining workflow (05/06/07/08/21 especially) is still needed before any removal.
+1. **n8n's fate** — the retirement matrix is the input; a go/no-go per workflow (especially the 2 SPEC_BLOCKED ones, 08 and 21) is still needed before any removal.
 2. **Brand voice source material** — still placeholder, not Eki's real voice/vocabulary.
-3. **Workflows 01/02/12/14/18/20** — worth a confirm-and-retire pass (01/02 likely redundant) or a port pass (12/14/18/20 unknown scope) before the retirement matrix can close out.
-4. **Email delivery** (weekly report, lead/waitlist confirmations) — no native Resend sender exists yet; everything above ships via Telegram + the synchronous HTTP response only.
+3. **Workflows 01/02/12** — classified REDUNDANT but not reconfirmed against their exact n8n node logic; worth a quick confirm before retiring them.
+4. **08 Feedback Collection** — build a native feedback webhook + storage model, or keep routing to the external form already configured in `feedbackFormUrl`?
+5. **21 Social Proof Engine** — what system/event actually triggers a "social proof" moment? No such event source exists anywhere in this codebase or its docs.
+6. **Email delivery** (weekly report, lead/waitlist/referral confirmations) — no native Resend sender exists yet; everything ships via Telegram + the synchronous HTTP response only.
 
 ## Tests passed
 
-`api` vitest 70/70, `worker` vitest 30/30, `tsc --noEmit` clean on all three packages, all three builds clean. Live-verified this pass: autopilot gate (SKIPPED publications + manual alert), lead capture (401 on bad key, persist + dedupe), waitlist (signup + dedupe), weekly report (manual trigger → real metrics → logged), ConnectedAccount UI (Playwright, both pages).
+`api` vitest 79/79, `worker` vitest 49/49, `tsc --noEmit` clean on all three packages, all three builds clean. Live-verified across all passes: autopilot gate (SKIPPED publications + manual alert), lead capture (401 on bad key, persist + dedupe), waitlist (signup + dedupe), weekly report (manual trigger → real metrics → logged), ConnectedAccount UI (Playwright, both pages), WhatsApp welcome/engagement (manual trigger → correct fail-closed with no live WhatsApp credentials), referral crediting (unmatched / credited with milestone / duplicate), autopilot controller digest (manual trigger → real config + count queries → logged), content multiplication (manual trigger → correct fail-closed with no live AI credentials).
 
 ## Next graph nodes
 
-1. Confirm 01/02 are fully redundant with native generation/approval, then retire them in n8n.
-2. Port 05 (WhatsApp Welcome) and 06 (Engagement Follow-up) — same pattern as 19, different template keys/days.
-3. Inspect 12/14/18/20 to classify them (confirm-and-retire vs. port vs. blocked).
-4. Resolve the owner decisions above, then execute the n8n retirement matrix for whatever is marked "Yes".
+1. Confirm 01/02/12 are fully redundant with native generation/approval/publish, then retire them in n8n.
+2. Resolve the two SPEC_BLOCKED decisions (08, 21) above, then port whichever side of each decision is chosen.
+3. Resolve the n8n's-fate decision, then execute retirement for whatever the matrix marks REDUNDANT or done-and-verified.

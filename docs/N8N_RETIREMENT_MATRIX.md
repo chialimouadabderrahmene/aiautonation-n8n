@@ -8,6 +8,8 @@ Four classes:
 - **PROVIDER_BLOCKED** — needs a third-party integration this system does not have.
 - **SPEC_BLOCKED** — needs one precise decision only an owner/product call can make.
 
+**Totals (22 workflows, 00-22 — 11 was never used): 6 REDUNDANT (00, 01, 02, 12, 13, 22) + 10 PORT_REQUIRED, all done (03, 04, 05, 06, 07, 09, 10, 14, 18, 19) + 2 SPEC_BLOCKED (08, 21) + 4 PROVIDER_BLOCKED (15, 16, 17, 20) = 22. Every workflow has exactly one row below, in exactly one of the four tables — including 13 and 22, which are REDUNDANT rather than their own category even though they're listed in the "already native" table for narrative continuity with earlier passes.**
+
 ## Already native (from earlier passes, listed for completeness)
 
 | # | Workflow | Class | Native replacement |
