@@ -184,6 +184,106 @@ function PasswordCard() {
   );
 }
 
+interface TeamMember {
+  id: string;
+  email: string;
+  role: "OWNER" | "ADMIN" | "VIEWER";
+  lastLoginAt: string | null;
+}
+
+function TeamCard() {
+  const [users, setUsers] = useState<TeamMember[] | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<TeamMember["role"]>("ADMIN");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try {
+      setUsers(await api.get<TeamMember[]>("/api/users"));
+    } catch (err) {
+      setError(err instanceof APIError ? err.message : "Could not load team");
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function invite(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post("/api/users", { email, password, role });
+      setEmail("");
+      setPassword("");
+      await load();
+    } catch (err) {
+      setError(err instanceof APIError ? err.message : "Could not add user");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <p className="font-bold text-slate-900">Team access</p>
+      <p className="mb-3 text-xs text-slate-500">Role is enforced server-side: a Viewer token is rejected on every write, not just hidden in the UI.</p>
+      {error ? <Notice tone="red">{error}</Notice> : null}
+      <ul className="space-y-2 text-sm">
+        {(users ?? []).map((u) => (
+          <li key={u.id} className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
+            <span>
+              {u.email} <span className="text-xs text-slate-400">{u.lastLoginAt ? `· last login ${timeAgo(u.lastLoginAt)}` : "· never logged in"}</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <select
+                className="rounded border border-slate-200 px-2 py-1 text-xs"
+                value={u.role}
+                onChange={async (e) => {
+                  await api.put(`/api/users/${u.id}/role`, { role: e.target.value });
+                  await load();
+                }}
+              >
+                <option value="OWNER">Owner</option>
+                <option value="ADMIN">Admin</option>
+                <option value="VIEWER">Viewer</option>
+              </select>
+              <button
+                type="button"
+                className="text-xs text-red-600 hover:underline"
+                onClick={async () => {
+                  try {
+                    await api.delete(`/api/users/${u.id}`);
+                    await load();
+                  } catch (err) {
+                    setError(err instanceof APIError ? err.message : "Could not remove user");
+                  }
+                }}
+              >
+                remove
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={invite} className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+        <input className={`${inputClass} mt-0 w-48`} type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input className={`${inputClass} mt-0 w-40`} type="password" placeholder="password (min 12 chars)" minLength={12} value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <select className="mt-0 rounded-lg border border-slate-200 px-3 py-2 text-sm" value={role} onChange={(e) => setRole(e.target.value as TeamMember["role"])}>
+          <option value="ADMIN">Admin</option>
+          <option value="VIEWER">Viewer</option>
+          <option value="OWNER">Owner</option>
+        </select>
+        <Button type="submit" variant="secondary" disabled={busy}>
+          Add team member
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const [schema, setSchema] = useState<SettingDefinition[]>([]);
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -235,6 +335,7 @@ export default function SettingsPage() {
             </Card>
           ))}
           <MusicLibrary />
+          <TeamCard />
           <PasswordCard />
         </div>
       )}

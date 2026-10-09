@@ -1,13 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma";
 import { enqueueDelivery } from "../lib/queue";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { evaluateRequirements } from "../modules/workflows/readiness";
 import { VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
-import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup } from "../modules/telegram/telegram";
+import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup, notifyAdmin } from "../modules/telegram/telegram";
+import { checkAutopilot } from "../modules/automation/autopilot";
 import { getProviderValues } from "../modules/integrations/vault";
+import { handleCarouselCallback } from "./carousel";
 import { getN8nConnection } from "../modules/n8n/client";
 import { timedFetch } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -61,13 +64,55 @@ export async function decide(videoJobId: string, decision: "APPROVED" | "REJECTE
 
   if (decision === "APPROVED") {
     const job = await prisma.videoJob.findUniqueOrThrow({ where: { id: videoJobId }, include: { project: true } });
+    const manual: string[] = [];
     for (const target of job.project.publishTargets) {
+      const autopilot = await checkAutopilot(target);
+      if (!autopilot.allowed) {
+        await prisma.publication.upsert({
+          where: { videoJobId_target: { videoJobId, target } },
+          update: { status: "SKIPPED", error: autopilot.reason ?? null },
+          create: { videoJobId, target, status: "SKIPPED", error: autopilot.reason },
+        });
+        manual.push(target);
+        continue;
+      }
       await prisma.publication.upsert({
         where: { videoJobId_target: { videoJobId, target } },
         update: { status: "PENDING", error: null },
         create: { videoJobId, target },
       });
       await enqueueDelivery({ kind: "publish", videoJobId, target, requestedBy: decidedBy });
+    }
+    // Multi-account distribution: one Publication + delivery job per
+    // selected ConnectedAccount, independent of (and additive to) the
+    // legacy per-provider targets above.
+    if (job.project.publishAccountIds.length) {
+      const connectedAccounts = await prisma.connectedAccount.findMany({ where: { id: { in: job.project.publishAccountIds } } });
+      for (const account of connectedAccounts) {
+        const autopilot = await checkAutopilot(account.provider);
+        if (!autopilot.allowed) {
+          await prisma.publication.upsert({
+            where: { videoJobId_connectedAccountId: { videoJobId, connectedAccountId: account.id } },
+            update: { status: "SKIPPED", error: autopilot.reason ?? null },
+            create: { videoJobId, target: account.provider, connectedAccountId: account.id, status: "SKIPPED", error: autopilot.reason },
+          });
+          manual.push(`${account.provider} (${account.label})`);
+          continue;
+        }
+        await prisma.publication.upsert({
+          where: { videoJobId_connectedAccountId: { videoJobId, connectedAccountId: account.id } },
+          update: { status: "PENDING", error: null },
+          create: { videoJobId, target: account.provider, connectedAccountId: account.id },
+        });
+        await enqueueDelivery({ kind: "publish", videoJobId, target: account.provider, connectedAccountId: account.id, requestedBy: decidedBy });
+      }
+    }
+    // Native port of n8n workflow 10's "Manual Post Alert" — autopilot off/stopped
+    // never means silently dropped, it means a human posts it instead.
+    if (manual.length) {
+      await notifyAdmin(
+        `Ready to post manually (autopilot off): ${manual.join(", ")}\n\nVideo: ${job.project.name}\n\nCaption:\n${job.caption ?? ""}\n\nHashtags: ${job.hashtags.join(" ") || "none"}`,
+      );
     }
   }
   return approval;
@@ -88,7 +133,7 @@ approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRe
   const target = String(req.params.target);
   const pub = await prisma.publication.findUnique({ where: { videoJobId_target: { videoJobId: jobId, target } } });
   if (!pub) return res.status(404).json({ message: "Not found" });
-  if (pub.status !== "FAILED") return res.status(409).json({ message: "Only a FAILED publication can be retried" });
+  if (pub.status !== "FAILED" && pub.status !== "SKIPPED") return res.status(409).json({ message: "Only a FAILED or SKIPPED (autopilot-blocked) publication can be retried" });
   await prisma.publication.update({ where: { id: pub.id }, data: { status: "PENDING", error: null } });
   await enqueueDelivery({ kind: "publish", videoJobId: jobId, target, requestedBy: req.admin?.email ?? "unknown" });
   res.json({ ok: true });
@@ -100,7 +145,9 @@ approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRe
  * n8n workflow 02 (content approval commands). Always answers 200 so
  * Telegram never retries forever.
  */
-telegramPublicRouter.post("/webhook", async (req, res) => {
+const telegramWebhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
+
+telegramPublicRouter.post("/webhook", telegramWebhookLimiter, async (req, res) => {
   const header = req.headers["x-telegram-bot-api-secret-token"];
   const expected = await getTelegramWebhookSecret();
   if (typeof header !== "string" || !secretsEqual(header, expected)) return res.status(403).json({ message: "Forbidden" });
@@ -111,6 +158,10 @@ telegramPublicRouter.post("/webhook", async (req, res) => {
       callback_query?: { id: string; data?: string; from?: { id?: number; username?: string }; message?: { chat?: { id?: number }; message_id?: number } };
     };
     const cb = update.callback_query;
+    if (cb?.data?.startsWith("car:")) {
+      await handleCarouselCallback(cb);
+      return;
+    }
     const match = cb?.data?.match(/^vid:(approve|reject):([a-z0-9]+)$/);
     if (cb && match) {
       const telegram = await getProviderValues("telegram");

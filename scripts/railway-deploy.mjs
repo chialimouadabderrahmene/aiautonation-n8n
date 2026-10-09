@@ -23,6 +23,19 @@
  *   --init "<name>"    create a new Railway project first
  *   --verify-only      skip provisioning/deploys, only run the verification
  *   --no-smoke         skip scripts/smoke-test.mjs
+<<<<<<< Updated upstream
+ *   --check-cli        read-only: show which Railway executable is used, its
+ *                      version, login and linked project/environment, then exit
+ *   RAILWAY_CLI        path to the railway executable, if PATH lookup fails
+ *                      (see scripts/lib/railway-cli.mjs for the resolution order)
+=======
+ *   --skip-n8n         deploy api/worker/web only, deferring n8n — for plans
+ *                      whose resource limit can't fit all 4 app services +
+ *                      Postgres + Redis + a Bucket at once. n8n integration
+ *                      is simply NOT_CONFIGURED until you add the n8n service
+ *                      and re-run without this flag (nothing else changes;
+ *                      re-running is always safe/idempotent per service).
+>>>>>>> Stashed changes
  *
  * Safety:
  *   - Secret values are generated here (crypto.randomBytes), sent to Railway
@@ -39,13 +52,46 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+<<<<<<< Updated upstream
+import { resolveRailwayCli } from "./lib/railway-cli.mjs";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+// fileURLToPath, not URL.pathname: the latter keeps %20 for spaces and yields
+// "/C:/..." on Windows — an invalid cwd, which Node reports as "spawnSync railway ENOENT".
+=======
+
+// `new URL(import.meta.url).pathname` is wrong on Windows: it leaves a
+// leading "/" before the drive letter and never decodes %-escapes (e.g. a
+// space in a directory name), producing a mangled path like
+// "C:\C:\Users\...%20..." once `path.resolve` "fixes" the leading slash by
+// prefixing the current drive again. Every `spawnSync(..., { cwd: ROOT })`
+// call then fails outright with ENOENT on the shell itself, not on ROOT —
+// reproduced exactly this way. `fileURLToPath` is the API Node ships
+// specifically to convert a `file://` URL to a correct, platform-native path.
+>>>>>>> Stashed changes
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const flagValue = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-const APP_SERVICES = ["api", "worker", "n8n", "web"];
-const CONFIG_FILES = { api: "/railway/api.json", worker: "/railway/worker.json", n8n: "/railway/n8n.json", web: "/railway/web.json" };
+const SKIP_N8N = flag("--skip-n8n");
+const APP_SERVICES = SKIP_N8N ? ["api", "worker", "web"] : ["api", "worker", "n8n", "web"];
+// `railway environment edit --service-config <svc> configFile <path>` (the
+// documented config-as-code mechanism these railway/*.json files were
+// written for) was tried against a real Railway account and reproduced as a
+// silent no-op: it always exits 0 and prints `{"committed":false,"message":
+// "No changes to apply"}` — for that path, for its own build.builder /
+// build.dockerfilePath / deploy.numReplicas equivalents, and even for a
+// deliberately invalid dot-path, all identically. A subsequent build then
+// used Railpack instead of the intended Dockerfile ("Railpack could not
+// determine how to build the app"). The actually-effective mechanism,
+// confirmed by a real build log switching from Railpack to the correct
+// multi-stage Dockerfile: the legacy `RAILWAY_DOCKERFILE_PATH` build
+// variable (set like any other var, honored at build time). It only covers
+// `build.dockerfilePath`; `deploy.healthcheckPath` / `restartPolicyType` /
+// `numReplicas` have no confirmed variable equivalent (see DEPLOYMENT.md) —
+// Railway's defaults (TCP-only health check, ON_FAILURE/10 retries, 1
+// replica) apply instead until that gap is closed.
+const DOCKERFILE_PATHS = { api: "docker/Dockerfile.api", worker: "docker/Dockerfile.worker", n8n: "docker/Dockerfile.n8n", web: "docker/Dockerfile.web" };
 const SECRET_KEYS = ["AUTOMATION_SECRET_KEY", "JWT_SECRET", "INTERNAL_API_TOKEN", "N8N_ENCRYPTION_KEY"];
 const secretTargets = {
   AUTOMATION_SECRET_KEY: ["api", "worker"],
@@ -72,16 +118,65 @@ function step(name, detail) {
   log(`${name}${detail ? ` — ${detail}` : ""}`);
 }
 
+<<<<<<< Updated upstream
+let cli;
+/** The Railway executable, resolved once from PATH without a shell (Windows: .exe or npm .cmd shim target). */
+function railwayCli() {
+  if (!cli) {
+    try {
+      cli = resolveRailwayCli();
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+  return cli;
+=======
+// On Windows, npm installs global CLIs as a `<name>.cmd` shim. Node's own
+// docs are explicit that .bat/.cmd files "cannot be executed directly" by
+// child_process without `shell: true` — spawning the bare name fails with
+// ENOENT (Node can't resolve the PATHEXT-implied .cmd extension itself), and
+// spawning "railway.cmd" directly fails with EINVAL (a .cmd is not a real
+// PE executable; only cmd.exe knows how to run it) — both reproduced here.
+// `shell: true` on win32 is Node's documented fix, BUT (reproduced the hard
+// way, via a real failed `--message "Eki Control Center: ..."` call):
+// contrary to what an earlier version of this comment claimed, Node does
+// NOT quote each array element for you on this path. Per Node's own
+// child_process source, when `shell` is truthy it just does
+// `[file, ...args].join(' ')` and hands that ONE string to
+// `cmd.exe /d /s /c`, with no re-quoting — so any argument containing a
+// space (a `--message` value, here) gets split back into multiple cmd.exe
+// tokens and the CLI sees garbage. `windowsVerbatimArguments` is implied
+// true on this path specifically so the caller can (and must) do its own
+// quoting. `winShellQuote` below does that: wrap in double quotes whenever
+// an arg has whitespace or a cmd.exe metacharacter, escaping embedded `"`.
+const WINDOWS_SHELL = process.platform === "win32";
+function winShellQuote(arg) {
+  const s = String(arg);
+  if (s !== "" && !/[\s"&|<>^()%!]/.test(s)) return s;
+  return `"${s.replace(/"/g, '\\"')}"`;
+>>>>>>> Stashed changes
+}
+
 /** Runs the Railway CLI. `secret: true` = output may contain secrets: never echoed. */
 function rw(cliArgs, { input, allowFail = false, secret = false, interactive = false } = {}) {
-  const res = spawnSync("railway", cliArgs, {
+<<<<<<< Updated upstream
+  const { command, args: prefix } = railwayCli();
+  const res = spawnSync(command, [...prefix, ...cliArgs], {
+=======
+  const res = spawnSync("railway", WINDOWS_SHELL ? cliArgs.map(winShellQuote) : cliArgs, {
+>>>>>>> Stashed changes
     cwd: ROOT,
     input,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+<<<<<<< Updated upstream
+    windowsHide: true,
+=======
+    shell: WINDOWS_SHELL,
+>>>>>>> Stashed changes
     stdio: interactive ? ["inherit", "pipe", "inherit"] : ["pipe", "pipe", "pipe"],
   });
-  if (res.error) fail(`could not run railway ${cliArgs[0]}: ${res.error.message}`);
+  if (res.error) fail(`could not run railway ${cliArgs[0]} (${command}): ${res.error.message}`);
   if (res.status !== 0 && !allowFail) {
     const detail = secret ? "(output suppressed: may contain secrets)" : `${res.stderr ?? ""}${res.stdout ?? ""}`.trim().slice(-1500);
     fail(`railway ${cliArgs.filter((a) => !a.includes("=")).join(" ")} exited ${res.status}\n${detail}`);
@@ -157,7 +252,7 @@ function githubRepo() {
 // ------------------------------------------------------------ provisioning
 async function provision() {
   const version = rw(["--version"]).stdout.trim();
-  step("Railway CLI", version);
+  step("Railway CLI", `${version} — ${railwayCli().source}`);
   const major = Number(/(\d+)\.\d+\.\d+/.exec(version)?.[1] ?? 0);
   if (major < 5) fail(`this script needs Railway CLI v5+ (bucket, tcp-proxy, service source, environment edit). Run: railway upgrade`);
   const who = rw(["whoami"], { allowFail: true });
@@ -240,46 +335,57 @@ async function provision() {
   services = listServices();
   for (const name of APP_SERVICES) if (!byName(services, name)) fail(`service ${name} missing after creation`);
 
-  // ---- config-as-code paths (Dockerfile, healthchecks, restart policy)
-  const cfgArgs = ["environment", "edit"];
-  for (const name of APP_SERVICES) cfgArgs.push("--service-config", name, "configFile", CONFIG_FILES[name]);
-  cfgArgs.push("--message", "Eki Control Center: config-as-code paths");
-  rw(cfgArgs);
-  step("Config-as-code", APP_SERVICES.map((n) => `${n}→${CONFIG_FILES[n]}`).join(", "));
+  // ---- Dockerfile selection (see DOCKERFILE_PATHS comment above for why
+  // this is a plain build variable and not `environment edit --service-config`)
+  for (const name of APP_SERVICES) {
+    if (getVars(name).RAILWAY_DOCKERFILE_PATH !== DOCKERFILE_PATHS[name]) {
+      rw(["variable", "set", `RAILWAY_DOCKERFILE_PATH=${DOCKERFILE_PATHS[name]}`, "--service", name, "--skip-deploys"]);
+    }
+  }
+  step("Dockerfile path", APP_SERVICES.map((n) => `${n}→${DOCKERFILE_PATHS[n]}`).join(", "));
 
   // ---- public domains (web + n8n only), created before variables reference them
   const domainOf = (svc) => domainUrls(svc)[0] ?? null;
   for (const [svc, port] of [["web", "3200"], ["n8n", "5678"]]) {
+    if (SKIP_N8N && svc === "n8n") continue;
     if (!domainOf(svc)) rwJson(["domain", "--service", svc, "--port", port]);
     report.services[svc] = { ...(report.services[svc] ?? {}), url: domainOf(svc) };
     step(`Public domain ${svc}`, `${report.services[svc].url} → port ${port}`);
   }
 
-  // ---- n8n volume
-  const volumes = rwJson(["volume", "list"])?.volumes ?? [];
-  const n8nSvc = byName(services, "n8n");
-  if (!volumes.some((v) => v.serviceName === "n8n" && v.mountPath === "/home/node/.n8n" && !v.isPendingDeletion)) {
-    rw(["volume", "--service", n8nSvc.id, "add", "--mount-path", "/home/node/.n8n"]);
-    step("Volume", "n8n → /home/node/.n8n (created)");
-  } else step("Volume", "n8n → /home/node/.n8n (exists)");
+  // ---- n8n volume (skipped entirely with --skip-n8n: no n8n service exists yet)
+  if (!SKIP_N8N) {
+    const volumes = rwJson(["volume", "list"])?.volumes ?? [];
+    const n8nSvc = byName(services, "n8n");
+    if (!volumes.some((v) => v.serviceName === "n8n" && v.mountPath === "/home/node/.n8n" && !v.isPendingDeletion)) {
+      rw(["volume", "--service", n8nSvc.id, "add", "--mount-path", "/home/node/.n8n"]);
+      step("Volume", "n8n → /home/node/.n8n (created)");
+    } else step("Volume", "n8n → /home/node/.n8n (exists)");
+  } else {
+    step("Volume", "n8n skipped (--skip-n8n)");
+  }
 
   // ---- secrets: reuse existing values, generate only what is missing
   const current = Object.fromEntries(APP_SERVICES.map((s) => [s, getVars(s)]));
   const existsAnywhere = (key) => APP_SERVICES.some((s) => has(current[s], key));
-  const pick = (key) => current.api[key] || current.worker[key] || current.n8n[key] || null;
-  for (const k of SECRET_KEYS) {
+  const pick = (key) => APP_SERVICES.map((s) => current[s][key]).find((v) => v) || null;
+  // With --skip-n8n, N8N_ENCRYPTION_KEY has no target service yet (n8n doesn't
+  // exist) — generating/tracking it now would be discarded work; it is
+  // created for real the next time this script runs without the flag.
+  const activeSecretKeys = SECRET_KEYS.filter((k) => secretTargets[k].some((s) => APP_SERVICES.includes(s)));
+  for (const k of activeSecretKeys) {
     // A sealed secret cannot be read back, so it cannot be copied to a service that lacks it.
     if (existsAnywhere(k) && !pick(k)) {
       const needs = APP_SERVICES.filter((s) => k in secretTargets && secretTargets[k].includes(s) && !has(current[s], k));
       if (needs.length) fail(`${k} is sealed on Railway and missing on ${needs.join(", ")}; unseal it or copy it there manually (a new value would orphan encrypted data)`);
     }
   }
-  const secrets = Object.fromEntries(SECRET_KEYS.map((k) => [k, pick(k) || (existsAnywhere(k) ? null : secret())]));
-  for (const k of SECRET_KEYS) {
-    const values = new Set(secretTargets[k].map((s) => current[s][k]).filter((x) => typeof x === "string" && x));
+  const secrets = Object.fromEntries(activeSecretKeys.map((k) => [k, pick(k) || (existsAnywhere(k) ? null : secret())]));
+  for (const k of activeSecretKeys) {
+    const values = new Set(secretTargets[k].map((s) => current[s]?.[k]).filter((x) => typeof x === "string" && x));
     if (values.size > 1) warn(`${k} differed between ${secretTargets[k].join(" and ")} (services could not talk to each other / decrypt); aligning all to the ${secretTargets[k][0]} value`);
   }
-  const generated = SECRET_KEYS.filter((k) => !existsAnywhere(k));
+  const generated = activeSecretKeys.filter((k) => !existsAnywhere(k));
 
   // Owner/admin e-mail: once bootstrapped it must not change (n8n's owner already exists with it).
   const existingEmail = current.api.ADMIN_BOOTSTRAP_EMAIL || current.api.N8N_OWNER_EMAIL;
@@ -332,9 +438,14 @@ async function provision() {
       N8N_OWNER_EMAIL: adminEmail,
       PUBLIC_WEB_URL: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
       WEB_ORIGIN: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
-      N8N_INTERNAL_URL: "http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5678",
-      N8N_PUBLIC_URL: "https://${{n8n.RAILWAY_PUBLIC_DOMAIN}}",
-      N8N_SUPERVISOR_URL: "http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5690",
+      // Omitted entirely (not just left empty) with --skip-n8n: a `${{n8n...}}`
+      // reference to a service that does not exist yet would not resolve, and
+      // the api/web code already treats a missing N8N_* URL as NOT_CONFIGURED.
+      ...(SKIP_N8N ? {} : {
+        N8N_INTERNAL_URL: "http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5678",
+        N8N_PUBLIC_URL: "https://${{n8n.RAILWAY_PUBLIC_DOMAIN}}",
+        N8N_SUPERVISOR_URL: "http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5690",
+      }),
       ...s3,
     },
     worker: {
@@ -539,12 +650,15 @@ async function verify() {
   const auth = { authorization: `Bearer ${token}` };
 
   // Health: wait for every component to be ONLINE (n8n bootstrap + import take a minute on first boot).
+  // With --skip-n8n there is no n8n service at all: it is expected to report
+  // NOT_CONFIGURED forever, so it is excluded from the ONLINE/imported gate
+  // instead of burning the full 8-minute timeout waiting for it.
   let health;
-  const hDeadline = Date.now() + 8 * 60_000;
+  const hDeadline = Date.now() + (SKIP_N8N ? 3 : 8) * 60_000;
   for (;;) {
     health = (await http(`${web}/api/system/health`, { headers: auth })).json;
-    const allOnline = health && Object.values(health).every((c) => c.status === "ONLINE");
-    const imported = health?.n8n?.details?.present === 22;
+    const allOnline = health && Object.entries(health).every(([k, c]) => (SKIP_N8N && k === "n8n") || c.status === "ONLINE");
+    const imported = SKIP_N8N || health?.n8n?.details?.present === 22;
     if (allOnline && imported) break;
     if (Date.now() > hDeadline) break;
     await sleep(15_000);
@@ -557,13 +671,18 @@ async function verify() {
   step("Workflows (Control Center view)", JSON.stringify(v.workflows));
 
   // Directly against n8n's public API, from inside the api container.
-  const n8nCheck = rw(["ssh", "--service", "api", "node", "dist/tools/n8n-verify.js"], { allowFail: true, interactive: true });
-  try {
-    v.n8nDirect = JSON.parse(n8nCheck.stdout.slice(n8nCheck.stdout.indexOf("{")));
-  } catch {
-    v.n8nDirect = `could not run n8n-verify over railway ssh: ${n8nCheck.stdout.slice(-300)}`;
+  if (SKIP_N8N) {
+    v.n8nDirect = "SKIPPED (--skip-n8n: no n8n service deployed this run)";
+    step("n8n API (direct)", v.n8nDirect);
+  } else {
+    const n8nCheck = rw(["ssh", "--service", "api", "node", "dist/tools/n8n-verify.js"], { allowFail: true, interactive: true });
+    try {
+      v.n8nDirect = JSON.parse(n8nCheck.stdout.slice(n8nCheck.stdout.indexOf("{")));
+    } catch {
+      v.n8nDirect = `could not run n8n-verify over railway ssh: ${n8nCheck.stdout.slice(-300)}`;
+    }
+    step("n8n API (direct)", typeof v.n8nDirect === "string" ? v.n8nDirect : `${v.n8nDirect.controlCenterWorkflowsPresent} present, ${v.n8nDirect.active} active, duplicates ${v.n8nDirect.duplicates.length}, owner ${v.n8nDirect.owner.length ? "yes" : "NO"}`);
   }
-  step("n8n API (direct)", typeof v.n8nDirect === "string" ? v.n8nDirect : `${v.n8nDirect.controlCenterWorkflowsPresent} present, ${v.n8nDirect.active} active, duplicates ${v.n8nDirect.duplicates.length}, owner ${v.n8nDirect.owner.length ? "yes" : "NO"}`);
 
   // n8n must require authentication.
   if (n8n) {
@@ -605,8 +724,14 @@ async function verify() {
   };
   step("Security", JSON.stringify(v.security));
 
-  // Smoke test (the repository's 20-step checklist).
-  if (!flag("--no-smoke")) {
+  // Smoke test (the repository's 20-step checklist). It hard-asserts n8n
+  // ONLINE + 22/22 workflows present (steps 4, 9), which cannot pass with
+  // --skip-n8n, so it is skipped rather than reported as a false failure;
+  // re-run it manually once n8n is deployed.
+  if (SKIP_N8N) {
+    v.smokeTest = "SKIPPED (--skip-n8n: smoke-test.mjs asserts n8n is ONLINE with 22 workflows)";
+    step("Smoke test", v.smokeTest);
+  } else if (!flag("--no-smoke")) {
     const smoke = spawnSync("node", ["scripts/smoke-test.mjs"], {
       cwd: ROOT,
       encoding: "utf8",
@@ -620,7 +745,23 @@ async function verify() {
 }
 
 // ------------------------------------------------------------------ main
+async function checkCli() {
+  const { command, args: prefix, source } = railwayCli();
+  step("Railway executable", `${[command, ...prefix].join(" ")} (from ${source})`);
+  step("railway --version", rw(["--version"]).stdout.trim());
+  const who = rw(["whoami"], { allowFail: true });
+  step("railway whoami", who.ok ? who.stdout.trim().split("\n").pop() : "NOT logged in — run `railway login`");
+  const status = rw(["status"], { allowFail: true });
+  if (!status.ok) fail(`railway status failed — ${who.ok ? `run \`railway link\` in ${ROOT}` : "run `railway login` first"}\n${(status.stderr + status.stdout).trim().slice(0, 300)}`);
+  const lines = status.stdout.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim());
+  for (const l of lines.filter((l) => /^(Project|Environment|Service)\s*:/i.test(l))) step("railway status", l);
+  const projects = rwJson(["project", "list"], { allowFail: true });
+  step("railway project list", Array.isArray(projects) ? `${projects.length} project(s) visible to this login` : "not available");
+  log("CLI check passed — nothing was created or changed.");
+}
+
 (async () => {
+  if (flag("--check-cli")) return checkCli();
   if (!flag("--verify-only")) {
     const ctx = await provision();
     await deploy(ctx);

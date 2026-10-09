@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { prisma } from "../lib/prisma";
 import { requireConnected } from "../lib/credentials";
+import { getConnectedAccountCreds } from "../lib/connected-accounts";
 import { getStorage } from "../lib/storage";
 import { timedFetch, describeHttpFailure, readErrorDetail, ProviderError } from "../lib/http";
 
@@ -57,8 +58,7 @@ async function loadJob(videoJobId: string) {
   return { ...job, final };
 }
 
-async function publishInstagram(job: Job): Promise<PublishResult> {
-  const v = await requireConnected("meta", "Meta");
+async function publishInstagram(job: Job, v: Record<string, string>): Promise<PublishResult> {
   const ver = v.graphVersion || "v23.0";
   if (!v.instagramUserId) throw new ProviderError("No Instagram business account is linked to the connected Facebook Page", null, false);
   const videoUrl = await getStorage().signedUrl(job.final.url, 3600);
@@ -79,8 +79,7 @@ async function publishInstagram(job: Job): Promise<PublishResult> {
   return { externalId: published.id, externalUrl: link.permalink };
 }
 
-async function publishFacebook(job: Job): Promise<PublishResult> {
-  const v = await requireConnected("meta", "Meta");
+async function publishFacebook(job: Job, v: Record<string, string>): Promise<PublishResult> {
   const ver = v.graphVersion || "v23.0";
   if (!v.pageId) throw new ProviderError("No Facebook Page is connected", null, false);
   const fileUrl = await getStorage().signedUrl(job.final.url, 3600);
@@ -93,8 +92,7 @@ async function publishFacebook(job: Job): Promise<PublishResult> {
   return { externalId: res.id, externalUrl: `https://www.facebook.com/${res.id}` };
 }
 
-async function publishX(job: Job): Promise<PublishResult> {
-  const v = await requireConnected("x", "X");
+async function publishX(job: Job, v: Record<string, string>): Promise<PublishResult> {
   const auth = { Authorization: `Bearer ${v.accessToken}` };
   return withLocalFile(job.final.url, async (file, size) => {
     const init = await json<{ data: { id: string } }>("X", "https://api.x.com/2/media/upload/initialize", {
@@ -142,8 +140,7 @@ function linkedinVersion(): string {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-async function publishLinkedIn(job: Job): Promise<PublishResult> {
-  const v = await requireConnected("linkedin", "LinkedIn");
+async function publishLinkedIn(job: Job, v: Record<string, string>): Promise<PublishResult> {
   const owner = v.organizationId ? `urn:li:organization:${v.organizationId}` : `urn:li:person:${v.memberId}`;
   if (!v.organizationId && !v.memberId) throw new ProviderError("LinkedIn member id unknown — reconnect the account", null, false);
   const headers = { Authorization: `Bearer ${v.accessToken}`, "LinkedIn-Version": linkedinVersion(), "X-Restli-Protocol-Version": "2.0.0", "Content-Type": "application/json" };
@@ -191,15 +188,31 @@ async function publishLinkedIn(job: Job): Promise<PublishResult> {
   });
 }
 
-const PUBLISHERS: Record<string, (job: Job) => Promise<PublishResult>> = {
+const PUBLISHERS: Record<string, (job: Job, creds: Record<string, string>) => Promise<PublishResult>> = {
   instagram: publishInstagram,
   facebook: publishFacebook,
   x: publishX,
   linkedin: publishLinkedIn,
 };
 
-export async function publishVideo(videoJobId: string, target: string): Promise<PublishResult> {
+/** `meta` backs both the instagram and facebook publish targets. */
+const CREDS_PROVIDER: Record<string, { provider: string; label: string }> = {
+  instagram: { provider: "meta", label: "Meta" },
+  facebook: { provider: "meta", label: "Meta" },
+  x: { provider: "x", label: "X" },
+  linkedin: { provider: "linkedin", label: "LinkedIn" },
+};
+
+/**
+ * Publishes an approved video. With no `connectedAccountId`, this is the
+ * original single-account-per-provider path (Integration's own OAuth
+ * connection, unchanged). With one, it publishes through that specific
+ * ConnectedAccount's own tokens instead — the multi-account path.
+ */
+export async function publishVideo(videoJobId: string, target: string, connectedAccountId?: string): Promise<PublishResult> {
   const publisher = PUBLISHERS[target];
   if (!publisher) throw new ProviderError(`Unknown publish target ${target}`, null, false);
-  return publisher(await loadJob(videoJobId));
+  const legacy = CREDS_PROVIDER[target] ?? { provider: target, label: target };
+  const creds = connectedAccountId ? await getConnectedAccountCreds(connectedAccountId) : await requireConnected(legacy.provider, legacy.label);
+  return publisher(await loadJob(videoJobId), creds);
 }
