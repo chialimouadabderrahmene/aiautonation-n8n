@@ -21,7 +21,9 @@ let connection: IORedis | null = null;
 let videoQueue: Queue<VideoGenerationJobPayload> | null = null;
 let deliveryQueue: Queue<DeliveryJobPayload> | null = null;
 
-function getConnection(): IORedis {
+/** Shared across every BullMQ Queue/Worker in this process (video + the native workflow
+ * engine) — one Redis connection, not one per queue. */
+export function getConnection(): IORedis {
   if (!connection) {
     const url = process.env.REDIS_URL;
     if (!url) throw new Error("REDIS_URL is not set — the video queue needs Redis.");

@@ -7,6 +7,7 @@ import { bootstrapAdmin } from "./modules/auth/auth";
 import { ensureIntegrationRows, autoVerifyGeneratedIntegrations } from "./modules/integrations/vault";
 import { recomputeAllReadiness } from "./modules/workflows/readiness";
 import { startScheduler } from "./modules/system/scheduler";
+import { startWorkflowEngine, stopWorkflowEngine } from "./modules/engine/bootstrap";
 import { getTelegramWebhookSecret } from "./modules/telegram/telegram";
 
 /**
@@ -22,6 +23,8 @@ const REQUIRED_ENV = ["DATABASE_URL", "AUTOMATION_SECRET_KEY", "JWT_SECRET"];
 const REQUIRED_TABLES = [
   "AdminUser", "Integration", "EncryptedCredential", "WorkflowConfig", "AutomationExecution", "VideoProject", "VideoJob",
   "VideoScene", "VideoAsset", "Approval", "Publication", "MediaFile", "OAuthState", "ServiceHeartbeat", "Setting", "AuditLog",
+  "EngineWorkflow", "EngineWorkflowVersion", "EngineExecution", "EngineStepExecution", "EngineOutboxEvent", "EngineScheduledTrigger",
+  "EngineLead", "EngineWaitlistEntry", "EngineReferralCode", "EngineReferral", "EngineFeedbackRequest", "EngineWeeklyReportRun",
 ];
 
 async function waitForDatabase(): Promise<void> {
@@ -69,12 +72,13 @@ async function main() {
     logger.warn("[startup] INTERNAL_API_TOKEN not set — n8n supervisor endpoints disabled");
   }
   startScheduler();
+  startWorkflowEngine();
 
   const shutdown = (signal: string) => {
     logger.info(`[eki-automation-api] ${signal} received, shutting down`);
     for (const s of servers) s.close();
     setTimeout(() => process.exit(0), 5000).unref();
-    void prisma.$disconnect().finally(() => process.exit(0));
+    void stopWorkflowEngine().finally(() => void prisma.$disconnect().finally(() => process.exit(0)));
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));

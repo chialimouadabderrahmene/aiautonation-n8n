@@ -415,3 +415,312 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
 }
+
+// ============================================================================
+// NATIVE WORKFLOW ENGINE — replaces n8n at runtime. No external workflow
+// platform is required to execute these; n8n/* above remains only for the
+// legacy workflows not yet ported (see docs/WORKFLOW_ENGINE.md for status).
+// ============================================================================
+
+enum EngineWorkflowCategory {
+  SYSTEM
+  CONTENT
+  LEAD_AUTOMATION
+  WHATSAPP
+  SOCIAL
+  AI
+  REPORTING
+}
+
+enum EngineTriggerType {
+  WEBHOOK
+  EVENT
+  CRON
+  MANUAL
+}
+
+enum EngineVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// A workflow identity. The executable logic lives in its PUBLISHED EngineWorkflowVersion —
+/// editing never mutates a published version in place (new versions only), so an in-flight
+/// execution always finishes against the exact definition it started with.
+model EngineWorkflow {
+  id               String                  @id @default(cuid())
+  key              String                  @unique // e.g. "lead-capture-webhook"
+  name             String
+  description      String?
+  category         EngineWorkflowCategory
+  triggerType      EngineTriggerType
+  /// WEBHOOK: { path }. EVENT: { eventType }. CRON: { cron, timezone }. MANUAL: {}.
+  triggerConfig    Json
+  enabled          Boolean                 @default(false)
+  currentVersionId String?                 @unique
+  createdBy        String
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  currentVersion EngineWorkflowVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions       EngineWorkflowVersion[] @relation("AllVersions")
+  executions     EngineExecution[]
+  schedule       EngineScheduledTrigger?
+
+  @@index([triggerType, enabled])
+}
+
+/// One immutable published (or draft/archived) revision of a workflow's definition.
+/// `definition` is validated against the engine's Zod schema (modules/engine/definition.ts)
+/// before it can ever be set to PUBLISHED — see workflow-versions route.
+model EngineWorkflowVersion {
+  id          String              @id @default(cuid())
+  workflowId  String
+  workflow    EngineWorkflow      @relation("AllVersions", fields: [workflowId], references: [id], onDelete: Cascade)
+  version     Int
+  status      EngineVersionStatus @default(DRAFT)
+  definition  Json
+  notes       String?
+  createdBy   String
+  createdAt   DateTime            @default(now())
+  publishedAt DateTime?
+  publishedBy String?
+
+  currentFor EngineWorkflow?  @relation("CurrentVersion")
+  executions EngineExecution[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId, status])
+}
+
+enum EngineExecutionStatus {
+  QUEUED
+  RUNNING
+  WAITING
+  RETRYING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+/// One run of one workflow version. `context` is the step-output variable bag, persisted
+/// after every step — a crashed worker resumes from the last committed step instead of
+/// re-running (or losing) anything. `idempotencyKey` is globally unique: the same trigger
+/// event can never produce two executions.
+model EngineExecution {
+  id             String                 @id @default(cuid())
+  workflowId     String
+  workflow       EngineWorkflow         @relation(fields: [workflowId], references: [id])
+  versionId      String
+  version        EngineWorkflowVersion  @relation(fields: [versionId], references: [id])
+  status         EngineExecutionStatus  @default(QUEUED)
+  triggerType    EngineTriggerType
+  triggerPayload Json
+  idempotencyKey String                 @unique
+  correlationId  String
+  context        Json                   @default("{}")
+  cursorStepKey  String?
+  attempt        Int                    @default(1)
+  maxAttempts    Int                    @default(3)
+  nextRetryAt    DateTime?
+  deadLetter     Boolean                @default(false)
+  error          String?
+  startedAt      DateTime               @default(now())
+  finishedAt     DateTime?
+  durationMs     Int?
+  requestedBy    String?
+  /// Set when this execution is a manual replay of a dead-lettered one.
+  replayOfId     String?
+
+  steps EngineStepExecution[]
+
+  @@index([workflowId, status])
+  @@index([status, startedAt])
+  @@index([deadLetter, status])
+  @@index([nextRetryAt])
+}
+
+enum EngineStepStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+/// One attempt of one step within an execution. Kept even for steps that later retry, so the
+/// full history (including failed attempts) is visible — never overwritten.
+model EngineStepExecution {
+  id          String            @id @default(cuid())
+  executionId String
+  execution   EngineExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stepKey     String
+  stepIndex   Int
+  type        String // "action" | "condition" | "delay" | "parallel"
+  attempt     Int               @default(1)
+  status      EngineStepStatus
+  input       Json?
+  output      Json?
+  error       String?
+  startedAt   DateTime          @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+
+  @@unique([executionId, stepKey, attempt])
+  @@index([executionId, stepIndex])
+}
+
+enum EngineOutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+/// Transactional outbox: a business action writes the row that caused a trigger (e.g. a Lead)
+/// AND its EngineOutboxEvent in the SAME db transaction, so the event can never be lost between
+/// the commit and the queue publish — a relay (modules/engine/outbox.ts) polls PENDING rows and
+/// enqueues them, retrying indefinitely (at-least-once) until Redis/the queue answers.
+model EngineOutboxEvent {
+  id          String              @id @default(cuid())
+  eventType   String
+  payload     Json
+  dedupeKey   String?             @unique
+  status      EngineOutboxStatus  @default(PENDING)
+  attempts    Int                 @default(0)
+  lastError   String?
+  createdAt   DateTime            @default(now())
+  publishedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+/// Durable cron schedule for one CRON-trigger workflow. `nextRunAt` is always in the future
+/// once set; the relay locks a row (lockedAt) before firing so two instances of the API can
+/// never double-fire the same tick.
+model EngineScheduledTrigger {
+  id          String         @id @default(cuid())
+  workflowId  String         @unique
+  workflow    EngineWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  cron        String
+  timezone    String         @default("UTC")
+  nextRunAt   DateTime
+  lastRunAt   DateTime?
+  lastRunOk   Boolean?
+  lockedAt    DateTime?
+  lockedBy    String?
+  enabled     Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([enabled, nextRunAt])
+}
+
+// ---------------------------------------------------- Native business entities
+// Replace Google Sheets as the system of record for the ported workflows below
+// (handbook requirement: durable, queryable state — not a spreadsheet).
+
+enum LeadStatus {
+  NEW
+  WELCOMED
+  CONTACTED
+  CONVERTED
+  DEAD
+}
+
+model EngineLead {
+  id             String     @id @default(cuid())
+  name           String?
+  email          String?
+  phone          String     @unique
+  source         String?
+  market         String?
+  status         LeadStatus @default(NEW)
+  whatsappOptIn  Boolean    @default(true)
+  welcomedAt     DateTime?
+  lastContactedAt DateTime?
+  metadata       Json       @default("{}")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}
+
+model EngineWaitlistEntry {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  phone       String?
+  wantsEmail  Boolean  @default(true)
+  wantsWhatsapp Boolean @default(false)
+  emailSentAt DateTime?
+  waSentAt    DateTime?
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model EngineReferralCode {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  ownerName      String?
+  ownerEmail     String   @unique
+  referralCount  Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  referrals EngineReferral[]
+}
+
+enum ReferralStatus {
+  MATCHED
+  DUPLICATE
+  UNMATCHED
+  REWARDED
+}
+
+model EngineReferral {
+  id             String         @id @default(cuid())
+  codeId         String?
+  code           EngineReferralCode? @relation(fields: [codeId], references: [id])
+  referralCode   String
+  refereeEmail   String
+  refereeName    String?
+  status         ReferralStatus
+  rewardSentAt   DateTime?
+  createdAt      DateTime       @default(now())
+
+  @@unique([referralCode, refereeEmail])
+  @@index([createdAt])
+}
+
+enum FeedbackRequestStatus {
+  SENT
+  RESPONDED
+  SKIPPED
+}
+
+model EngineFeedbackRequest {
+  id          String                 @id @default(cuid())
+  leadPhone   String
+  email       String?
+  status      FeedbackRequestStatus  @default(SENT)
+  sentAt      DateTime               @default(now())
+  respondedAt DateTime?
+  rating      Int?
+  comment     String?
+
+  @@unique([leadPhone])
+  @@index([status])
+}
+
+model EngineWeeklyReportRun {
+  id          String   @id @default(cuid())
+  periodStart DateTime
+  periodEnd   DateTime
+  metrics     Json
+  recipients  String[]
+  sentAt      DateTime @default(now())
+
+  @@index([periodStart])
+}
