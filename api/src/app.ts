@@ -18,6 +18,8 @@ import { auditRouter } from "./routes/audit";
 import { dashboardRouter } from "./routes/dashboard";
 import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { internalRouter } from "./routes/internal";
+import { engineRouter } from "./routes/engine";
+import { hooksRouter } from "./routes/hooks";
 import { requireAdmin } from "./modules/auth/auth";
 import { systemHealth, checkDatabase } from "./modules/system/health";
 import { recordAudit } from "./modules/audit/audit";
@@ -60,6 +62,7 @@ export function createApp() {
   app.use("/api/telegram", telegramPublicRouter); // secret_token header
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
+  app.use("/api/hooks", hooksRouter); // native WEBHOOK-trigger ingestion — rate-limited, Zod-validated per workflow
 
   app.use("/api/auth", authRouter);
   app.use("/api/system/health", requireAdmin, async (_req, res) => res.json(await systemHealth()));
@@ -72,6 +75,7 @@ export function createApp() {
   app.use("/api/settings", requireAdmin, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);
+  app.use("/api/engine", requireAdmin, engineRouter);
   app.use("/api/media", requireAdmin, mediaRouter);
 
   app.use((_req, res) => res.status(404).json({ message: "Not found" }));

@@ -8,6 +8,7 @@ import { ensureIntegrationRows, autoVerifyGeneratedIntegrations } from "./module
 import { recomputeAllReadiness } from "./modules/workflows/readiness";
 import { startScheduler } from "./modules/system/scheduler";
 import { startWorkflowEngine, stopWorkflowEngine } from "./modules/engine/bootstrap";
+import { seedPortedWorkflows } from "./modules/engine/seed/ported-workflows";
 import { getTelegramWebhookSecret } from "./modules/telegram/telegram";
 
 /**
@@ -61,6 +62,7 @@ async function main() {
   await getTelegramWebhookSecret();
   await autoVerifyGeneratedIntegrations();
   await recomputeAllReadiness();
+  await seedPortedWorkflows().then((r) => r.created.length && logger.info({ created: r.created }, "[engine] seeded native workflows"));
 
   const port = Number(process.env.PORT ?? 4100);
   const internalPort = Number(process.env.INTERNAL_PORT ?? 4110);

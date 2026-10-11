@@ -11,6 +11,7 @@ const NAV = [
   { name: "AI Content Studio", href: "/content-studio" },
   { name: "Video Generator", href: "/video" },
   { name: "Automations", href: "/automations" },
+  { name: "Workflow Engine", href: "/workflow-engine" },
   { name: "Approvals", href: "/approvals" },
   { name: "Executions", href: "/executions" },
   { name: "Reports", href: "/reports" },
