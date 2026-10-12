@@ -6,10 +6,9 @@ import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { evaluateRequirements } from "../modules/workflows/readiness";
 import { VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
-import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup } from "../modules/telegram/telegram";
+import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup, sendTelegramMessage } from "../modules/telegram/telegram";
 import { getProviderValues } from "../modules/integrations/vault";
-import { getN8nConnection } from "../modules/n8n/client";
-import { timedFetch } from "../lib/http";
+import { handleContentApprovalCommand } from "../modules/engine/contentCalendarCommands";
 import { logger } from "../lib/logger";
 
 /** Authenticated actions (send to Telegram, decide from the UI, list). */
@@ -96,9 +95,10 @@ approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRe
 
 /**
  * Telegram webhook. Video approval buttons (callback data `vid:approve:<id>`
- * / `vid:reject:<id>`) are handled here; every other update is forwarded to
- * n8n workflow 02 (content approval commands). Always answers 200 so
- * Telegram never retries forever.
+ * / `vid:reject:<id>`) are handled here; a text message matching /approve,
+ * /reject or /edit <day> is routed to the native content-approval command
+ * handler (modules/engine/contentCalendarCommands.ts — the replacement for
+ * n8n workflow 02). Always answers 200 so Telegram never retries forever.
  */
 telegramPublicRouter.post("/webhook", async (req, res) => {
   const header = req.headers["x-telegram-bot-api-secret-token"];
@@ -109,6 +109,8 @@ telegramPublicRouter.post("/webhook", async (req, res) => {
   try {
     const update = req.body as {
       callback_query?: { id: string; data?: string; from?: { id?: number; username?: string }; message?: { chat?: { id?: number }; message_id?: number } };
+      message?: { text?: string; chat?: { id?: number } };
+      edited_message?: { text?: string; chat?: { id?: number } };
     };
     const cb = update.callback_query;
     const match = cb?.data?.match(/^vid:(approve|reject):([a-z0-9]+)$/);
@@ -140,15 +142,16 @@ telegramPublicRouter.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Everything else belongs to n8n workflow 02 (/approve, /reject, /edit commands).
-    const conn = await getN8nConnection().catch(() => null);
-    if (!conn) return;
-    const { res: fwd } = await timedFetch(`${conn.baseUrl}/webhook/content-approval`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": expected },
-      body: JSON.stringify(req.body),
-    });
-    if (!fwd.ok && fwd.status !== 404) logger.warn({ status: fwd.status }, "[telegram] forward to n8n workflow 02 failed");
+    // A text message: native content-approval commands (/approve, /reject, /edit <day>),
+    // same authorized-chat check as the video-approval callback path above.
+    const msg = update.message ?? update.edited_message;
+    const text = msg?.text?.trim();
+    if (!text) return;
+    const telegram = await getProviderValues("telegram");
+    const chatId = String(msg?.chat?.id ?? "");
+    if (!telegram?.approvalChatId || chatId !== telegram.approvalChatId) return;
+    const result = await handleContentApprovalCommand(text);
+    if (result.handled && result.replyText) await sendTelegramMessage(chatId, result.replyText);
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[telegram] webhook handling failed");
   }

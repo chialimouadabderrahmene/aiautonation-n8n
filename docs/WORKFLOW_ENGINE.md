@@ -1,6 +1,6 @@
 # Native Workflow Engine — Architecture, Scope, and Gap Analysis
 
-Status date: 2026-10-12 (batch 6 — intelligence engines, Apify/Reddit). This document is the honest record of what the native
+Status date: 2026-10-12 (batch 7 — content calendar + Telegram command routing). This document is the honest record of what the native
 workflow engine (`api/src/modules/engine/`) actually replaces today, what it
 does not yet replace, and how each claim below should be read against the
 four-tier verification scale used throughout this project:
@@ -185,9 +185,9 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 
 | # | n8n workflow | Status | Native key / trigger | What changed vs. the n8n original | Verification |
 |---|---|---|---|---|---|
-| 00 | global-error-handler | **NOT PORTED** | — | n/a | — |
-| 01 | ai-content-generation | **NOT PORTED** | — | n/a | — |
-| 02 | content-approval | **NOT PORTED** | — | n/a | — |
+| 00 | global-error-handler | **INTENTIONALLY NOT PORTED** | — | n8n's own error-workflow mechanism; the native engine has its own dead-letter queue + audit log instead (§2) — no equivalent needed, not a gap | — |
+| 01 | ai-content-generation | ✅ Native | `ai-content-generation` / CRON `0 9 * * *` UTC | New action `contentCalendar.generateDraft`: reads the day-number from the existing `launchDate` setting, looks up the admin-curated `EngineContentCalendarEntry` for that day (new table, replacing the "Content Calendar" Sheets tab), asks the connected AI provider for the day's hook/caption/hashtags/video script, saves an `EngineContentDraft`, and builds the exact `/approve N /reject N /edit N` instruction text the n8n original sent | unit + integration (labeled AI-provider simulation; real end-to-end wiring also confirmed live — see below) — ships disabled |
+| 02 | content-approval | ✅ Native (no EngineWorkflow row — see detail below) | `modules/engine/contentCalendarCommands.ts`, called from the existing Telegram webhook route | Native replacement for n8n's "Parse Command" → "Route Action" chain: `/approve`, `/reject`, `/edit <day> <feedback>` handled directly in `routes/approvals.ts`'s Telegram webhook — the SAME place video-approval button presses already are — instead of forwarding to n8n (which is what that route used to do for everything it didn't recognize) | unit (via the content-calendar integration suite) + integration (11 tests covering approve/reject/edit/already-decided/no-draft/missing-feedback) |
 | 03 | lead-capture-webhook | ✅ Native | `lead-capture-webhook` / WEBHOOK | Google Sheets → `EngineLead` (Postgres) | unit + integration + live curl |
 | 04 | waitlist-management | ✅ Native | `waitlist-management` / WEBHOOK | Google Sheets → `EngineWaitlistEntry` | unit + integration + live curl |
 | 05 | whatsapp-welcome-sequence | ✅ Native | `whatsapp-welcome-sequence` / CRON `0 9 * * *` UTC | Google Sheets leads + splitInBatches loop → `whatsapp.runSequence` action over `EngineLead`, per-lead `sequenceState` tracking (no loop step type exists, so one composite action does the batch — see §2/§7) | unit + integration (incl. a **labeled simulation** of the WhatsApp Cloud API via the existing `ALLOW_PROVIDER_OVERRIDES` test-mode hook — no real Meta credentials exist anywhere in this project) + live curl (test-run hit a REAL `ENOTFOUND` network error against the real graph.facebook.com from this sandbox once WhatsApp was marked CONNECTED, and was correctly caught and reported per-lead as `provider_error` without crashing the run — ships disabled, see below) |
@@ -208,14 +208,75 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 21 | social-proof-engine | ✅ Native | `social-proof-engine` / WEBHOOK | Same `ai.complete` + `EngineContentDraft` pipeline as 18, different prompt | unit + integration + live curl |
 | 22 | performance-analyst-agent | ✅ Native | `performance-analyst-agent` / CRON `30 9 * * 1` UTC | Google Sheets reads → same aggregation as 09, plus an `ai.complete` insights step (skipped honestly, figures still reported, if no AI provider is connected) | unit + integration + live curl (manual test-run → SUCCEEDED) |
 
-**Totals: 17 of 22 workflows (77%) have a native equivalent today — up from 15
-(68%) before this batch. The other 5 (23%) still depend on n8n to run.** The
-objective stated in the governing instructions — "after implementation,
-connecting external API credentials + configuring provider webhooks +
-enabling production settings should be the ONLY remaining integration work"
-— is **not yet achieved** for this repository as a whole, and must not be
-reported as achieved until the remaining 5 are either ported or the user
-explicitly accepts them as out of scope.
+**Totals: 18 of 22 workflows (82%) have a native equivalent today — up from 17
+(77%) before this batch (02 is counted as done via its Telegram command
+handler, which has no EngineWorkflow row — see below for why that is the
+correct shape, not a gap). Workflow 00 needs no native port at all (§2's
+dead-letter queue + audit log already supersede it) — counting that as
+resolved too, 19 of 22 (86%) no longer need n8n for anything. The other 2
+(14, 20) still depend on n8n to run.** The objective stated in the
+governing instructions — "after implementation, connecting external API
+credentials + configuring provider webhooks + enabling production settings
+should be the ONLY remaining integration work" — is **not yet achieved**
+for this repository as a whole, and must not be reported as achieved until
+14 and 20 are either ported or the user explicitly accepts them as out of
+scope.
+
+### Priority 5 in detail — content calendar + Telegram command routing (00/01/02)
+
+**Workflow 00 is intentionally not ported.** It was n8n's own
+`errorWorkflow` setting — every other n8n workflow pointed its Settings →
+Error Workflow at it, so n8n itself would invoke it whenever any workflow
+threw. The native engine has no equivalent concept to point at it, because
+it doesn't need one: every execution's failure is already durably recorded
+(`EngineExecution.error`, the dead-letter flag, the full step history) and
+already reaches the team via `notify.telegram` steps the workflows
+themselves define. Porting 00 "for completeness" would mean building a
+parallel, redundant alerting path. This is a design decision, stated here
+rather than silently skipped.
+
+**Workflow 01** (`contentCalendar.generateDraft`) needed a real
+system-of-record for n8n's "Content Calendar" Sheets tab — admin-curated
+30-day content plan, not AI-generated — which is the new
+`EngineContentCalendarEntry` table, with CRUD endpoints at
+`/api/engine/content-calendar` (upsert-by-day-number, matching how an admin
+actually edits a plan: "set day 7 to this", not an append-only log). No
+dedicated calendar UI page exists yet — curating it is via the admin API
+directly, the same scope decision already made for every other
+JSON-editable surface in this project (§6).
+
+**Workflow 02 has no EngineWorkflow row, by design, not by omission.** Its
+job was always reactive: parse a Telegram text command, act on it, reply.
+The video-approval flow already established the pattern for exactly this
+shape of work — button-press/command handling lives as plain, directly-
+callable code in `routes/approvals.ts`'s Telegram webhook handler, not as
+a triggered workflow. `modules/engine/contentCalendarCommands.ts` extends
+that same webhook handler with `/approve <day>`, `/reject <day>`, and
+`/edit <day> <feedback>` (the exact regex and command grammar reproduced
+from n8n's "Parse Command" node), **replacing a line of code that used to
+forward every unrecognized Telegram update to n8n's own webhook** — that
+forwarding is now gone; nothing about content approval depends on n8n
+being reachable anymore. `/edit` calls the AI with the exact revision
+prompt the n8n original used, overwrites the existing draft, and resets it
+to `DRAFT` for re-approval (never auto-approves its own revision).
+
+**A live, end-to-end verification** (not a mock): with no AI provider
+connected in this sandbox, a real manual test-run of `ai-content-
+generation` against a running server found the real calendar entry, built
+the real AI prompt, and made a real network call to the configured AI
+endpoint — which genuinely failed with `ENOTFOUND` (the same sandbox
+network limitation noted for Reddit above), caught and surfaced honestly
+in the execution's `error` field with a scheduled retry, exactly as
+designed. The success path (a draft actually getting created) is what the
+integration suite's labeled AI-provider simulation covers instead.
+
+**An emergent integration, not a new code path**: an `EngineContentDraft`
+approved via a Telegram `/approve` command is indistinguishable from one
+approved through the Content Drafts admin page — `content.postApprovedDraft`
+(Priority 3) will pick it up and post it via X/Buffer on `social-post-
+scheduler`'s next run if that workflow is enabled. One posting pathway
+serves all four sources (18, 21, 12, and now 01) that feed the review
+queue, not four separate ones.
 
 ### Priority 4 in detail — intelligence engines (15/16)
 
@@ -279,7 +340,7 @@ feature exists to provide is not a behavior worth preserving. If a true
 auto-post-without-review mode is wanted later, it needs an explicit,
 separate decision — not a silent revert of this choice.
 
-All 17 native workflows are seeded idempotently on server boot
+All 18 EngineWorkflow rows (01 among them; workflow 02 has none, by design) are seeded idempotently on server boot
 (`seedPortedWorkflows()` in `server.ts`, with an auto-upgrade path that
 publishes a new version when a seed's definition changes without mutating
 any already-published version — itself covered by an integration test).
@@ -369,24 +430,15 @@ which is the standard way to test an HMAC webhook without a live account
 requests for this project). This is LOCALLY TESTED, not STAGING or
 PRODUCTION VERIFIED, and is reported as such.
 
-### What's blocking the remaining 5 — concrete, not hand-waved
+### What's blocking the remaining 2 — concrete, not hand-waved
 
 - **14 (autopilot controller)** is a cross-workflow daily summary; every
   workflow it reads from (05/06/10/12/13/19) now exists, so it is unblocked
-  but not yet built this batch — purely a matter of writing the composite
+  but not yet built — purely a matter of writing the composite
   read-and-summarize action, no new primitive needed.
 - **20 (A/B testing)** reads "published content" performance data — 10/12
   are now posting for real (simulated-provider tested), so this is
-  unblocked but not yet built this batch.
-- **00, 01, 02 (error handler, content calendar, content approval)** — 00 is
-  n8n's own error-workflow mechanism and has no native equivalent need (the
-  native engine has its own dead-letter/audit path instead, see §2); 01/02
-  need a genuine content-calendar system-of-record (not just the single-shot
-  `EngineContentDraft` queue 18/21 already use) and a Telegram **command**
-  webhook integration merged into the existing `telegramPublicRouter` (which
-  currently only handles video approve/reject commands) — deferred, not
-  attempted this batch, to avoid a half-correct merge into code outside this
-  batch's tested surface.
+  unblocked but not yet built.
 
 None of the above are faked, stubbed, or silently skipped — they simply were
 not reached this batch, and this table says so plainly rather than counting
@@ -485,27 +537,29 @@ handful of state-transition buttons) rather than a full graphical builder.
 
 ## 7. What "done" would require from here
 
-1. Port the remaining 5 workflows per §4's blocker list: 14 and 20 (both
-   unblocked, just not yet written — a composite summary action and a
-   composite analysis action respectively, no new primitive needed); 00/01/
-   02 need a content-calendar system-of-record and a Telegram-command-
-   webhook integration.
-2. `content.postApprovedDraft` (§4, Priority 3) closes the "approved drafts
-   never actually get published" gap for X/Buffer; Meta (Facebook Page/
-   Instagram/LinkedIn) posting for approved videos is a separate, still-open
-   path if that is ever wanted for content drafts too.
-3. Close the test gaps listed in §3 (version-change-during-execution, a true
+1. Port the remaining 2 workflows: 14 and 20, both unblocked (everything
+   they read from already exists), just not yet written — a composite
+   summary action and a composite analysis action respectively, no new
+   primitive needed.
+2. Build a dedicated Content Calendar admin UI page (today it's API-only,
+   `/api/engine/content-calendar`) — the same scope decision as every other
+   JSON-editable surface in this project, but worth revisiting once there's
+   an actual 30-day plan to curate day by day rather than via curl/Postman.
+3. Meta (Facebook Page/Instagram/LinkedIn) posting for content drafts is a
+   separate, still-open path if that is ever wanted (today `content.
+   postApprovedDraft` only posts to X/Buffer).
+4. Close the test gaps listed in §3 (version-change-during-execution, a true
    Redis-outage-and-recovery test, provider rate-limit simulation, a
    documented decision on whether the WhatsApp sequences' one-stage-per-run
    catch-up pacing is the wanted behavior for a lead reactivated after a long
    pause, or whether it should fast-forward to the latest-due stage instead).
-4. Build the remaining Automation Centre screens listed in §6 (provider
+5. Build the remaining Automation Centre screens listed in §6 (provider
    status, audit/permission-denied, dedicated queue/worker health).
-5. Run the full end-to-end acceptance scenario list (duplicate delivery,
+6. Run the full end-to-end acceptance scenario list (duplicate delivery,
    Redis outage, worker restart, provider timeout, retry-then-success,
    permanent failure, workflow pause, disabled provider, unauthorized manual
    execution) as a single explicit, documented pass.
-6. Get this deployed to a real staging environment with at least one real
+7. Get this deployed to a real staging environment with at least one real
    provider connected, to earn the STAGING VERIFIED tier for any of the above
    — nothing in this document should be read as more than LOCALLY TESTED
    until that happens.
@@ -521,7 +575,7 @@ a readiness checklist, not a claim that anything is production-ready.
 |---|---|---|---|
 | WhatsApp Cloud API (Meta) | 03, 04, 05, 06, 13, 19 | Never connected with real credentials in any environment. A real network call was made from this sandbox during batch 3's live verification and correctly failed with a DNS error (`ENOTFOUND graph.facebook.com`) — proving the failure path works, not that the provider works. Workflow 13's webhook signature verification was tested against the real, documented HMAC-SHA256 algorithm with a test-controlled secret (there is no sandbox WhatsApp Business Account to sign real test requests) — see §4's Priority-2 detail. | A real permanent access token + phone number ID + **app secret** + **webhook verify token** in Integrations; Meta-approved templates for every `WELCOME_D*`/`REENGAGE_*`/`NURTURE_*` key actually used (05/06/19 only — 13's replies are free text, not templates); `whatsappTemplatesApproved` ticked only after that approval is confirmed; the webhook URL (`/api/webhooks/whatsapp`) actually configured in Meta's dashboard and the GET handshake completed there for real; and a real test-run/real inbound message watched to a correct result — only then should 05/06/13/19 be enabled. |
 | Telegram | Every workflow's team alert step | Never connected with a real bot token in any test here. Every alert step this batch correctly reported `not_configured`. | A real bot token + team chat id in Integrations, confirmed via the existing `/api/integrations` test-connection call. |
-| OpenAI / Groq | 18, 21, 22 (01 once ported) | Never connected. Every `ai.complete` call this batch and the last correctly reported `not_configured` (or, in integration tests, used a labeled simulation). | A real API key for one of the two in Integrations. |
+| OpenAI / Groq | 01, 12, 15, 16, 18, 21, 22 | Never connected. Every real call this and earlier batches made correctly reported `not_configured`, or — for a genuine network attempt from this sandbox (01's live test-run) — a real `ENOTFOUND`, never a fabricated success. Integration tests use a labeled local simulation. | A real API key for one of the two in Integrations. This is now the single most-depended-on provider in the project: 7 of the 18 native workflow rows need it. |
 | Resend | 04, 07 | Never connected. | A real API key + a domain verified in Resend. |
 | Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 13 ported workflows (see §4's per-row notes); still the system of record for the 9 not yet ported. | N/A until those 9 are ported, at which point each one is individually replaced the same way, not reconnected. |
 | X (Twitter) | 10, 12 | Never connected with real credentials. `postTweet`'s real HTTP call path (timedFetch/withRetry/describeHttpFailure) was exercised against a **labeled local simulation** of X's API v2 endpoint this batch — a real 500 was simulated and correctly left the draft unpublished with the failure recorded. | A real OAuth app (client ID/secret) connected via the existing X OAuth flow (`/api/oauth`), `twitterPostingEnabled` ticked, `autopilotSocialPosting` ticked, `autopilotStop` off, and a real test post watched to a real tweet id — only then should 10/12 post for real. |

@@ -411,6 +411,29 @@ const SEEDS: Seed[] = [
       ],
     },
   },
+  {
+    key: "ai-content-generation",
+    name: "AI Content Generation",
+    description: "Native replacement for n8n 01-ai-content-generation.json: runs daily at 09:00 UTC, picks today's row from the 30-day EngineContentCalendarEntry plan (admin-curated ahead of time — see /api/engine/content-calendar), asks the connected AI provider to draft the day's hook/caption/hashtags/video script, saves it as an EngineContentDraft, and sends the team a Telegram message with /approve, /reject and /edit <day> <feedback> instructions. Those commands are handled directly in the existing Telegram webhook route (routes/approvals.ts) — the same place video-approval button presses already are — not by a second EngineWorkflow; see docs/WORKFLOW_ENGINE.md for why 02-content-approval has no corresponding workflow row. Disabled until an AI provider is connected, the launchDate setting and at least one calendar entry exist, and a real test-run has been verified.",
+    category: "CONTENT",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 9 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "generate", type: "action", action: "contentCalendar.generateDraft", input: {} },
+        {
+          key: "alert",
+          type: "action",
+          action: "notify.telegram",
+          input: { text: "{{generate.approvalText}}" },
+          onFailure: "continue",
+          condition: { path: "generate.posted", op: "eq", value: true },
+        },
+      ],
+    },
+  },
 ];
 
 export async function seedPortedWorkflows(actor = "seed"): Promise<{ created: string[]; alreadyPresent: string[]; upgraded: string[] }> {

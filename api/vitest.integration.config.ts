@@ -11,6 +11,7 @@ export default defineConfig({
       "test/engine-whatsapp-webhook-integration.test.ts",
       "test/engine-social-posting-integration.test.ts",
       "test/engine-intelligence-integration.test.ts",
+      "test/engine-content-calendar-integration.test.ts",
     ],
     environment: "node",
     testTimeout: 30_000,

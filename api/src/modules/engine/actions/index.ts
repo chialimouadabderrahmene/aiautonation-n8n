@@ -604,6 +604,70 @@ const intelligenceAnalyzePainPoints = define({
   },
 });
 
+const AI_FIELDS = ["hook", "caption", "hashtags", "video_script"] as const;
+function validateDraftFields(ai: Record<string, unknown>): string[] {
+  return AI_FIELDS.filter((f) => typeof ai[f] !== "string" || !(ai[f] as string).trim());
+}
+
+/** Builds the exact "/approve N  /reject N  /edit N <feedback>" instruction text n8n's
+ * "Parse AI Output" node composed, reproduced verbatim — admins who already know this
+ * command syntax should not have to learn a new one just because the engine is native now. */
+function approvalRequestText(dayNumber: number, platform: string, draft: { hook: string; caption: string; hashtags: string; videoScript: string }): string {
+  return `New Eki content draft ready for approval\n\nDay: ${dayNumber}\nPlatform: ${platform}\n\nHook: ${draft.hook}\n\nCaption:\n${draft.caption}\n\nHashtags: ${draft.hashtags}\n\nVideo script:\n${draft.videoScript}\n\nReply with:\n/approve ${dayNumber}\n/reject ${dayNumber}\n/edit ${dayNumber} [your edits]`;
+}
+
+/**
+ * The native replacement for n8n 01-ai-content-generation.json's full chain ("Select Today
+ * Row" -> "AI Content Gen" -> "Parse AI Output"). `launchDate` and the 1-30 day window are the
+ * SAME business rule as the n8n original (LAUNCH_DATE env var) — reused from the existing
+ * Settings definition, not reinvented. A day already drafted (any status) is never redrafted;
+ * a day with no EngineContentCalendarEntry row is skipped honestly rather than inventing a
+ * topic to fill the gap.
+ */
+const contentCalendarGenerateDraft = define({
+  key: "contentCalendar.generateDraft",
+  idempotent: true, // re-running on the same day finds an existing draft and no-ops
+  inputSchema: z.object({}),
+  async handler() {
+    const launchDate = await getSetting<string>("launchDate").catch(() => "");
+    if (!launchDate) return { ok: false, reason: "launch_date_not_set" };
+    const dayNumber = Math.floor((Date.now() - Date.parse(`${launchDate}T00:00:00Z`)) / 86_400_000) + 1;
+    if (dayNumber < 1 || dayNumber > 30) return { ok: false, reason: "outside_calendar_window", dayNumber };
+
+    const existing = await prisma.engineContentDraft.findFirst({ where: { source: "ai-content-generation", dayNumber } });
+    if (existing) return { ok: true, posted: false, reason: "already_drafted", dayNumber, draftId: existing.id };
+
+    const entry = await prisma.engineContentCalendarEntry.findUnique({ where: { dayNumber } });
+    if (!entry) return { ok: false, reason: "no_calendar_entry", dayNumber };
+
+    const platform = (entry.platform.split(",")[0] ?? "Instagram").trim() || "Instagram";
+    const system =
+      'You are a professional social media content creator and copywriter for Eki, a digital marketplace connecting African foodstuff vendors with global buyers.\n\nGenerate structured content outputs based on the topics provided. Return output strictly in JSON format matching this structure:\n{\n  "hook": "One scroll-stopping sentence",\n  "caption": "Engagement caption (50-150 words) with emojis",\n  "hashtags": "#Hashtags #RelatedToTopic #EkiMarket",\n  "video_script": "Short-form 30-sec script with visual cues in brackets, e.g. [Visual: Exporter sealing bag] followed by audio text."\n}\nDo not invent statistics, testimonials, prices, or guarantees.';
+    const user = `Today's Content Plan:\nPlatform: ${entry.platform}\nPillar: ${entry.pillar ?? ""}\nTopic: ${entry.topicBrief}\nSuggested Hook: ${entry.suggestedHook ?? ""}\nCTA: ${entry.cta ?? ""}\nTarget Audience: ${entry.targetAudience ?? ""}`;
+    const result = await aiComplete({ system, user });
+    if (!result.ok) {
+      if (result.reason === "not_configured") return { ok: false, reason: result.reason, message: result.message, dayNumber };
+      throw new Error(`contentCalendar.generateDraft: ${result.message}`);
+    }
+    const ai = result.json as Record<string, unknown>;
+    const missing = validateDraftFields(ai);
+    if (missing.length) throw new Error(`AI output missing field(s): ${missing.join(", ")}`);
+    const hook = String(ai.hook).trim();
+    const caption = String(ai.caption).trim();
+    const hashtags = String(ai.hashtags).trim();
+    const videoScript = String(ai.video_script).trim();
+
+    const draft = await prisma.engineContentDraft.create({
+      data: {
+        source: "ai-content-generation", platform, dayNumber, body: caption,
+        hashtags: hashtags.split(/\s+/).filter((h) => h.startsWith("#")),
+        metadata: { hook, videoScript, hashtagsRaw: hashtags },
+      },
+    });
+    return { ok: true, posted: true, dayNumber, draftId: draft.id, approvalText: approvalRequestText(dayNumber, platform, { hook, caption, hashtags, videoScript }) };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -624,6 +688,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [redditSearchPosts.key]: redditSearchPosts as ActionDefinition,
   [intelligenceAnalyzeTrends.key]: intelligenceAnalyzeTrends as ActionDefinition,
   [intelligenceAnalyzePainPoints.key]: intelligenceAnalyzePainPoints as ActionDefinition,
+  [contentCalendarGenerateDraft.key]: contentCalendarGenerateDraft as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {

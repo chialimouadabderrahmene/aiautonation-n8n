@@ -780,12 +780,32 @@ model EngineContentDraft {
   status      ContentDraftStatus @default(DRAFT)
   reviewNote  String?
   metadata    Json               @default("{}")
+  /// Set only by the content-calendar flow (workflow 01/02): the 1-30 day-number this draft
+  /// belongs to, so a Telegram /approve|/reject|/edit <day> command can find it, and so a
+  /// day already drafted is never drafted twice.
+  dayNumber   Int?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   reviewedAt  DateTime?
   reviewedBy  String?
 
   @@index([source, status, createdAt])
+  @@index([dayNumber])
+}
+
+/// The 30-day content plan (workflow 01's "Content Calendar" Google Sheets tab) — one row per
+/// day-number, curated by an admin ahead of time. Durable system-of-record, not AI-generated;
+/// the AI only drafts the day's actual post FROM this plan.
+model EngineContentCalendarEntry {
+  dayNumber      Int      @id
+  platform       String
+  pillar         String?
+  topicBrief     String
+  suggestedHook  String?
+  cta            String?
+  targetAudience String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 /// A commenter/subscriber identified on a social channel (e.g. ManyChat), distinct from

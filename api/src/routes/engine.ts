@@ -316,7 +316,7 @@ engineRouter.post("/content-drafts/:id/approve", async (req: AuthedRequest, res)
   if (draft.status !== "DRAFT" && draft.status !== "QUEUED") return res.status(409).json({ message: `Only a DRAFT/QUEUED draft can be approved (this one is ${draft.status})` });
   await prisma.engineContentDraft.update({ where: { id: draft.id }, data: { status: "APPROVED", reviewedAt: new Date(), reviewedBy: actor(req) } });
   await recordAudit(actor(req), "engine.content_draft.approved", "EngineContentDraft", draft.id, { source: draft.source });
-  res.json({ ok: true, message: "Approved. No native action publishes it anywhere yet — see docs/WORKFLOW_ENGINE.md for what remains out of scope." });
+  res.json({ ok: true, message: "Approved. The social-post-scheduler workflow (10) will post it via X/Buffer on its next run if that workflow is enabled and configured — see docs/WORKFLOW_ENGINE.md." });
 });
 
 engineRouter.post("/content-drafts/:id/reject", async (req: AuthedRequest, res) => {
@@ -326,5 +326,40 @@ engineRouter.post("/content-drafts/:id/reject", async (req: AuthedRequest, res) 
   const note = (req.body as { note?: string })?.note;
   await prisma.engineContentDraft.update({ where: { id: draft.id }, data: { status: "REJECTED", reviewedAt: new Date(), reviewedBy: actor(req), reviewNote: note } });
   await recordAudit(actor(req), "engine.content_draft.rejected", "EngineContentDraft", draft.id, { source: draft.source, note });
+  res.json({ ok: true });
+});
+
+// ─── Content calendar (workflow 01's 30-day plan, admin-curated) ──────────
+
+const calendarEntrySchema = z.object({
+  dayNumber: z.number().int().min(1).max(30),
+  platform: z.string().min(1),
+  pillar: z.string().optional(),
+  topicBrief: z.string().min(1),
+  suggestedHook: z.string().optional(),
+  cta: z.string().optional(),
+  targetAudience: z.string().optional(),
+});
+
+engineRouter.get("/content-calendar", async (_req, res) => {
+  const items = await prisma.engineContentCalendarEntry.findMany({ orderBy: { dayNumber: "asc" } });
+  res.json(items);
+});
+
+/** Upsert-by-dayNumber — curating the plan is an idempotent "set day N to this", not an
+ * append-only log, matching how an admin actually edits a content calendar. */
+engineRouter.post("/content-calendar", async (req: AuthedRequest, res) => {
+  const parsed = calendarEntrySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
+  const { dayNumber, ...rest } = parsed.data;
+  const entry = await prisma.engineContentCalendarEntry.upsert({ where: { dayNumber }, update: rest, create: { dayNumber, ...rest } });
+  await recordAudit(actor(req), "engine.content_calendar.upserted", "EngineContentCalendarEntry", String(dayNumber));
+  res.status(200).json(entry);
+});
+
+engineRouter.delete("/content-calendar/:dayNumber", async (req: AuthedRequest, res) => {
+  const dayNumber = Number(req.params.dayNumber);
+  await prisma.engineContentCalendarEntry.deleteMany({ where: { dayNumber } });
+  await recordAudit(actor(req), "engine.content_calendar.deleted", "EngineContentCalendarEntry", String(dayNumber));
   res.json({ ok: true });
 });
