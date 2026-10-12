@@ -20,6 +20,7 @@ import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { internalRouter } from "./routes/internal";
 import { engineRouter } from "./routes/engine";
 import { hooksRouter } from "./routes/hooks";
+import { whatsappWebhookRouter } from "./routes/whatsappWebhook";
 import { requireAdmin } from "./modules/auth/auth";
 import { systemHealth, checkDatabase } from "./modules/system/health";
 import { recordAudit } from "./modules/audit/audit";
@@ -40,7 +41,6 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } }));
   const origins = process.env.WEB_ORIGIN?.split(",").map((o) => o.trim()).filter(Boolean);
   app.use(cors({ origin: origins && origins.length ? origins : false, credentials: false }));
-  app.use(express.json({ limit: "1mb" }));
   app.use(
     pinoHttp({
       logger,
@@ -49,6 +49,10 @@ export function createApp() {
       serializers: { req: (req) => ({ id: req.id, method: req.method, url: String(req.url).split("?")[0] }) },
     }),
   );
+  // MUST be mounted before express.json(): this route needs the raw, unparsed request body to
+  // verify Meta's HMAC signature (see routes/whatsappWebhook.ts's own doc comment).
+  app.use("/api/webhooks", whatsappWebhookRouter);
+  app.use(express.json({ limit: "1mb" }));
 
   // Liveness only — never touches dependencies, so a DB blip never gets the API restarted.
   app.get("/health", (_req, res) => res.json({ ok: true, service: "eki-automation-api" }));

@@ -49,3 +49,39 @@ export async function sendWhatsAppTemplate(input: { to: string; templateKey: str
     return { ok: false, reason: "provider_error", message: err instanceof Error ? err.message : String(err) };
   }
 }
+
+export type SendSessionTextResult =
+  | { ok: true; messageId: string }
+  | { ok: false; reason: "not_configured" | "provider_error"; message: string };
+
+/**
+ * Sends a free-form text reply within the 24h "customer service window" opened by an inbound
+ * message — this is the ONE place free text is allowed, per Meta's messaging policy (business-
+ * INITIATED messages must use an approved template; session REPLIES to a customer's own inbound
+ * message may be free text). Deliberately does NOT gate on `whatsappTemplatesApproved` — that
+ * setting is about templates, which this path never uses. Used only by workflow 13's inbound
+ * conversation handler (whatsapp.processInboundMessage), never by a business-initiated workflow.
+ */
+export async function sendWhatsAppSessionText(input: { to: string; text: string }): Promise<SendSessionTextResult> {
+  const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
+  if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "WhatsApp is not connected." };
+  const v = await getProviderValues("whatsapp");
+  if (!v?.accessToken || !v?.phoneNumberId) return { ok: false, reason: "not_configured", message: "WhatsApp access token or phone number id missing." };
+  const version = v.graphVersion || "v23.0";
+  try {
+    const data = await withRetry(async () => {
+      const { res } = await timedFetch(`https://graph.facebook.com/${version}/${v.phoneNumberId}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${v.accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.to, type: "text", text: { preview_url: false, body: input.text } }),
+      });
+      if (!res.ok) throw describeHttpFailure("WhatsApp (Meta)", res.status, await readErrorDetail(res));
+      return (await res.json()) as { messages?: { id: string }[] };
+    });
+    const id = data.messages?.[0]?.id;
+    if (!id) return { ok: false, reason: "provider_error", message: "WhatsApp accepted the request but returned no message id." };
+    return { ok: true, messageId: id };
+  } catch (err) {
+    return { ok: false, reason: "provider_error", message: err instanceof Error ? err.message : String(err) };
+  }
+}

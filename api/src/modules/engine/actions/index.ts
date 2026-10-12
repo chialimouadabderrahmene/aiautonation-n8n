@@ -2,7 +2,7 @@ import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { sendTelegramMessage } from "../../telegram/telegram";
 import { sendEmail } from "../../senders/resend";
-import { sendWhatsAppTemplate } from "../../senders/whatsapp";
+import { sendWhatsAppTemplate, sendWhatsAppSessionText } from "../../senders/whatsapp";
 import { aiComplete } from "../../senders/ai";
 import { getProviderValues } from "../../integrations/vault";
 import { getSetting } from "../../settings/schema";
@@ -337,6 +337,96 @@ const whatsappRunSequence = define({
   },
 });
 
+const STOP_WORDS = ["stop", "unsubscribe", "quit", "cancel", "opt out", "optout", "basta", "stop all"];
+const START_WORDS = ["start", "subscribe"];
+const GREET_WORDS = ["hi", "hello", "ciao", "hey", "start"];
+const BUYER_WORDS = ["buyer", "buy", "acquirente", "comprare", "customer", "shopping"];
+const VENDOR_WORDS = ["vendor", "sell", "venditore", "vendere", "seller", "business", "shop owner"];
+
+function normalizeMessageText(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\s]/gu, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The native replacement for n8n 13-whatsapp-lead-funnel.json's "Conversation Logic" step —
+ * word-list-matched exactly from that workflow (STOP/START/greeting/buyer/vendor keyword
+ * lists are reproduced verbatim, not reinvented) so the same inbound message classifies the
+ * same way. Replies are free-form text (sendWhatsAppSessionText, not a template) because this
+ * is always a reply within the 24h session window opened by the lead's own inbound message —
+ * Meta's messaging policy permits that; it is only business-INITIATED messages that require an
+ * approved template (see whatsapp.runSequence for those).
+ *
+ * Runs as ONE composite action (like whatsapp.runSequence) rather than a chain of condition
+ * steps: the branching here is genuine string/word-list logic the engine's path-based condition
+ * nodes (eq/contains/in on a single context value) cannot express directly.
+ */
+const whatsappProcessInboundMessage = define({
+  key: "whatsapp.processInboundMessage",
+  // A given messageId is only ever processed once in practice (the webhook route dedupes via
+  // the outbox before this action is ever invoked) — but if it DID run twice, re-classifying
+  // the same inbound text and (at worst) re-sending the same reply is a safe repeat, not a
+  // corrupting one, so this is marked idempotent rather than fail-on-replay.
+  idempotent: true,
+  inputSchema: z.object({ phone: z.string().min(6), messageId: z.string().min(1), timestamp: z.string(), type: z.string(), text: z.string(), senderName: z.string().optional() }),
+  async handler(input) {
+    const existing = await prisma.engineLead.findUnique({ where: { phone: input.phone } });
+    const wasOptedOut = existing?.status === LeadStatus.UNSUBSCRIBED || existing?.whatsappOptIn === false;
+    const norm = normalizeMessageText(input.text);
+
+    let action: "stop" | "none" | "reply" = "reply";
+    let step = "unknown";
+    let leadType = existing?.leadType ?? LeadType.UNKNOWN;
+    let reply = "";
+    let whatsappOptIn = existing?.whatsappOptIn ?? true;
+    let status = existing?.status ?? LeadStatus.NEW;
+    let highIntent = false;
+
+    if (STOP_WORDS.includes(norm)) {
+      action = "stop"; step = "unsubscribed";
+      reply = "You have been unsubscribed from Eki messages. Reply START anytime to re-subscribe.";
+      status = LeadStatus.UNSUBSCRIBED; whatsappOptIn = false;
+    } else if (wasOptedOut && !START_WORDS.includes(norm)) {
+      action = "none"; step = "ignored_unsubscribed"; // never message an unsubscribed lead unless they send START
+    } else {
+      if (wasOptedOut) { status = LeadStatus.NEW; whatsappOptIn = true; }
+      if (GREET_WORDS.includes(norm)) {
+        step = "greeting";
+        reply = "Welcome to Eki!\n\nEki is a marketplace connecting African foodstuff vendors with buyers worldwide.\n\nAre you a *Buyer* or a *Vendor*?\n\nReply: BUYER or VENDOR\n\nReply STOP anytime to opt out.";
+      } else if (BUYER_WORDS.some((w) => norm.includes(w))) {
+        step = "type_identified"; leadType = LeadType.BUYER; highIntent = true;
+        reply = "Great! You are interested as a Buyer.\n\nWhat is your full name and country?\n\nReply STOP anytime to opt out.";
+      } else if (VENDOR_WORDS.some((w) => norm.includes(w))) {
+        step = "type_identified"; leadType = LeadType.VENDOR; highIntent = true;
+        reply = "Awesome! You are a Vendor.\n\nWhat is your full name, country, and what do you sell?\n\nReply STOP anytime to opt out.";
+      } else {
+        step = "info_provided";
+        reply = "Thanks for the info! A member of the Eki team will follow up.\n\nReply STOP anytime to opt out.";
+      }
+      if (step === "type_identified" && (status === LeadStatus.NEW || status === LeadStatus.WELCOMED)) status = LeadStatus.CONTACTED;
+    }
+
+    const lead = await prisma.engineLead.upsert({
+      where: { phone: input.phone },
+      update: { name: existing?.name ?? input.senderName, status, leadType, whatsappOptIn, conversationStep: step, highIntent, lastContactedAt: new Date() },
+      create: { phone: input.phone, name: input.senderName, status, leadType, whatsappOptIn, conversationStep: step, highIntent, source: "whatsapp" },
+    });
+
+    let replySent: { ok: boolean; reason?: string; message?: string } = { ok: false, reason: "no_reply_needed" };
+    if (reply) {
+      const result = await sendWhatsAppSessionText({ to: input.phone, text: reply });
+      replySent = result.ok ? { ok: true } : { ok: false, reason: result.reason, message: result.message };
+    }
+
+    await prisma.engineWhatsAppConversation.upsert({
+      where: { messageId: input.messageId },
+      update: {},
+      create: { phone: input.phone, messageText: input.text, replySent: reply || null, conversationStep: step, messageId: input.messageId },
+    });
+
+    return { leadId: lead.id, action, step, leadType, highIntent, replySent };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -351,6 +441,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [socialLeadUpsert.key]: socialLeadUpsert as ActionDefinition,
   [reportWeeklyAnalytics.key]: reportWeeklyAnalytics as ActionDefinition,
   [whatsappRunSequence.key]: whatsappRunSequence as ActionDefinition,
+  [whatsappProcessInboundMessage.key]: whatsappProcessInboundMessage as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {

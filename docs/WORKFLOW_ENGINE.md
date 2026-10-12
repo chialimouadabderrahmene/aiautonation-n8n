@@ -1,6 +1,6 @@
 # Native Workflow Engine — Architecture, Scope, and Gap Analysis
 
-Status date: 2026-10-12 (batch 3 — WhatsApp sequences). This document is the honest record of what the native
+Status date: 2026-10-12 (batch 4 — WhatsApp lead funnel webhook security). This document is the honest record of what the native
 workflow engine (`api/src/modules/engine/`) actually replaces today, what it
 does not yet replace, and how each claim below should be read against the
 four-tier verification scale used throughout this project:
@@ -197,7 +197,7 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 09 | weekly-analytics-report | ✅ Native | `weekly-analytics-report` / CRON `0 9 * * 1` UTC | Google Sheets reads → live Postgres aggregation (`report.weeklyAnalytics`); **this batch replaced an earlier placeholder that only emitted an event with no report logic behind it — see the bug note in §3** | unit + integration + live curl (manual test-run → SUCCEEDED) |
 | 10 | social-post-scheduler | **NOT PORTED** | — | n/a — needs `buffer`/`x` posting actions (see §7) | — |
 | 12 | ai-social-autopilot | **NOT PORTED** | — | n/a — needs posting actions + an "emergency stop" flag | — |
-| 13 | whatsapp-lead-funnel | **NOT PORTED** | — | n/a — needs an HMAC-verified inbound WhatsApp webhook + conversational state (see §7) | — |
+| 13 | whatsapp-lead-funnel | ✅ Native | `whatsapp-lead-funnel` / EVENT `whatsapp.message_received` | GET-verification handshake + HMAC-SHA256 `X-Hub-Signature-256` check over the RAW body in `routes/whatsappWebhook.ts` (mounted before `express.json()` — raw bytes, not re-serialized JSON), then `whatsapp.processInboundMessage` reproduces the exact STOP/START/greeting/buyer/vendor word-list classification from the n8n original; replies are free-text session messages (not templates), persisted to the new `EngineWhatsAppConversation` table | unit (pure payload parsing) + integration (13 tests against the REAL Express app on a real socket: valid/invalid/missing/tampered signatures, malformed JSON, fails-closed-when-unconfigured, message_id dedup, GET handshake valid/invalid, the full conversation state machine including STOP/START re-subscribe) + live curl — ships disabled, see §8 |
 | 14 | autopilot-controller | **NOT PORTED** | — | n/a — a daily cross-workflow summary; natively trivial once 05/06/10/12/13/19 exist, deferred until they do | — |
 | 15 | viral-intelligence-engine | **NOT PORTED** | — | n/a — needs an `apify.runActor` action | — |
 | 16 | pain-discovery-engine | **NOT PORTED** | — | n/a — needs a Reddit-fetch action | — |
@@ -208,16 +208,16 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 21 | social-proof-engine | ✅ Native | `social-proof-engine` / WEBHOOK | Same `ai.complete` + `EngineContentDraft` pipeline as 18, different prompt | unit + integration + live curl |
 | 22 | performance-analyst-agent | ✅ Native | `performance-analyst-agent` / CRON `30 9 * * 1` UTC | Google Sheets reads → same aggregation as 09, plus an `ai.complete` insights step (skipped honestly, figures still reported, if no AI provider is connected) | unit + integration + live curl (manual test-run → SUCCEEDED) |
 
-**Totals: 12 of 22 workflows (55%) have a native equivalent today — up from 9
-(41%) before this batch. The other 10 (45%) still depend on n8n to run.** The
+**Totals: 13 of 22 workflows (59%) have a native equivalent today — up from 12
+(55%) before this batch. The other 9 (41%) still depend on n8n to run.** The
 objective stated in the governing instructions — "after implementation,
 connecting external API credentials + configuring provider webhooks +
 enabling production settings should be the ONLY remaining integration work"
 — is **not yet achieved** for this repository as a whole, and must not be
-reported as achieved until the remaining 10 are either ported or the user
+reported as achieved until the remaining 9 are either ported or the user
 explicitly accepts them as out of scope.
 
-All 12 native workflows are seeded idempotently on server boot
+All 13 native workflows are seeded idempotently on server boot
 (`seedPortedWorkflows()` in `server.ts`, with an auto-upgrade path that
 publishes a new version when a seed's definition changes without mutating
 any already-published version — itself covered by an integration test).
@@ -229,28 +229,92 @@ Resend/WhatsApp/OpenAI/Groq credentials are configured anywhere in this
 project's environments, so every provider-dependent step correctly reports
 `not_configured` and fabricates nothing).
 
-**The 3 WhatsApp sequence workflows (05/06/19) ship with `enabled: false`**,
-unlike every earlier batch — this is a deliberate change from this batch
-onward: a CRON-triggered workflow that actually messages real phone numbers
-in a loop is a materially bigger blast radius than a single webhook-trigger
-action, so it is not auto-enabled just because it degrades honestly when
-unconfigured. An admin must explicitly enable it (via `POST
-/api/engine/workflows/:key/enable`, after confirming WhatsApp is CONNECTED
-with Meta-approved templates and running at least one manual test-run).
+**The 3 WhatsApp sequence workflows (05/06/19) and workflow 13 ship with
+`enabled: false`**, unlike the first two batches — this is a deliberate
+change: a workflow that actually messages real phone numbers (05/06/19 in a
+loop; 13 in response to inbound messages) is a materially bigger blast
+radius than a single lead-capture webhook, so none of them auto-enable just
+because they degrade honestly when unconfigured. An admin must explicitly
+enable each (via `POST /api/engine/workflows/:key/enable`), after confirming
+WhatsApp is CONNECTED (with Meta-approved templates for 05/06/19
+specifically) and running at least one manual test-run.
 
-### What's blocking the remaining 10 — concrete, not hand-waved
+### Priority 2 in detail — WhatsApp Lead Funnel (13) webhook security
+
+Meta's WhatsApp Cloud API webhook contract (confirmed against Meta's own
+documentation, not guessed) has two parts, both implemented in
+`routes/whatsappWebhook.ts` + `modules/engine/whatsappWebhookSecurity.ts`:
+
+1. **GET verification handshake** — `hub.mode=subscribe` +
+   `hub.verify_token` (compared against the configured WhatsApp integration's
+   `verifyToken`) + `hub.challenge`, echoed back verbatim as the response
+   body on success, 403 otherwise.
+2. **POST signature** — header `X-Hub-Signature-256: sha256=<hex>`, where
+   `<hex>` is HMAC-SHA256 of the **raw** request body bytes keyed with the
+   app secret, compared with `crypto.timingSafeEqual` (constant-time).
+   **Fails closed**: if WhatsApp is not CONNECTED or the app secret is
+   empty, every signature is rejected — this is a security control, not a
+   "skip verification until configured" shortcut. An invalid, missing, or
+   mismatched signature is rejected with 401 **before any business logic
+   runs** — no lead is upserted, no outbox event is written, no reply is
+   ever sent for a request that fails this check.
+
+Getting the raw bytes required mounting this router **before**
+`app.use(express.json(...))` in `app.ts` (Express's global JSON body parser
+would otherwise have already consumed and re-serialized the body by the
+time any later route saw it — a re-serialized JSON object is not guaranteed
+byte-identical to what Meta actually signed, e.g. key ordering or
+whitespace, so verifying against it would be verifying the wrong bytes).
+This is why workflow 13 is its own router rather than one more entry in the
+generic `/api/hooks/:workflowKey` contract (`routes/hooks.ts`), which
+assumes an already-parsed JSON body and has no GET-handshake support — a
+real, provider-documented difference in webhook shape, not an invented
+inconsistency.
+
+Once a signature passes, the route responds `200` **immediately** (Meta's
+own guidance: slow acknowledgement triggers retry backoff) and only then
+parses the message and emits it onto the existing transactional outbox
+(`emitEvent`, dedup-keyed on Meta's own `message_id`) — reusing the same
+durable async infrastructure every other EVENT-triggered workflow uses, not
+a parallel one. A message_id Meta redelivers (its own retry behavior) is
+naturally deduped by the outbox's unique `dedupeKey`, verified with an
+actual duplicate-delivery test (two identical POSTs, one outbox row).
+
+The conversation classification itself (`whatsapp.processInboundMessage`)
+reproduces n8n's STOP/START/greeting/buyer/vendor word lists verbatim — not
+reinvented — and replies with free-form text via a new sender function,
+`sendWhatsAppSessionText`, which is deliberately NOT gated on
+`whatsappTemplatesApproved` (that setting governs business-initiated
+template messages; a session reply to the lead's own inbound message is
+real-time customer service messaging, which Meta's policy permits as free
+text — a correctness detail carried over from the n8n original's own
+compliance note, not dropped during the port).
+
+**Verification evidence, precisely**: 5 unit tests (pure payload parsing,
+no DB) + 13 integration tests that drive the REAL Express app
+(`createApp()`) on a real TCP socket with real HTTP requests — valid
+signature, missing signature, wrong signature, a tampered payload whose
+signature was computed over the original (not the tampered) bytes, malformed
+JSON, fails-closed when WhatsApp is CONFIGURED but not CONNECTED, duplicate
+message_id, both GET-handshake outcomes, and the conversation state machine
+(vendor self-identification, STOP → unsubscribed → ignored until START →
+re-subscribed, and one `EngineWhatsAppConversation` row per inbound message
+with its reply embedded). No real Meta app secret exists in any environment
+available to this project — "real provider" here means the real,
+documented HMAC-SHA256 algorithm computed with a test-controlled secret,
+which is the standard way to test an HMAC webhook without a live account
+(there is no sandbox WhatsApp Business Account that would sign test
+requests for this project). This is LOCALLY TESTED, not STAGING or
+PRODUCTION VERIFIED, and is reported as such.
+
+### What's blocking the remaining 9 — concrete, not hand-waved
 
 - **10, 12 (social posting/scheduling)** need `buffer.post`/`x.post` actions
   calling the already-configurable Buffer/X providers. Not written yet —
   `PROVIDERS` in `modules/providers/definitions.ts` already has both, only
   the action-layer call is missing.
-- **13 (WhatsApp lead funnel)** needs an inbound WEBHOOK that verifies Meta's
-  HMAC signature (the n8n original computes it with a `crypto` node) before
-  trusting the payload, plus a GET-verification handshake — a different,
-  stricter shape than the existing `/api/hooks/:workflowKey` webhook
-  contract, which has no signature-verification step at all today.
-- **14 (autopilot controller)** is a cross-workflow daily summary; 05/06/19
-  now exist, but it still mechanically depends on 10/12/13's data too, so
+- **14 (autopilot controller)** is a cross-workflow daily summary; 05/06/13/19
+  now exist, but it still mechanically depends on 10/12's data too, so
   porting it before THOSE exist would be hollow or duplicate work.
 - **15 (viral intelligence)** needs an `apify.runActor` action; **16 (pain
   discovery)** needs a Reddit-fetch action restricted to Reddit's public API
@@ -366,12 +430,11 @@ handful of state-transition buttons) rather than a full graphical builder.
 
 ## 7. What "done" would require from here
 
-1. Port the remaining 10 workflows per §4's blocker list. In priority order:
-   an HMAC-verified inbound webhook contract unlocks 13; `buffer.post`/
-   `x.post` actions unlock 10 and 12; an `apify.runActor` action unlocks 15;
-   a Reddit-fetch action unlocks 16; 14 and 20 become non-hollow once 10/12/13
-   exist; 00/01/02 need a content-calendar system-of-record and a
-   Telegram-command-webhook integration.
+1. Port the remaining 9 workflows per §4's blocker list. In priority order:
+   `buffer.post`/`x.post` actions unlock 10 and 12; an `apify.runActor`
+   action unlocks 15; a Reddit-fetch action unlocks 16; 14 and 20 become
+   non-hollow once 10/12 exist; 00/01/02 need a content-calendar
+   system-of-record and a Telegram-command-webhook integration.
 2. Add a native action that actually publishes an `APPROVED` content draft
    somewhere (Buffer/X/Meta) — today's Content Drafts review queue (§6) ends
    at "approved in the database."
@@ -400,9 +463,9 @@ a readiness checklist, not a claim that anything is production-ready.
 
 | Provider | Native workflows that need it | Status in every environment so far | What "ready" requires |
 |---|---|---|---|
-| WhatsApp Cloud API (Meta) | 03, 04, 05, 06, 19 (13 once ported) | Never connected with real credentials. A real network call was made from this sandbox during this batch's live verification (see §3) and correctly failed with a DNS error (`ENOTFOUND graph.facebook.com`) — proving the failure path works, not that the provider works. | A real permanent access token + phone number ID in Integrations, Meta-approved templates for every `WELCOME_D*`/`REENGAGE_*`/`NURTURE_*` key actually used, `whatsappTemplatesApproved` ticked only after that approval is confirmed, and a real test-run watched to `SUCCEEDED` with an actual delivered message — only then should 05/06/19 be enabled. |
+| WhatsApp Cloud API (Meta) | 03, 04, 05, 06, 13, 19 | Never connected with real credentials in any environment. A real network call was made from this sandbox during batch 3's live verification and correctly failed with a DNS error (`ENOTFOUND graph.facebook.com`) — proving the failure path works, not that the provider works. Workflow 13's webhook signature verification was tested against the real, documented HMAC-SHA256 algorithm with a test-controlled secret (there is no sandbox WhatsApp Business Account to sign real test requests) — see §4's Priority-2 detail. | A real permanent access token + phone number ID + **app secret** + **webhook verify token** in Integrations; Meta-approved templates for every `WELCOME_D*`/`REENGAGE_*`/`NURTURE_*` key actually used (05/06/19 only — 13's replies are free text, not templates); `whatsappTemplatesApproved` ticked only after that approval is confirmed; the webhook URL (`/api/webhooks/whatsapp`) actually configured in Meta's dashboard and the GET handshake completed there for real; and a real test-run/real inbound message watched to a correct result — only then should 05/06/13/19 be enabled. |
 | Telegram | Every workflow's team alert step | Never connected with a real bot token in any test here. Every alert step this batch correctly reported `not_configured`. | A real bot token + team chat id in Integrations, confirmed via the existing `/api/integrations` test-connection call. |
 | OpenAI / Groq | 18, 21, 22 (01 once ported) | Never connected. Every `ai.complete` call this batch and the last correctly reported `not_configured` (or, in integration tests, used a labeled simulation). | A real API key for one of the two in Integrations. |
 | Resend | 04, 07 | Never connected. | A real API key + a domain verified in Resend. |
-| Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 12 ported workflows (see §4's per-row notes); still the system of record for the 10 not yet ported. | N/A until those 10 are ported, at which point each one is individually replaced the same way, not reconnected. |
+| Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 13 ported workflows (see §4's per-row notes); still the system of record for the 9 not yet ported. | N/A until those 9 are ported, at which point each one is individually replaced the same way, not reconnected. |
 | Buffer, X, Apify | 10, 12, 15 (not yet ported) | Never connected; no native action calls them yet. | Blocked on the actions themselves (§7.1), not just credentials. |

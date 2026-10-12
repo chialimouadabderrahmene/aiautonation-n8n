@@ -617,6 +617,10 @@ enum LeadStatus {
   CONTACTED
   CONVERTED
   DEAD
+  /// Replied STOP on WhatsApp. whatsappOptIn is also set false — the engagement/nurture/welcome
+  /// sequences already exclude whatsappOptIn=false leads, but this status is kept distinct too
+  /// so it is visible on the lead itself, not just inferred from the opt-in flag.
+  UNSUBSCRIBED
 }
 
 /// Which n8n-nurture-sequence track a lead belongs to (workflow 19's "VENDOR"/"BUYER" split).
@@ -646,12 +650,33 @@ model EngineLead {
   /// makes a re-run after a crash resume from exactly the leads not yet at their next stage,
   /// without a dedicated "for each" step type in the engine (see docs/WORKFLOW_ENGINE.md §2).
   sequenceState  Json       @default("{}")
+  /// Workflow 13's conversation state machine step (e.g. "greeting", "type_identified",
+  /// "unsubscribed") — written only by whatsapp.processInboundMessage.
+  conversationStep String?
+  /// Set true when the lead's most recent inbound message was classified high-intent
+  /// (vendor/buyer self-identification) — drives the Telegram "follow up ASAP" alert.
+  highIntent     Boolean    @default(false)
   metadata       Json       @default("{}")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
   @@index([status, createdAt])
   @@index([email])
+}
+
+/// One inbound WhatsApp message and whatever reply it got (workflow 13) — the native
+/// replacement for the n8n "WhatsApp Conversations" Google Sheets tab, which likewise logs one
+/// row per inbound message with the reply text embedded, not a separate row per direction.
+model EngineWhatsAppConversation {
+  id               String   @id @default(cuid())
+  phone            String
+  messageText      String
+  replySent        String?
+  conversationStep String?
+  messageId        String   @unique
+  createdAt        DateTime @default(now())
+
+  @@index([phone, createdAt])
 }
 
 model EngineWaitlistEntry {

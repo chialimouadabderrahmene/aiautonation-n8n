@@ -15,6 +15,9 @@ export const EVENT_SCHEMAS = {
   "video.published": z.object({ videoJobId: z.string().min(1), target: z.string().min(1), externalUrl: z.string().optional() }),
   "vendor.trial_ending": z.object({ vendorId: z.string().min(1), daysRemaining: z.number().int() }),
   "report.weekly_due": z.object({ periodStart: z.string(), periodEnd: z.string() }),
+  "whatsapp.message_received": z.object({
+    phone: z.string().min(6), messageId: z.string().min(1), timestamp: z.string(), type: z.string(), text: z.string(), senderName: z.string().optional(), waId: z.string().optional(),
+  }),
 } as const;
 
 export type EngineEventType = keyof typeof EVENT_SCHEMAS;

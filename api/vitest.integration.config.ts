@@ -4,7 +4,12 @@ import { defineConfig } from "vitest/config";
 //   DATABASE_URL=... REDIS_URL=... npm run test:integration
 export default defineConfig({
   test: {
-    include: ["test/engine-integration.test.ts", "test/engine-batch2-integration.test.ts", "test/engine-whatsapp-sequence-integration.test.ts"],
+    include: [
+      "test/engine-integration.test.ts",
+      "test/engine-batch2-integration.test.ts",
+      "test/engine-whatsapp-sequence-integration.test.ts",
+      "test/engine-whatsapp-webhook-integration.test.ts",
+    ],
     environment: "node",
     testTimeout: 30_000,
     hookTimeout: 30_000,

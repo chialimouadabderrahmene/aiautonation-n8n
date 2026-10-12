@@ -316,6 +316,22 @@ const SEEDS: Seed[] = [
       ],
     },
   },
+  {
+    key: "whatsapp-lead-funnel",
+    name: "WhatsApp Lead Funnel",
+    description: "Native replacement for n8n 13-whatsapp-lead-funnel.json: classifies an inbound WhatsApp message (STOP/START/greeting/buyer/vendor), upserts the lead, replies with a free-form session message (not a template — permitted within the 24h window an inbound message opens), and alerts the team on a high-intent (buyer/vendor self-identification) message. The GET-verification handshake and POST signature verification happen in routes/whatsappWebhook.ts, mounted at /api/webhooks/whatsapp — BEFORE this EVENT-triggered workflow is ever matched; an invalid signature never reaches this far. Disabled until WhatsApp is connected AND a real test message has been verified end to end — see docs/WORKFLOW_ENGINE.md.",
+    category: "WHATSAPP",
+    triggerType: "EVENT",
+    triggerConfig: { eventType: "whatsapp.message_received" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "process", type: "action", action: "whatsapp.processInboundMessage", input: { phone: "{{trigger.phone}}", messageId: "{{trigger.messageId}}", timestamp: "{{trigger.timestamp}}", type: "{{trigger.type}}", text: "{{trigger.text}}", senderName: "{{trigger.senderName}}" } },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "HIGH-INTENT LEAD via WhatsApp\nPhone: {{trigger.phone}}\nType: {{process.leadType}}\nSaid: {{trigger.text}}" }, onFailure: "continue", condition: { path: "process.highIntent", op: "eq", value: true } },
+      ],
+    },
+  },
 ];
 
 export async function seedPortedWorkflows(actor = "seed"): Promise<{ created: string[]; alreadyPresent: string[]; upgraded: string[] }> {
