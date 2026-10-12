@@ -4,8 +4,6 @@ import { WORKFLOW_MANIFEST } from "./manifest";
 import { getProvider } from "../providers/registry";
 import { getAllSettings, getSettingDefinition } from "../settings/schema";
 import { checkWorker, checkStorage } from "../system/health";
-import { loadWorkflowFile, requiredCredentialNames, workflowFilesAvailable } from "../n8n/workflows";
-import { MANAGED_CREDENTIALS } from "../n8n/credentials";
 
 /**
  * The readiness engine. A workflow is READY only when every requirement is
@@ -13,8 +11,8 @@ import { MANAGED_CREDENTIALS } from "../n8n/credentials";
  *   - each required provider is CONNECTED (configured AND its last real test passed)
  *   - required business settings / provider fields are filled in
  *   - required human confirmations are ticked
- *   - n8n is connected, the workflow exists in n8n, and every n8n credential
- *     it uses has been synced from the vault
+ *   - the workflow's native engine definition exists and has a published version
+ *     (the engine executes directly — it never needs n8n running at any point)
  *   - (video) a live worker with ffmpeg/ffprobe and reachable storage
  * Anything else is BLOCKED (or ACTION_REQUIRED when the only gaps are human
  * confirmations), with one line per unmet requirement naming the fix.
@@ -133,34 +131,29 @@ export async function evaluateRequirements(required: string[], snap?: Snapshot):
   return { readiness: classify(detail), detail };
 }
 
-function n8nChecks(key: string, wf: { n8nPresent: boolean; n8nWorkflowId: string | null }, snap: Snapshot): ReadinessDetail[] {
-  const out: ReadinessDetail[] = [];
-  const n8n = snap.integrations.get("n8n");
-  const n8nOk = n8n?.status === "CONNECTED";
-  out.push({ requirement: "n8n", label: "n8n connected", ok: n8nOk, note: n8nOk ? undefined : `n8n ${STATUS_TEXT[n8n?.status ?? "NOT_CONFIGURED"] ?? "is not connected"}` });
-  out.push({
-    requirement: "n8n:workflow",
-    label: "Workflow imported into n8n",
-    ok: n8nOk && wf.n8nPresent && Boolean(wf.n8nWorkflowId),
-    note: wf.n8nPresent ? undefined : "Not found in n8n yet — it is imported automatically once n8n is connected",
-  });
-  let credNames: string[] = [];
-  try {
-    credNames = requiredCredentialNames(loadWorkflowFile(key));
-  } catch {
-    out.push({ requirement: "n8n:file", label: "Workflow definition file", ok: false, note: "Workflow file missing from the API image" });
-  }
-  for (const name of credNames) {
-    const spec = MANAGED_CREDENTIALS.find((c) => c.name === name);
-    const synced = spec ? Boolean(snap.integrations.get(spec.source)?.n8nCredentialIds[name]?.id) : false;
-    out.push({
-      requirement: `n8n:credential:${name}`,
-      label: `n8n credential "${name}"`,
-      ok: synced,
-      note: synced ? undefined : spec ? `Created in n8n automatically once ${label(spec.source)} is configured` : "Unmanaged credential",
-    });
-  }
-  return out;
+/** "03-lead-capture-webhook" -> "lead-capture-webhook" (EngineWorkflow's own key scheme). */
+export function toEngineKey(workflowConfigKey: string): string {
+  return workflowConfigKey.replace(/^\d+-/, "");
+}
+
+/** 00-global-error-handler and 02-content-approval are built into the engine itself
+ * (dead-letter/notify, and the Telegram command router + outbox) rather than being
+ * standalone triggered EngineWorkflow rows — they have no independent on/off switch. */
+const BUILT_IN_ENGINE_KEYS = new Set(["global-error-handler", "content-approval"]);
+
+async function nativeEngineChecks(key: string): Promise<ReadinessDetail[]> {
+  const engineKey = toEngineKey(key);
+  if (BUILT_IN_ENGINE_KEYS.has(engineKey)) return [];
+  const wf = await prisma.engineWorkflow.findUnique({ where: { key: engineKey }, select: { currentVersionId: true } });
+  const ok = Boolean(wf?.currentVersionId);
+  return [
+    {
+      requirement: "engine:definition",
+      label: "Native workflow definition published",
+      ok,
+      note: ok ? undefined : "No published version exists for this workflow in the native engine yet",
+    },
+  ];
 }
 
 /** Re-seeds WorkflowConfig from the manifest (idempotent) and recomputes
@@ -168,16 +161,15 @@ function n8nChecks(key: string, wf: { n8nPresent: boolean; n8nWorkflowId: string
  * before any activation. */
 export async function recomputeAllReadiness(): Promise<void> {
   const snap = await takeSnapshot();
-  const files = new Set(workflowFilesAvailable());
   for (const entry of WORKFLOW_MANIFEST) {
-    const wf = await prisma.workflowConfig.upsert({
+    await prisma.workflowConfig.upsert({
       where: { key: entry.key },
       update: { name: entry.name, category: entry.category, requiredProviders: entry.required, optionalProviders: entry.optional ?? [] },
       create: { key: entry.key, name: entry.name, category: entry.category, requiredProviders: entry.required, optionalProviders: entry.optional ?? [] },
     });
     const own = entry.required.map((r) => checkOne(r, snap));
-    const infra = files.has(entry.key) ? n8nChecks(entry.key, wf, snap) : [{ requirement: "n8n:file", label: "Workflow definition file", ok: false, note: "Workflow file missing" }];
-    const detail = [...own, ...infra];
+    const engine = await nativeEngineChecks(entry.key);
+    const detail = [...own, ...engine];
     await prisma.workflowConfig.update({
       where: { key: entry.key },
       data: { readiness: classify(detail), readinessDetail: detail as unknown as Prisma.InputJsonValue },
