@@ -8,6 +8,10 @@ import { logger } from "./lib/logger";
 import { scrubSecrets } from "./lib/http";
 import { authRouter } from "./routes/auth";
 import { integrationsRouter, oauthPublicRouter } from "./routes/integrations";
+import { brandRouter } from "./routes/brand";
+import { accountsRouter } from "./routes/accounts";
+import { carouselRouter } from "./routes/carousel";
+import { whatsappRouter, whatsappPublicRouter } from "./routes/whatsapp";
 import { workflowsRouter } from "./routes/workflows";
 import { videoRouter } from "./routes/video";
 import { approvalsRouter, telegramPublicRouter } from "./routes/approvals";
@@ -17,11 +21,14 @@ import { settingsRouter } from "./routes/settings";
 import { auditRouter } from "./routes/audit";
 import { dashboardRouter } from "./routes/dashboard";
 import { mediaRouter, mediaPublicRouter } from "./routes/media";
+import { leadsPublicRouter } from "./routes/leads";
+import { contentRouter } from "./routes/content";
 import { internalRouter } from "./routes/internal";
 import { engineRouter } from "./routes/engine";
 import { hooksRouter } from "./routes/hooks";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook";
-import { requireAdmin } from "./modules/auth/auth";
+import { requireAdmin, requireWrite } from "./modules/auth/auth";
+import { usersRouter } from "./routes/users";
 import { systemHealth, checkDatabase } from "./modules/system/health";
 import { recordAudit } from "./modules/audit/audit";
 
@@ -41,6 +48,13 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } }));
   const origins = process.env.WEB_ORIGIN?.split(",").map((o) => o.trim()).filter(Boolean);
   app.use(cors({ origin: origins && origins.length ? origins : false, credentials: false }));
+  // MUST be mounted before express.json(): this route needs the raw, unparsed request body to
+  // verify Meta's HMAC signature (see routes/whatsappWebhook.ts's own doc comment).
+  app.use("/api/webhooks", whatsappWebhookRouter);
+  // `verify` stashes the raw bytes on every request — needed by the WhatsApp
+  // webhook's HMAC-SHA256 signature check (Meta signs the exact raw body;
+  // re-serializing the parsed JSON would not reproduce the same bytes).
+  app.use(express.json({ limit: "1mb", verify: (req, _res, buf) => void ((req as express.Request & { rawBody?: Buffer }).rawBody = buf) }));
   app.use(
     pinoHttp({
       logger,
@@ -49,10 +63,6 @@ export function createApp() {
       serializers: { req: (req) => ({ id: req.id, method: req.method, url: String(req.url).split("?")[0] }) },
     }),
   );
-  // MUST be mounted before express.json(): this route needs the raw, unparsed request body to
-  // verify Meta's HMAC signature (see routes/whatsappWebhook.ts's own doc comment).
-  app.use("/api/webhooks", whatsappWebhookRouter);
-  app.use(express.json({ limit: "1mb" }));
 
   // Liveness only — never touches dependencies, so a DB blip never gets the API restarted.
   app.get("/health", (_req, res) => res.json({ ok: true, service: "eki-automation-api" }));
@@ -67,20 +77,30 @@ export function createApp() {
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
   app.use("/api/hooks", hooksRouter); // native WEBHOOK-trigger ingestion — rate-limited, Zod-validated per workflow
+  app.use("/api/whatsapp", whatsappPublicRouter); // GET challenge + X-Hub-Signature-256
+  app.use("/api/leads", leadsPublicRouter); // X-Api-Key header, checked against Settings
 
   app.use("/api/auth", authRouter);
+  app.use("/api/users", requireAdmin, usersRouter); // requireOwner is per-route inside — list is readable by any admin
+  // requireWrite: server-side RBAC — a VIEWER token 403s on every non-GET
+  // below, not just a hidden button in the UI (modules/auth/auth.ts).
   app.use("/api/system/health", requireAdmin, async (_req, res) => res.json(await systemHealth()));
-  app.use("/api/integrations", requireAdmin, integrationsRouter);
-  app.use("/api/workflows", requireAdmin, workflowsRouter);
-  app.use("/api/video", requireAdmin, videoRouter);
-  app.use("/api/approvals", requireAdmin, approvalsRouter);
-  app.use("/api/executions", requireAdmin, executionsRouter);
-  app.use("/api/reports", requireAdmin, reportsRouter);
-  app.use("/api/settings", requireAdmin, settingsRouter);
+  app.use("/api/integrations", requireAdmin, requireWrite, integrationsRouter);
+  app.use("/api/brand", requireAdmin, requireWrite, brandRouter);
+  app.use("/api/accounts", requireAdmin, requireWrite, accountsRouter);
+  app.use("/api/workflows", requireAdmin, requireWrite, workflowsRouter);
+  app.use("/api/video", requireAdmin, requireWrite, videoRouter);
+  app.use("/api/carousel", requireAdmin, requireWrite, carouselRouter);
+  app.use("/api/whatsapp", requireAdmin, requireWrite, whatsappRouter);
+  app.use("/api/approvals", requireAdmin, requireWrite, approvalsRouter);
+  app.use("/api/executions", requireAdmin, requireWrite, executionsRouter);
+  app.use("/api/reports", requireAdmin, requireWrite, reportsRouter);
+  app.use("/api/content", requireAdmin, requireWrite, contentRouter);
+  app.use("/api/settings", requireAdmin, requireWrite, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);
   app.use("/api/engine", requireAdmin, engineRouter);
-  app.use("/api/media", requireAdmin, mediaRouter);
+  app.use("/api/media", requireAdmin, requireWrite, mediaRouter);
 
   app.use((_req, res) => res.status(404).json({ message: "Not found" }));
   app.use(errorHandler);

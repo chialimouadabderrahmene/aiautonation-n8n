@@ -85,8 +85,71 @@ Once the admin has changed the password in Settings, re-run verification with
 
 > Tested against a mock of the Railway CLI v5.62.1 (JSON shapes taken from its
 > source) with verification running against the real local stack: first run,
-> idempotent re-run (zero changes), and a forced failed deploy. It has not yet
-> been run against a real Railway account.
+> idempotent re-run (zero changes), and a forced failed deploy.
+>
+> **Run for real against a live Railway account (2026-09-28).** Two real bugs
+> in this script were found and fixed by that run, not by inspection:
+> 1. **Windows `spawnSync`/`shell:true` arg mangling.** `shell: true` (needed
+>    on win32 so the `railway.cmd` npm shim can execute at all — see the
+>    `WINDOWS_SHELL` comment in the script) does **not** quote array
+>    arguments for you; Node just `[file, ...args].join(' ')`s them before
+>    handing one string to `cmd.exe`. A `--message "Eki Control Center: ..."`
+>    value with spaces silently got re-split into separate cmd.exe tokens
+>    (`railway environment edit ... exited 2: unexpected argument 'Control'`).
+>    Fixed with a `winShellQuote()` helper that wraps any argument containing
+>    whitespace or a cmd.exe metacharacter in `"..."` before it reaches
+>    `spawnSync`.
+> 2. **`railway environment edit --service-config <svc> configFile <path>` is
+>    a silent no-op on this CLI/account.** It always exits 0 and prints
+>    `{"committed":false,"message":"No changes to apply"}` — reproduced for
+>    the `configFile` path itself, for direct schema fields
+>    (`build.builder`, `build.dockerfilePath`, `deploy.numReplicas`), and for
+>    a deliberately invalid dot-path: all three produced the identical
+>    response, before and after linking the target service. The next build
+>    then used Railpack instead of the intended Dockerfile ("Railpack could
+>    not determine how to build the app — Script start.sh not found").
+>    **Fixed**: the script now sets the legacy `RAILWAY_DOCKERFILE_PATH`
+>    build variable per service instead (a plain `railway variable set`,
+>    confirmed effective — the next build log switched from Railpack to the
+>    correct multi-stage Dockerfile). This only replaces
+>    `build.dockerfilePath`; **`deploy.healthcheckPath` /
+>    `restartPolicyType` / `numReplicas` have no confirmed variable
+>    equivalent** (`RAILWAY_HEALTHCHECK_PATH` / `RAILWAY_HEALTHCHECK_TIMEOUT_SEC`
+>    / `RAILWAY_RESTART_POLICY_TYPE` were tried on a live service and
+>    confirmed *not* honored — the deployment manifest still showed
+>    `healthcheckPath: null`, `restartPolicyType: "ON_FAILURE"` after setting
+>    them and restarting). Until Railway exposes a working way to set these
+>    from the CLI, every service runs with Railway's platform defaults
+>    instead of this repo's intended config (TCP-reachability check instead
+>    of an HTTP path, `ON_FAILURE` with 10 retries instead of `ALWAYS`, 1
+>    replica — the last one matches anyway). Set them by hand in the
+>    dashboard (Settings → Deploy) if you need the exact configured values.
+>
+> That same real run also hit `railway ssh` requiring a registered SSH key
+> (`railway ssh keys add --key <path to your public key>`) and Railway's own
+> SSH gateway host key not yet being trusted (`ssh-keyscan ssh.railway.com >>
+> ~/.ssh/known_hosts`) before `worker`'s FFmpeg self-test could run at all —
+> neither is specific to this script, just first-time `railway ssh` setup.
+> Once SSH worked, `dist/tools/selftest.js` (full synthetic-clip encode +
+> subtitle burn-in + storage round-trip) was killed with exit 137 (SIGKILL)
+> on a Trial-plan worker, twice, including wrapped in a shell that would have
+> printed a partial log if only the `node` process had died — consistent
+> with the whole container hitting its cgroup memory limit (`cat
+> /sys/fs/cgroup/memory.max` on that container: `999997440` bytes, ~953 MiB).
+> This was **not** worked around or reported as a pass: the self-test result
+> is genuinely unproven on this plan. Independent partial evidence that the
+> toolchain itself is fine: the worker's own boot-time capability probe (real
+> log line, not injected) reported `ffmpeg="ffmpeg version 6.1.1-3ubuntu5"
+> ffprobe="ffprobe version 6.1.1-3ubuntu5" subtitles=true fonts=true
+> storage="S3 bucket \"eki-media-...\" ... write/delete verified"` — so
+> FFmpeg, subtitle rendering and the real S3 bucket all work in this exact
+> container; only the heavier full-render self-test binary is unconfirmed,
+> likely because libx264 + the `mandelbrot` test source + the subtitle
+> filter graph pushes memory past ~950 MiB on this plan's container size
+> (ffmpeg does not know about the cgroup limit and may size internal buffers
+> off the host's visible CPU count). Re-run
+> `railway ssh --service worker node dist/tools/selftest.js` after upgrading
+> the plan (bigger container) to get a real pass/fail on this specific check.
 
 ## Railway — manual path (dashboard)
 

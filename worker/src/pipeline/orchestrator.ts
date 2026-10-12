@@ -93,7 +93,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
             script: script as unknown as Prisma.InputJsonValue,
             caption: script.caption,
             hashtags: script.hashtags,
-            costMetadata: { script: { provider: script.provider, model: script.model } },
+            costMetadata: { script: { provider: script.provider, model: script.model }, brandReview: script.brandReview } as unknown as Prisma.InputJsonValue,
           },
         }),
         ...script.scenes.map((s) =>

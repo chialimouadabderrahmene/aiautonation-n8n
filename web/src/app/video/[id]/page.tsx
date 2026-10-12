@@ -226,7 +226,7 @@ export default function VideoJobPage() {
                           </a>
                         ) : null}
                         <StatusBadge status={p?.status ?? (approval?.status === "APPROVED" ? "PENDING" : "WAITING_APPROVAL")} />
-                        {p?.status === "FAILED" ? (
+                        {p?.status === "FAILED" || p?.status === "SKIPPED" ? (
                           <Button variant="secondary" onClick={() => void act(`pub-${t}`, `/api/approvals/video/${job.id}/publish/${t}/retry`)} disabled={Boolean(busy)}>
                             Retry
                           </Button>

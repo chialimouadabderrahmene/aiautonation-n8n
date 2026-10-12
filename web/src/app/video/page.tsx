@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
 import { Button, Card, Checklist, ErrorState, LoadingState, Notice, PageHeader, StatusBadge, inputClass, labelClass, timeAgo } from "@/components/ui";
 import { api, APIError } from "@/lib/api";
-import { ACTIVE_VIDEO_STATES, Integration, MediaFile, ReadinessDetail, VideoProject } from "@/lib/types";
+import { ACTIVE_VIDEO_STATES, ConnectedAccount, Integration, MediaFile, ReadinessDetail, VideoProject } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
 const PLATFORMS = ["Instagram Reel", "TikTok", "YouTube Short", "Facebook Video", "LinkedIn Video", "X Video", "Website / Ads"];
@@ -53,6 +53,7 @@ const EMPTY = {
   brand: "Eki",
   cta: "",
   publishTargets: [] as string[],
+  publishAccountIds: [] as string[],
 };
 
 export default function VideoGeneratorPage() {
@@ -61,6 +62,7 @@ export default function VideoGeneratorPage() {
   const [readiness, setReadiness] = useState<VideoReadiness | null>(null);
   const [music, setMusic] = useState<MediaFile[]>([]);
   const [connected, setConnected] = useState<Set<string>>(new Set());
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -69,16 +71,18 @@ export default function VideoGeneratorPage() {
 
   async function load() {
     try {
-      const [p, r, m, i] = await Promise.all([
+      const [p, r, m, i, a] = await Promise.all([
         api.get<VideoProject[]>("/api/video/projects"),
         api.get<VideoReadiness>("/api/video/readiness"),
         api.get<MediaFile[]>("/api/media/music").catch(() => []),
         api.get<Integration[]>("/api/integrations").catch(() => []),
+        api.get<ConnectedAccount[]>("/api/accounts").catch(() => []),
       ]);
       setProjects(p);
       setReadiness(r);
       setMusic(m);
       setConnected(new Set(i.filter((x) => x.status === "CONNECTED").map((x) => x.provider)));
+      setConnectedAccounts(a.filter((x) => x.status === "CONNECTED"));
       setError("");
     } catch (err) {
       setError(err instanceof APIError ? err.message : "Failed to load");
@@ -268,6 +272,24 @@ export default function VideoGeneratorPage() {
               })}
             </div>
           </div>
+          {connectedAccounts.length ? (
+            <div className="md:col-span-2">
+              <p className={labelClass}>Or publish to specific connected accounts</p>
+              <p className="text-xs text-slate-400">Additive to the platforms above — lets you reach more than one account of the same platform.</p>
+              <div className="mt-2 flex flex-wrap gap-4">
+                {connectedAccounts.map((acc) => (
+                  <label key={acc.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={form.publishAccountIds.includes(acc.id)}
+                      onChange={(e) => set("publishAccountIds", e.target.checked ? [...form.publishAccountIds, acc.id] : form.publishAccountIds.filter((x) => x !== acc.id))}
+                    />
+                    {acc.label} <span className="text-xs text-slate-400">({acc.provider})</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {formError ? (
             <div className="md:col-span-2">
               <Notice tone="red">{formError}</Notice>
