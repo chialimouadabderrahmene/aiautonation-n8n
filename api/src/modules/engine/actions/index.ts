@@ -5,9 +5,10 @@ import { sendEmail } from "../../senders/resend";
 import { sendWhatsAppTemplate } from "../../senders/whatsapp";
 import { aiComplete } from "../../senders/ai";
 import { getProviderValues } from "../../integrations/vault";
+import { getSetting } from "../../settings/schema";
 import { emitEvent } from "../outbox";
 import type { EngineEventType } from "../triggers";
-import { LeadStatus, ReferralStatus, ContentDraftStatus } from "@prisma/client";
+import { LeadStatus, LeadType, ReferralStatus, ContentDraftStatus } from "@prisma/client";
 
 /**
  * The action registry. Every action is: a Zod input schema (validated before the handler
@@ -34,13 +35,18 @@ function define<I, O>(def: ActionDefinition<I, O>): ActionDefinition<I, O> {
 const leadUpsert = define({
   key: "lead.upsert",
   idempotent: true,
-  inputSchema: z.object({ phone: z.string().min(6), name: z.string().optional(), email: z.string().email().optional(), source: z.string().optional(), market: z.string().optional() }),
+  inputSchema: z.object({
+    phone: z.string().min(6), name: z.string().optional(), email: z.string().email().optional(), source: z.string().optional(), market: z.string().optional(),
+    // UNKNOWN (the default) keeps the lead out of the nurture sequence until this is set
+    // explicitly — see the LeadType enum's comment in schema.prisma.
+    leadType: z.enum(["VENDOR", "BUYER", "UNKNOWN"]).optional(),
+  }),
   async handler(input) {
     const existing = await prisma.engineLead.findUnique({ where: { phone: input.phone } });
     const lead = await prisma.engineLead.upsert({
       where: { phone: input.phone },
-      update: { name: input.name ?? undefined, email: input.email ?? undefined, market: input.market ?? undefined },
-      create: { phone: input.phone, name: input.name, email: input.email, source: input.source, market: input.market, status: LeadStatus.NEW },
+      update: { name: input.name ?? undefined, email: input.email ?? undefined, market: input.market ?? undefined, leadType: input.leadType as LeadType | undefined },
+      create: { phone: input.phone, name: input.name, email: input.email, source: input.source, market: input.market, status: LeadStatus.NEW, leadType: (input.leadType as LeadType) ?? LeadType.UNKNOWN },
     });
     return { leadId: lead.id, isNew: !existing, status: lead.status };
   },
@@ -229,6 +235,108 @@ const reportWeeklyAnalytics = define({
   },
 });
 
+interface SequenceStage {
+  /** Days since `referenceField` at which this stage becomes eligible. */
+  dayOffset: number;
+  templateKey: string;
+}
+
+/**
+ * The native replacement for the n8n WhatsApp sequence workflows' `splitInBatches` loop
+ * (05-whatsapp-welcome-sequence, 06-whatsapp-engagement-followup, 19-whatsapp-nurture-
+ * sequences). The engine has no "for each item" step type by design (see
+ * docs/WORKFLOW_ENGINE.md §2/§7), so this ONE action does the whole batch itself: it is the
+ * composite action that loop was always going to need, parameterised by which sequence and
+ * which day-offset→template stages apply.
+ *
+ * Idempotent resume without a dedicated loop construct: each lead's progress through the
+ * sequence (`EngineLead.sequenceState[sequenceKey]`) is written immediately after that lead's
+ * send succeeds — not batched at the end — so a crash mid-run, or a retry of this whole step,
+ * only ever re-queries for leads that have NOT yet reached their next eligible stage. A lead
+ * already sent today's stage is simply excluded by the query on the next invocation; it is
+ * never re-sent.
+ *
+ * Consent and credentials: whatsappOptIn=false leads are excluded by the query (never
+ * queried, let alone sent to). If WhatsApp is not connected or templates are not confirmed
+ * Meta-approved, this is detected ONCE up front and the whole run is skipped honestly — no
+ * partial sends, no fabricated progress. A single lead's specific stage template being unset
+ * only skips that lead for this run (other leads may be eligible for a different, configured
+ * stage) — it does not abort the batch.
+ */
+const whatsappRunSequence = define({
+  key: "whatsapp.runSequence",
+  idempotent: true, // re-running only ever sends to leads not yet advanced past their current stage
+  inputSchema: z.object({
+    sequenceKey: z.enum(["welcome", "engagement", "nurture"]),
+    stages: z.array(z.object({ dayOffset: z.number().int().min(0), templateKey: z.string().min(1) })).min(1),
+    referenceField: z.enum(["createdAt", "lastContactedAt"]).default("createdAt"),
+    leadTypeFilter: z.enum(["VENDOR", "BUYER"]).optional(),
+  }),
+  async handler(input) {
+    const stages = [...input.stages].sort((a, b) => a.dayOffset - b.dayOffset) as SequenceStage[];
+    const maxDayOffset = stages[stages.length - 1]!.dayOffset;
+
+    const approved = await getSetting<boolean>("whatsappTemplatesApproved").catch(() => false);
+    const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
+    if (!approved || integration?.status !== "CONNECTED") {
+      return { sequenceKey: input.sequenceKey, processed: 0, sent: 0, skippedLeads: 0, reason: "not_configured", message: "WhatsApp is not connected or templates are not confirmed Meta-approved — no leads were queried." };
+    }
+    const v = await getProviderValues("whatsapp");
+    const maxPerRun = Math.max(1, Math.min(200, Number(v?.maxPerRun) || 40));
+
+    // The day-offset/stage eligibility check itself happens per-lead below (it needs each
+    // lead's own sequenceState, which Prisma cannot filter on cheaply) — this query is only a
+    // candidate prefetch: opted-in, not dead, old enough to ever reach the LAST stage, and (for
+    // "engagement", which re-engages leads already contacted once) actually contacted before.
+    const oldEnoughSince = new Date(Date.now() - maxDayOffset * 24 * 60 * 60 * 1000);
+    const candidates = await prisma.engineLead.findMany({
+      where: {
+        whatsappOptIn: true,
+        status: { not: LeadStatus.DEAD },
+        ...(input.referenceField === "lastContactedAt"
+          ? { lastContactedAt: { not: null, lte: oldEnoughSince } }
+          : { createdAt: { lte: oldEnoughSince } }),
+        ...(input.leadTypeFilter ? { leadType: input.leadTypeFilter as LeadType } : {}),
+      },
+      orderBy: input.referenceField === "lastContactedAt" ? { lastContactedAt: "asc" } : { createdAt: "asc" },
+      take: maxPerRun * 3, // over-fetch — most candidates will already be past their next stage
+    });
+
+    let sent = 0;
+    let skippedLeads = 0;
+    const perLead: { leadId: string; result: string }[] = [];
+    for (const lead of candidates) {
+      if (sent >= maxPerRun) break;
+      const reference = (input.referenceField === "lastContactedAt" ? lead.lastContactedAt : lead.createdAt) ?? lead.createdAt;
+      const daysSince = Math.floor((Date.now() - reference.getTime()) / (24 * 60 * 60 * 1000));
+      const state = (lead.sequenceState as Record<string, { stage: number; lastSentAt: string }>) ?? {};
+      const currentStage = state[input.sequenceKey]?.stage ?? 0;
+      const nextStage = stages.find((s, i) => i + 1 > currentStage && s.dayOffset <= daysSince);
+      if (!nextStage) { skippedLeads++; continue; }
+      const stageIndex = stages.indexOf(nextStage) + 1;
+
+      const result = await sendWhatsAppTemplate({ to: lead.phone, templateKey: nextStage.templateKey });
+      if (!result.ok) {
+        if (result.reason === "not_configured" || result.reason === "templates_not_approved") {
+          // A global condition changed mid-run (e.g. disconnected while this was running) — stop
+          // rather than keep failing identically for every remaining lead.
+          return { sequenceKey: input.sequenceKey, processed: perLead.length, sent, skippedLeads, reason: result.reason, message: result.message, perLead };
+        }
+        perLead.push({ leadId: lead.id, result: `skipped: ${result.reason}` });
+        skippedLeads++;
+        continue; // template_not_set for THIS stage, or a provider_error for THIS lead — try the next lead
+      }
+      await prisma.engineLead.update({
+        where: { id: lead.id },
+        data: { sequenceState: { ...state, [input.sequenceKey]: { stage: stageIndex, lastSentAt: new Date().toISOString() } }, lastContactedAt: new Date() },
+      });
+      sent++;
+      perLead.push({ leadId: lead.id, result: "sent" });
+    }
+    return { sequenceKey: input.sequenceKey, processed: perLead.length, sent, skippedLeads, perLead };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -242,6 +350,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [contentQueueMany.key]: contentQueueMany as ActionDefinition,
   [socialLeadUpsert.key]: socialLeadUpsert as ActionDefinition,
   [reportWeeklyAnalytics.key]: reportWeeklyAnalytics as ActionDefinition,
+  [whatsappRunSequence.key]: whatsappRunSequence as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {

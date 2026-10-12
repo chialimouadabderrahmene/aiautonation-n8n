@@ -1,6 +1,6 @@
 # Native Workflow Engine — Architecture, Scope, and Gap Analysis
 
-Status date: 2026-10-12 (batch 2). This document is the honest record of what the native
+Status date: 2026-10-12 (batch 3 — WhatsApp sequences). This document is the honest record of what the native
 workflow engine (`api/src/modules/engine/`) actually replaces today, what it
 does not yet replace, and how each claim below should be read against the
 four-tier verification scale used throughout this project:
@@ -124,6 +124,44 @@ against real BullMQ + Redis, then by the full integration suite going from
   (which happened not to exercise the MANUAL trigger path for this specific
   workflow) until a real HTTP call against a real running server caught it.
 
+### Batch 3 (05/06/19 — WhatsApp sequences)
+
+A new `test/engine-whatsapp-sequence-integration.test.ts` adds 5 more
+real-Postgres/Redis integration tests for the `whatsapp.runSequence` action:
+the whole-run honest skip when templates aren't approved, consent
+enforcement (an opted-out lead is never even sent an HTTP request, not just
+"sent a failed one"), a stage never firing twice for the same lead, the
+intentional gradual catch-up behavior (one stage advances per run, not a
+burst, when a lead is old enough to be eligible for several at once — see
+the blast-radius note below), and the nurture track correctly skipping a
+lead whose `leadType` was never set. These use Node's built-in `http` module
+as a **labeled, local simulation** of the WhatsApp Cloud API's Graph
+endpoint, reached through the project's own existing `ALLOW_PROVIDER_
+OVERRIDES`/`PROVIDER_API_OVERRIDES` test-mode mechanism (`lib/http.ts`) —
+the real `timedFetch`/`describeHttpFailure`/`withRetry` code path runs
+against it exactly as it would against the real provider; only the network
+hop is substituted, and this is never reported as more than LOCALLY TESTED.
+
+**A genuine live-network finding, not a mock**: a manual test-run of
+`whatsapp-welcome-sequence` against the real (unmocked) server in this
+sandbox — after the integration suite had left WhatsApp marked CONNECTED in
+the shared local dev database — produced a real `ENOTFOUND` DNS failure
+calling the real `graph.facebook.com` (this sandbox has no route to the
+public internet for that host). This was caught and reported exactly as
+designed: `whatsapp.runSequence` recorded `{leadId, result: "skipped:
+provider_error"}` for that lead and the execution still completed
+`SUCCEEDED` — a transient/unreachable provider never crashes the whole
+batch or silently invents a "sent" result for a lead it could not reach.
+
+A second finding was caught by the test suite itself (not by inspection):
+running the new integration file concurrently with the existing ones
+(vitest's default cross-file parallelism) caused real cross-file database
+pollution — a lead created by the WhatsApp-sequence suite was counted by
+`report.weeklyAnalytics`'s window-correctness test in another file, since
+both hit the same shared local Postgres. Fixed by setting `fileParallelism:
+false` in `vitest.integration.config.ts`: these are integration tests
+against one live database, and were never safe to parallelize across files.
+
 ### Not yet covered by an automated test (gap, not a false claim)
 
 - Workflow-version-change while an execution for the *previous* version is
@@ -152,8 +190,8 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 02 | content-approval | **NOT PORTED** | — | n/a | — |
 | 03 | lead-capture-webhook | ✅ Native | `lead-capture-webhook` / WEBHOOK | Google Sheets → `EngineLead` (Postgres) | unit + integration + live curl |
 | 04 | waitlist-management | ✅ Native | `waitlist-management` / WEBHOOK | Google Sheets → `EngineWaitlistEntry` | unit + integration + live curl |
-| 05 | whatsapp-welcome-sequence | **NOT PORTED** | — | n/a | — |
-| 06 | whatsapp-engagement-followup | **NOT PORTED** | — | n/a | — |
+| 05 | whatsapp-welcome-sequence | ✅ Native | `whatsapp-welcome-sequence` / CRON `0 9 * * *` UTC | Google Sheets leads + splitInBatches loop → `whatsapp.runSequence` action over `EngineLead`, per-lead `sequenceState` tracking (no loop step type exists, so one composite action does the batch — see §2/§7) | unit + integration (incl. a **labeled simulation** of the WhatsApp Cloud API via the existing `ALLOW_PROVIDER_OVERRIDES` test-mode hook — no real Meta credentials exist anywhere in this project) + live curl (test-run hit a REAL `ENOTFOUND` network error against the real graph.facebook.com from this sandbox once WhatsApp was marked CONNECTED, and was correctly caught and reported per-lead as `provider_error` without crashing the run — ships disabled, see below) |
+| 06 | whatsapp-engagement-followup | ✅ Native | `whatsapp-engagement-followup` / CRON `0 10 * * *` UTC | Same `whatsapp.runSequence` action, `referenceField: lastContactedAt` (re-engages leads gone quiet since their last outreach, not calendar age) | unit + integration + live curl — ships disabled |
 | 07 | referral-campaign | ✅ Native | `referral-campaign` / WEBHOOK | Google Sheets → `EngineReferral`/`EngineReferralCode` | unit + integration + live curl |
 | 08 | feedback-collection | ✅ Native | `feedback-collection` / WEBHOOK | Google Sheets → `EngineFeedbackRequest` | unit + integration + live curl |
 | 09 | weekly-analytics-report | ✅ Native | `weekly-analytics-report` / CRON `0 9 * * 1` UTC | Google Sheets reads → live Postgres aggregation (`report.weeklyAnalytics`); **this batch replaced an earlier placeholder that only emitted an event with no report logic behind it — see the bug note in §3** | unit + integration + live curl (manual test-run → SUCCEEDED) |
@@ -165,21 +203,21 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 16 | pain-discovery-engine | **NOT PORTED** | — | n/a — needs a Reddit-fetch action | — |
 | 17 | manychat-comment-funnel | ✅ Native | `manychat-comment-funnel` / WEBHOOK | Google Sheets → `EngineSocialLead` (new model, distinct from `EngineLead` since a commenter may have no phone number yet) | unit + integration + live curl |
 | 18 | content-multiplication-engine | ✅ Native | `content-multiplication-engine` / WEBHOOK | Google Sheets content queue → `EngineContentDraft`; AI step uses the new `ai.complete` action (OpenAI/Groq, whichever is CONNECTED) | unit + integration (incl. a **labeled simulation** of a connected AI provider — no real OpenAI/Groq credentials exist anywhere in this project's test environments) + live curl (honest "not configured" skip, zero drafts fabricated) |
-| 19 | whatsapp-nurture-sequences | **NOT PORTED** | — | n/a — needs per-lead sequence-stage tracking (see §7) | — |
+| 19 | whatsapp-nurture-sequences | ✅ Native | `whatsapp-nurture-sequences` / CRON `0 8 * * *` UTC | Same action, run twice (VENDOR/BUYER tracks) via the new `EngineLead.leadType` field — a lead with no `leadType` set is never guessed at and is excluded from both | unit + integration + live curl — ships disabled |
 | 20 | ab-testing-engine | **NOT PORTED** | — | n/a — depends on 10/12 (published-post data) existing first | — |
 | 21 | social-proof-engine | ✅ Native | `social-proof-engine` / WEBHOOK | Same `ai.complete` + `EngineContentDraft` pipeline as 18, different prompt | unit + integration + live curl |
 | 22 | performance-analyst-agent | ✅ Native | `performance-analyst-agent` / CRON `30 9 * * 1` UTC | Google Sheets reads → same aggregation as 09, plus an `ai.complete` insights step (skipped honestly, figures still reported, if no AI provider is connected) | unit + integration + live curl (manual test-run → SUCCEEDED) |
 
-**Totals: 9 of 22 workflows (41%) have a native equivalent today — up from 5
-(23%) before this batch. The other 13 (59%) still depend on n8n to run.** The
+**Totals: 12 of 22 workflows (55%) have a native equivalent today — up from 9
+(41%) before this batch. The other 10 (45%) still depend on n8n to run.** The
 objective stated in the governing instructions — "after implementation,
 connecting external API credentials + configuring provider webhooks +
 enabling production settings should be the ONLY remaining integration work"
 — is **not yet achieved** for this repository as a whole, and must not be
-reported as achieved until the remaining 13 are either ported or the user
+reported as achieved until the remaining 10 are either ported or the user
 explicitly accepts them as out of scope.
 
-All 9 native workflows are seeded idempotently on server boot
+All 12 native workflows are seeded idempotently on server boot
 (`seedPortedWorkflows()` in `server.ts`, with an auto-upgrade path that
 publishes a new version when a seed's definition changes without mutating
 any already-published version — itself covered by an integration test).
@@ -191,17 +229,17 @@ Resend/WhatsApp/OpenAI/Groq credentials are configured anywhere in this
 project's environments, so every provider-dependent step correctly reports
 `not_configured` and fabricates nothing).
 
-### What's blocking the remaining 13 — concrete, not hand-waved
+**The 3 WhatsApp sequence workflows (05/06/19) ship with `enabled: false`**,
+unlike every earlier batch — this is a deliberate change from this batch
+onward: a CRON-triggered workflow that actually messages real phone numbers
+in a loop is a materially bigger blast radius than a single webhook-trigger
+action, so it is not auto-enabled just because it degrades honestly when
+unconfigured. An admin must explicitly enable it (via `POST
+/api/engine/workflows/:key/enable`, after confirming WhatsApp is CONNECTED
+with Meta-approved templates and running at least one manual test-run).
 
-- **05, 06, 19 (WhatsApp sequence workflows)** need a per-lead "which stage of
-  this sequence have they received" tracker (the n8n originals use
-  `splitInBatches` over a Sheets-queried list and write back a timestamp per
-  lead/per-stage). The engine's step model has no "for each item, run these
-  steps" construct — by design, see `definition.ts`'s step-type comment — so
-  this needs either a new step type or (preferred, no engine-format change)
-  a composite action that loops internally and persists per-stage progress
-  on `EngineLead` so a crash mid-run or a retry only sends to leads not yet
-  at that stage. Schema change required; not done this batch.
+### What's blocking the remaining 10 — concrete, not hand-waved
+
 - **10, 12 (social posting/scheduling)** need `buffer.post`/`x.post` actions
   calling the already-configurable Buffer/X providers. Not written yet —
   `PROVIDERS` in `modules/providers/definitions.ts` already has both, only
@@ -211,9 +249,9 @@ project's environments, so every provider-dependent step correctly reports
   trusting the payload, plus a GET-verification handshake — a different,
   stricter shape than the existing `/api/hooks/:workflowKey` webhook
   contract, which has no signature-verification step at all today.
-- **14 (autopilot controller)** is a cross-workflow daily summary; it is
-  mechanically simple once 05/06/10/12/13/19 exist (it just reads their
-  data), so porting it before them would either be hollow or duplicate work.
+- **14 (autopilot controller)** is a cross-workflow daily summary; 05/06/19
+  now exist, but it still mechanically depends on 10/12/13's data too, so
+  porting it before THOSE exist would be hollow or duplicate work.
 - **15 (viral intelligence)** needs an `apify.runActor` action; **16 (pain
   discovery)** needs a Reddit-fetch action restricted to Reddit's public API
   (never a generic URL — the engine's SSRF stance, §5, forbids that even for
@@ -328,18 +366,20 @@ handful of state-transition buttons) rather than a full graphical builder.
 
 ## 7. What "done" would require from here
 
-1. Port the remaining 13 workflows per §4's blocker list. In priority order:
-   `buffer.post`/`x.post` actions unlock 10 and 12; per-lead sequence-stage
-   tracking (a schema change) unlocks 05/06/19; an HMAC-verified inbound
-   webhook contract unlocks 13; an `apify.runActor` action unlocks 15; a
-   Reddit-fetch action unlocks 16; 14 and 20 become trivial once their
-   upstream workflows exist; 00/01/02 need a content-calendar
-   system-of-record and a Telegram-command-webhook integration.
+1. Port the remaining 10 workflows per §4's blocker list. In priority order:
+   an HMAC-verified inbound webhook contract unlocks 13; `buffer.post`/
+   `x.post` actions unlock 10 and 12; an `apify.runActor` action unlocks 15;
+   a Reddit-fetch action unlocks 16; 14 and 20 become non-hollow once 10/12/13
+   exist; 00/01/02 need a content-calendar system-of-record and a
+   Telegram-command-webhook integration.
 2. Add a native action that actually publishes an `APPROVED` content draft
    somewhere (Buffer/X/Meta) — today's Content Drafts review queue (§6) ends
    at "approved in the database."
 3. Close the test gaps listed in §3 (version-change-during-execution, a true
-   Redis-outage-and-recovery test, provider rate-limit simulation).
+   Redis-outage-and-recovery test, provider rate-limit simulation, a
+   documented decision on whether the WhatsApp sequences' one-stage-per-run
+   catch-up pacing is the wanted behavior for a lead reactivated after a long
+   pause, or whether it should fast-forward to the latest-due stage instead).
 4. Build the remaining Automation Centre screens listed in §6 (provider
    status, audit/permission-denied, dedicated queue/worker health).
 5. Run the full end-to-end acceptance scenario list (duplicate delivery,
@@ -350,3 +390,19 @@ handful of state-transition buttons) rather than a full graphical builder.
    provider connected, to earn the STAGING VERIFIED tier for any of the above
    — nothing in this document should be read as more than LOCALLY TESTED
    until that happens.
+
+## 8. Provider readiness report (honest, per provider)
+
+No provider below has ever been exercised against its real endpoint by this
+project — every "Connected" status an admin would see is possible but has
+never actually been earned in any environment this repo has run in. This is
+a readiness checklist, not a claim that anything is production-ready.
+
+| Provider | Native workflows that need it | Status in every environment so far | What "ready" requires |
+|---|---|---|---|
+| WhatsApp Cloud API (Meta) | 03, 04, 05, 06, 19 (13 once ported) | Never connected with real credentials. A real network call was made from this sandbox during this batch's live verification (see §3) and correctly failed with a DNS error (`ENOTFOUND graph.facebook.com`) — proving the failure path works, not that the provider works. | A real permanent access token + phone number ID in Integrations, Meta-approved templates for every `WELCOME_D*`/`REENGAGE_*`/`NURTURE_*` key actually used, `whatsappTemplatesApproved` ticked only after that approval is confirmed, and a real test-run watched to `SUCCEEDED` with an actual delivered message — only then should 05/06/19 be enabled. |
+| Telegram | Every workflow's team alert step | Never connected with a real bot token in any test here. Every alert step this batch correctly reported `not_configured`. | A real bot token + team chat id in Integrations, confirmed via the existing `/api/integrations` test-connection call. |
+| OpenAI / Groq | 18, 21, 22 (01 once ported) | Never connected. Every `ai.complete` call this batch and the last correctly reported `not_configured` (or, in integration tests, used a labeled simulation). | A real API key for one of the two in Integrations. |
+| Resend | 04, 07 | Never connected. | A real API key + a domain verified in Resend. |
+| Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 12 ported workflows (see §4's per-row notes); still the system of record for the 10 not yet ported. | N/A until those 10 are ported, at which point each one is individually replaced the same way, not reconnected. |
+| Buffer, X, Apify | 10, 12, 15 (not yet ported) | Never connected; no native action calls them yet. | Blocked on the actions themselves (§7.1), not just credentials. |

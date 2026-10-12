@@ -627,6 +627,16 @@ enum LeadStatus {
   DEAD
 }
 
+/// Which n8n-nurture-sequence track a lead belongs to (workflow 19's "VENDOR"/"BUYER" split).
+/// Defaults to UNKNOWN: the nurture sequence deliberately skips a lead until this is set
+/// explicitly — it never guesses, since sending the wrong track's template would be worse than
+/// not sending one at all.
+enum LeadType {
+  UNKNOWN
+  VENDOR
+  BUYER
+}
+
 model EngineLead {
   id             String     @id @default(cuid())
   name           String?
@@ -635,9 +645,15 @@ model EngineLead {
   source         String?
   market         String?
   status         LeadStatus @default(NEW)
+  leadType       LeadType   @default(UNKNOWN)
   whatsappOptIn  Boolean    @default(true)
   welcomedAt     DateTime?
   lastContactedAt DateTime?
+  /// Per-WhatsApp-sequence progress, e.g. {"welcome":{"stage":2,"lastSentAt":"..."}}. Read and
+  /// written exclusively by the whatsapp.runSequence action (workflows 05/06/19) — this is what
+  /// makes a re-run after a crash resume from exactly the leads not yet at their next stage,
+  /// without a dedicated "for each" step type in the engine (see docs/WORKFLOW_ENGINE.md §2).
+  sequenceState  Json       @default("{}")
   metadata       Json       @default("{}")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt

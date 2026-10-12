@@ -35,6 +35,11 @@ interface Seed {
   triggerType: "WEBHOOK" | "EVENT" | "CRON";
   triggerConfig: Record<string, unknown>;
   definition: Record<string, unknown>;
+  /** Default true (matches every earlier seed's behavior — those degrade honestly when a
+   * provider is unconfigured). Pass false for a workflow whose action set has NOT yet been
+   * exercised against a real provider anywhere (even "honest skip" behavior needs a human to
+   * flip it on deliberately) — see docs/WORKFLOW_ENGINE.md's provider-readiness section. */
+  enabled?: boolean;
 }
 
 const SEEDS: Seed[] = [
@@ -221,6 +226,96 @@ const SEEDS: Seed[] = [
       ],
     },
   },
+  {
+    key: "whatsapp-welcome-sequence",
+    name: "WhatsApp Welcome Sequence",
+    description: "Native replacement for n8n 05-whatsapp-welcome-sequence.json: runs daily at 09:00 UTC and sends the D1/D2/D3 welcome templates to opted-in leads as each becomes due, tracking per-lead progress so a lead is never sent the same stage twice. Disabled until WhatsApp is connected with Meta-approved templates AND this has been test-run successfully — see docs/WORKFLOW_ENGINE.md.",
+    category: "WHATSAPP",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 9 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        {
+          key: "run",
+          type: "action",
+          action: "whatsapp.runSequence",
+          input: {
+            sequenceKey: "welcome",
+            referenceField: "createdAt",
+            stages: [{ dayOffset: 1, templateKey: "WELCOME_D1" }, { dayOffset: 2, templateKey: "WELCOME_D2" }, { dayOffset: 3, templateKey: "WELCOME_D3" }],
+          },
+        },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "Welcome sequence: sent {{run.sent}}, skipped {{run.skippedLeads}}{{run.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
+  {
+    key: "whatsapp-engagement-followup",
+    name: "WhatsApp Engagement Follow-up",
+    description: "Native replacement for n8n 06-whatsapp-engagement-followup.json: runs daily at 10:00 UTC and re-engages leads who have gone quiet since their last contact (7/14/21 days), using the REENGAGE_7/14/21 templates. Disabled until WhatsApp is connected with Meta-approved templates AND this has been test-run successfully.",
+    category: "WHATSAPP",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 10 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        {
+          key: "run",
+          type: "action",
+          action: "whatsapp.runSequence",
+          input: {
+            sequenceKey: "engagement",
+            referenceField: "lastContactedAt",
+            stages: [{ dayOffset: 7, templateKey: "REENGAGE_7" }, { dayOffset: 14, templateKey: "REENGAGE_14" }, { dayOffset: 21, templateKey: "REENGAGE_21" }],
+          },
+        },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "Engagement follow-up: sent {{run.sent}}, skipped {{run.skippedLeads}}{{run.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
+  {
+    key: "whatsapp-nurture-sequences",
+    name: "WhatsApp Nurture Sequences",
+    description: "Native replacement for n8n 19-whatsapp-nurture-sequences.json: runs daily at 08:00 UTC and nurtures vendor leads (D1/D2/D3/D7/D14) and buyer leads (D1/D3/D5) on separate templates, since each lead's track is set explicitly via lead.upsert's leadType — a lead with no leadType set is never guessed at and is skipped by both runs. Disabled until WhatsApp is connected with Meta-approved templates AND this has been test-run successfully.",
+    category: "WHATSAPP",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 8 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        {
+          key: "vendor",
+          type: "action",
+          action: "whatsapp.runSequence",
+          input: {
+            sequenceKey: "nurture",
+            referenceField: "createdAt",
+            leadTypeFilter: "VENDOR",
+            stages: [
+              { dayOffset: 1, templateKey: "NURTURE_VENDOR_D1" }, { dayOffset: 2, templateKey: "NURTURE_VENDOR_D2" }, { dayOffset: 3, templateKey: "NURTURE_VENDOR_D3" },
+              { dayOffset: 7, templateKey: "NURTURE_VENDOR_D7" }, { dayOffset: 14, templateKey: "NURTURE_VENDOR_D14" },
+            ],
+          },
+        },
+        {
+          key: "buyer",
+          type: "action",
+          action: "whatsapp.runSequence",
+          input: {
+            sequenceKey: "nurture",
+            referenceField: "createdAt",
+            leadTypeFilter: "BUYER",
+            stages: [{ dayOffset: 1, templateKey: "NURTURE_BUYER_D1" }, { dayOffset: 3, templateKey: "NURTURE_BUYER_D3" }, { dayOffset: 5, templateKey: "NURTURE_BUYER_D5" }],
+          },
+        },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "Nurture sequences: vendor sent {{vendor.sent}}, buyer sent {{buyer.sent}}" }, onFailure: "continue" },
+      ],
+    },
+  },
 ];
 
 export async function seedPortedWorkflows(actor = "seed"): Promise<{ created: string[]; alreadyPresent: string[]; upgraded: string[] }> {
@@ -257,7 +352,7 @@ export async function seedPortedWorkflows(actor = "seed"): Promise<{ created: st
       data: {
         key: seed.key, name: seed.name, description: seed.description, category: seed.category,
         triggerType: seed.triggerType, triggerConfig: seed.triggerConfig as Prisma.InputJsonValue,
-        enabled: true, createdBy: actor,
+        enabled: seed.enabled ?? true, createdBy: actor,
       },
     });
     const version = await prisma.engineWorkflowVersion.create({
