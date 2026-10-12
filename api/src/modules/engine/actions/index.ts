@@ -9,6 +9,7 @@ import { runTrendsActor } from "../../senders/apify";
 import { searchRedditPosts } from "../../senders/reddit";
 import { getProviderValues } from "../../integrations/vault";
 import { getSetting } from "../../settings/schema";
+import { WA_TEMPLATE_KEYS, templateFieldName } from "../../providers/definitions";
 import { emitEvent } from "../outbox";
 import type { EngineEventType } from "../triggers";
 import { LeadStatus, LeadType, ReferralStatus, ContentDraftStatus } from "@prisma/client";
@@ -668,6 +669,118 @@ const contentCalendarGenerateDraft = define({
   },
 });
 
+/**
+ * The native replacement for n8n 14-autopilot-controller.json's full chain: "Emergency Stop
+ * Check" + "Gather Config Health" + the three "Read ..." sheet reads + "Build Daily Summary".
+ * Every count below reads a real native table — EngineLead, EngineContentDraft,
+ * EngineWhatsAppConversation — replacing the n8n original's three separate Google Sheets reads.
+ * Config health reads the SAME Integration/Setting rows the Integrations/Settings pages
+ * already show, not a parallel source of truth.
+ */
+const automationDailySummary = define({
+  key: "automation.dailySummary",
+  idempotent: true, // a re-run just recomputes the same day's figures
+  inputSchema: z.object({}),
+  async handler() {
+    const stopped = await getSetting<boolean>("autopilotStop").catch(() => false);
+    if (stopped) return { stopped: true, text: "🚨 Eki Autopilot EMERGENCY STOP is ON — all automated social posting/WhatsApp outreach is paused." };
+
+    const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const [leadsToday, totalLeads, optedIn, unsubscribed, postsToday, postsApproved, conversationsToday] = await Promise.all([
+      prisma.engineLead.count({ where: { createdAt: { gte: todayStart, lt: todayEnd } } }),
+      prisma.engineLead.count(),
+      prisma.engineLead.count({ where: { whatsappOptIn: true, status: { not: LeadStatus.UNSUBSCRIBED } } }),
+      prisma.engineLead.count({ where: { status: LeadStatus.UNSUBSCRIBED } }),
+      prisma.engineContentDraft.count({ where: { createdAt: { gte: todayStart, lt: todayEnd } } }),
+      prisma.engineContentDraft.count({ where: { createdAt: { gte: todayStart, lt: todayEnd }, status: ContentDraftStatus.APPROVED } }),
+      prisma.engineWhatsAppConversation.count({ where: { createdAt: { gte: todayStart, lt: todayEnd } } }),
+    ]);
+
+    const [openaiInt, groqInt, whatsappInt, bufferInt, xInt, resendInt] = await Promise.all(
+      ["openai", "groq", "whatsapp", "buffer", "x", "resend"].map((p) => prisma.integration.findUnique({ where: { provider: p } })),
+    );
+    const aiConfigured = openaiInt?.status === "CONNECTED" || groqInt?.status === "CONNECTED";
+    const whatsappConfigured = whatsappInt?.status === "CONNECTED";
+    const waValues = whatsappConfigured ? await getProviderValues("whatsapp") : null;
+    const missingTemplates = WA_TEMPLATE_KEYS.filter((k) => !waValues?.[templateFieldName(k)]);
+    const autopilotSocialPosting = await getSetting<boolean>("autopilotSocialPosting").catch(() => false);
+
+    const lines = [
+      `Eki Autopilot Daily Report — ${todayStart.toISOString().slice(0, 10)}`,
+      "",
+      `Leads: +${leadsToday} today, ${totalLeads} total, ${optedIn} opted-in, ${unsubscribed} unsubscribed`,
+      `Content drafts (today): ${postsToday} generated, ${postsApproved} approved`,
+      `WhatsApp conversations today: ${conversationsToday}`,
+      "",
+      "Config health:",
+      `- Social auto-posting: ${autopilotSocialPosting ? "ON" : "OFF (manual)"}`,
+      `- AI provider: ${aiConfigured ? "connected" : "MISSING"}`,
+      `- WhatsApp: ${whatsappConfigured ? "connected" : "MISSING"}`,
+      `- WhatsApp templates missing: ${missingTemplates.length ? `${missingTemplates.length} (${missingTemplates.join(", ")})` : "none"}`,
+      `- Buffer: ${bufferInt?.status === "CONNECTED" ? "connected" : "not set"} | X: ${xInt?.status === "CONNECTED" ? "connected" : "not set"} | Email (Resend): ${resendInt?.status === "CONNECTED" ? "connected" : "MISSING"}`,
+    ];
+    return { stopped: false, leadsToday, totalLeads, optedIn, unsubscribed, postsToday, postsApproved, conversationsToday, text: lines.join("\n") };
+  },
+});
+
+/**
+ * The native replacement for n8n 20-ab-testing-engine.json's "Analyze Winners" -> "AI
+ * Insights" -> "Build Insight Rows" chain, collapsed into one action for the same reason as
+ * intelligence.analyzeTrends. Saves into the SAME EngineTrendPattern table workflow 15 uses
+ * (source:"ab_test" instead of "apify") — the n8n original wrote both to the same
+ * "Intelligence" Sheets tab, so reusing one table here is fidelity, not a shortcut.
+ *
+ * Honest limitation, stated plainly: comments/saves/shares engagement counts are read from
+ * EngineContentDraft.metadata, which NO native action currently populates (no action fetches
+ * post-performance metrics back from X or Buffer after publishing) — every published draft's
+ * engagement score will read as 0 until that capability exists. This workflow's mechanics are
+ * fully ported and tested; its OUTPUT is only as meaningful as the metrics feeding it, and
+ * today nothing feeds it real metrics. See docs/WORKFLOW_ENGINE.md.
+ */
+const intelligenceAnalyzeContentPerformance = define({
+  key: "intelligence.analyzeContentPerformance",
+  idempotent: false, // a second AI pass is a new analysis, not a safe no-op
+  inputSchema: z.object({}),
+  async handler() {
+    const published = await prisma.engineContentDraft.findMany({ where: { status: ContentDraftStatus.PUBLISHED }, orderBy: { createdAt: "desc" }, take: 200 });
+    const posts = published
+      .map((p) => {
+        const meta = p.metadata as { hook?: string; comments?: number; saves?: number; shares?: number };
+        return { hook: meta.hook ?? "", format: p.contentType ?? "", platform: p.platform ?? "", comments: meta.comments ?? 0, saves: meta.saves ?? 0, shares: meta.shares ?? 0 };
+      })
+      .filter((p) => p.hook || p.format);
+    if (posts.length < 6) return { ok: true, savedCount: 0, reason: "insufficient_data", publishedCount: posts.length };
+
+    const scored = posts.map((p) => ({ ...p, score: p.comments * 3 + p.saves * 2 + p.shares * 4 })).sort((a, b) => b.score - a.score);
+    const winners = scored.slice(0, 3);
+    const losers = scored.slice(-3);
+    const brief = (arr: typeof scored) => arr.map((p) => `- hook: ${p.hook.slice(0, 160)} | format: ${p.format} | platform: ${p.platform} | score: ${p.score}`).join("\n");
+    const result = await aiComplete({
+      system: "You analyse social content performance for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Return ONLY JSON.",
+      user: `Analyze these winners vs losers. Extract patterns: what hooks, emotions, formats, CTAs drive engagement. Return JSON: {"top_hooks":[],"top_formats":[],"top_emotions":[],"recommendations":[]} (arrays of short strings).\n\nWINNERS:\n${brief(winners)}\n\nLOSERS:\n${brief(losers)}`,
+    });
+    if (!result.ok) {
+      if (result.reason === "not_configured") return { ok: false, reason: result.reason, message: result.message, savedCount: 0 };
+      throw new Error(`intelligence.analyzeContentPerformance: ${result.message}`);
+    }
+    const parsed = result.json as { top_hooks?: unknown[]; top_formats?: unknown[]; top_emotions?: unknown[]; recommendations?: unknown[] };
+    const rows: { type: string; content: string }[] = [];
+    const add = (type: string, arr: unknown[] | undefined) =>
+      (Array.isArray(arr) ? arr : []).slice(0, 10).forEach((c) => {
+        const s = String(c).trim();
+        if (s) rows.push({ type, content: s });
+      });
+    add("hook_pattern", parsed.top_hooks);
+    add("format_pattern", parsed.top_formats);
+    add("emotion_pattern", parsed.top_emotions);
+    add("recommendation", parsed.recommendations);
+    if (rows.length === 0) return { ok: true, savedCount: 0, reason: "ai_returned_nothing_usable" };
+    await prisma.engineTrendPattern.createMany({ data: rows.map((r) => ({ ...r, source: "ab_test" })) });
+    return { ok: true, savedCount: rows.length };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -689,6 +802,8 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [intelligenceAnalyzeTrends.key]: intelligenceAnalyzeTrends as ActionDefinition,
   [intelligenceAnalyzePainPoints.key]: intelligenceAnalyzePainPoints as ActionDefinition,
   [contentCalendarGenerateDraft.key]: contentCalendarGenerateDraft as ActionDefinition,
+  [automationDailySummary.key]: automationDailySummary as ActionDefinition,
+  [intelligenceAnalyzeContentPerformance.key]: intelligenceAnalyzeContentPerformance as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {

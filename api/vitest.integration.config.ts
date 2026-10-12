@@ -12,6 +12,7 @@ export default defineConfig({
       "test/engine-social-posting-integration.test.ts",
       "test/engine-intelligence-integration.test.ts",
       "test/engine-content-calendar-integration.test.ts",
+      "test/engine-autopilot-controller-integration.test.ts",
     ],
     environment: "node",
     testTimeout: 30_000,

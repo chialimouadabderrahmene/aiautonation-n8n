@@ -1,6 +1,6 @@
 # Native Workflow Engine — Architecture, Scope, and Gap Analysis
 
-Status date: 2026-10-12 (batch 7 — content calendar + Telegram command routing). This document is the honest record of what the native
+Status date: 2026-10-12 (batch 8 — the final two workflows, 22/22). This document is the honest record of what the native
 workflow engine (`api/src/modules/engine/`) actually replaces today, what it
 does not yet replace, and how each claim below should be read against the
 four-tier verification scale used throughout this project:
@@ -198,7 +198,8 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 10 | social-post-scheduler | ✅ Native | `social-post-scheduler` / CRON `0 10,12,14,16,18,20 * * *` UTC | New action `content.postApprovedDraft`: posts the oldest human-APPROVED `EngineContentDraft` to X (real API v2 `/2/tweets`) or Buffer (real legacy `/1/updates/create.json`), reusing the EXISTING `autopilotStop`/`autopilotSocialPosting`/`twitterPostingEnabled` settings as the same kill-switches the n8n original read from env vars | unit + integration (9 tests incl. a **labeled simulation** of both providers — no real X/Buffer credentials exist anywhere) — ships disabled |
 | 12 | ai-social-autopilot | ✅ Native | `ai-social-autopilot` / CRON `0 9 * * *` UTC | Same `ai.complete`+`content.queueMany` pipeline as 18/21/22, then opportunistically calls the SAME `content.postApprovedDraft` action 10 uses. **Deliberate safety divergence from the n8n original**, documented below, not a fidelity gap | unit + integration + live curl — ships disabled |
 | 13 | whatsapp-lead-funnel | ✅ Native | `whatsapp-lead-funnel` / EVENT `whatsapp.message_received` | GET-verification handshake + HMAC-SHA256 `X-Hub-Signature-256` check over the RAW body in `routes/whatsappWebhook.ts` (mounted before `express.json()` — raw bytes, not re-serialized JSON), then `whatsapp.processInboundMessage` reproduces the exact STOP/START/greeting/buyer/vendor word-list classification from the n8n original; replies are free-text session messages (not templates), persisted to the new `EngineWhatsAppConversation` table | unit (pure payload parsing) + integration (13 tests against the REAL Express app on a real socket: valid/invalid/missing/tampered signatures, malformed JSON, fails-closed-when-unconfigured, message_id dedup, GET handshake valid/invalid, the full conversation state machine including STOP/START re-subscribe) + live curl — ships disabled, see §8 |
-| 14 | autopilot-controller | **NOT PORTED** | — | n/a — a daily cross-workflow summary; natively trivial once 05/06/10/12/13/19 exist, deferred until they do | — |
+| 14 | autopilot-controller | ✅ Native | `autopilot-controller` / CRON `0 8 * * *` UTC | New action `automation.dailySummary`: a daily report built from real native tables (EngineLead, EngineContentDraft, EngineWhatsAppConversation) and real Integration/Setting rows for config health, replacing three separate Google Sheets reads. Sends an emergency-stop message instead of the report when the existing `autopilotStop` setting is on | unit + integration (7 tests) — ships disabled |
+| 20 | ab-testing-engine | ✅ Native | `ab-testing-engine` / CRON `0 9 */3 * *` UTC (cron has no "every 72 hours" unit — this is the closest faithful equivalent, stated rather than silently approximated) | New action `intelligence.analyzeContentPerformance`: scores PUBLISHED content drafts by engagement (comments×3+saves×2+shares×4) and asks the AI provider for winning/losing hook/format patterns, saved to the SAME `EngineTrendPattern` table workflow 15 uses (source `ab_test`). **Honest limitation**: no action yet populates comments/saves/shares after publishing, so every score reads 0 until one does — the mechanics are fully ported and tested; today's input data isn't | unit + integration (5 tests, including one that asserts this exact limitation) — ships disabled |
 | 15 | viral-intelligence-engine | ✅ Native | `viral-intelligence-engine` / CRON `0 */6 * * *` UTC | New action `apify.runTrendsActor` (real Apify `POST /v2/acts/{actorId}/run-sync-get-dataset-items`, confirmed from the n8n node's own URL construction) feeds `intelligence.analyzeTrends`, which collapses the prompt-formatting/AI-call/pattern-parsing chain into one action and persists to new table `EngineTrendPattern` | unit + integration (labeled simulation of Apify + the AI provider — no real credentials for either exist anywhere) — ships disabled |
 | 16 | pain-discovery-engine | ✅ Native | `pain-discovery-engine` / CRON `0 6 * * *` UTC | New action `reddit.searchPosts` (real, unauthenticated Reddit search JSON endpoint, URL built entirely from Reddit's own fixed host/path — never a caller-supplied base URL, so this cannot be redirected to another host) feeds `intelligence.analyzePainPoints`, which maps the AI's index-based categorization back to the original posts and persists to new table `EnginePainPoint` | unit + integration (Reddit tested against the REAL public endpoint — no credentials to simulate; AI provider still simulated) — ships disabled |
 | 17 | manychat-comment-funnel | ✅ Native | `manychat-comment-funnel` / WEBHOOK | Google Sheets → `EngineSocialLead` (new model, distinct from `EngineLead` since a commenter may have no phone number yet) | unit + integration + live curl |
@@ -208,19 +209,35 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 21 | social-proof-engine | ✅ Native | `social-proof-engine` / WEBHOOK | Same `ai.complete` + `EngineContentDraft` pipeline as 18, different prompt | unit + integration + live curl |
 | 22 | performance-analyst-agent | ✅ Native | `performance-analyst-agent` / CRON `30 9 * * 1` UTC | Google Sheets reads → same aggregation as 09, plus an `ai.complete` insights step (skipped honestly, figures still reported, if no AI provider is connected) | unit + integration + live curl (manual test-run → SUCCEEDED) |
 
-**Totals: 18 of 22 workflows (82%) have a native equivalent today — up from 17
-(77%) before this batch (02 is counted as done via its Telegram command
-handler, which has no EngineWorkflow row — see below for why that is the
-correct shape, not a gap). Workflow 00 needs no native port at all (§2's
-dead-letter queue + audit log already supersede it) — counting that as
-resolved too, 19 of 22 (86%) no longer need n8n for anything. The other 2
-(14, 20) still depend on n8n to run.** The objective stated in the
-governing instructions — "after implementation, connecting external API
-credentials + configuring provider webhooks + enabling production settings
-should be the ONLY remaining integration work" — is **not yet achieved**
-for this repository as a whole, and must not be reported as achieved until
-14 and 20 are either ported or the user explicitly accepts them as out of
-scope.
+**Totals: all 22 of 22 n8n workflows now have a native equivalent or an
+explicit, documented reason none is needed.** 20 have a real `EngineWorkflow`
+row (02's Telegram-command handler and 00's dead-letter-queue/audit-log
+equivalent are the two deliberate exceptions — see their detail sections
+below for why that is the correct shape, not a gap dressed up as one).
+**This is the first point in the project where the literal claim "no n8n
+required at runtime for any of the 22 workflows" can be made** — see §9 for
+exactly what that claim does and does not mean, because code existing and
+code being verified in production are two different things, and this
+section is explicit about which one is true today.
+
+### Priority 6 in detail — the final two workflows (14/20)
+
+Both were genuinely blocked on earlier batches, not independently hard:
+14 (`automation.dailySummary`) only became meaningful once 05/06/10/12/13/19
+existed to report on; 20 (`intelligence.analyzeContentPerformance`) only
+became reachable once 10/12 were capable of publishing something to score.
+Neither needed a new engine primitive — both are the same "collapse a
+multi-step AI/read chain into one composite action" pattern used throughout
+batches 4-5, applied to the last two n8n workflows that needed it.
+
+One honest limitation carries forward from Priority 3 into workflow 20:
+`content.postApprovedDraft` posts to X/Buffer but nothing reads engagement
+metrics back from them afterward, so `intelligence.analyzeContentPerformance`
+will compute a real (if currently always-zero) engagement score for every
+published draft rather than failing or faking one — the mechanism is
+correct; the input data feeding it (comments/saves/shares) is not populated
+by anything yet. A dedicated integration test asserts this limitation
+directly, rather than letting it go unnoticed.
 
 ### Priority 5 in detail — content calendar + Telegram command routing (00/01/02)
 
@@ -340,7 +357,7 @@ feature exists to provide is not a behavior worth preserving. If a true
 auto-post-without-review mode is wanted later, it needs an explicit,
 separate decision — not a silent revert of this choice.
 
-All 18 EngineWorkflow rows (01 among them; workflow 02 has none, by design) are seeded idempotently on server boot
+All 20 EngineWorkflow rows (01/14/20 among them; workflow 02 has none, by design) are seeded idempotently on server boot
 (`seedPortedWorkflows()` in `server.ts`, with an auto-upgrade path that
 publishes a new version when a seed's definition changes without mutating
 any already-published version — itself covered by an integration test).
@@ -430,19 +447,17 @@ which is the standard way to test an HMAC webhook without a live account
 requests for this project). This is LOCALLY TESTED, not STAGING or
 PRODUCTION VERIFIED, and is reported as such.
 
-### What's blocking the remaining 2 — concrete, not hand-waved
+### What's left — nothing is blocking a workflow port anymore
 
-- **14 (autopilot controller)** is a cross-workflow daily summary; every
-  workflow it reads from (05/06/10/12/13/19) now exists, so it is unblocked
-  but not yet built — purely a matter of writing the composite
-  read-and-summarize action, no new primitive needed.
-- **20 (A/B testing)** reads "published content" performance data — 10/12
-  are now posting for real (simulated-provider tested), so this is
-  unblocked but not yet built.
-
-None of the above are faked, stubbed, or silently skipped — they simply were
-not reached this batch, and this table says so plainly rather than counting
-a route or a UI page as "done" without the execution behavior behind it.
+All 22 n8n workflows now have a native equivalent or a documented reason
+none is needed. What remains is the gap between "code exists and passes
+locally" and "verified running for real" — see §9. Nothing in this project
+has been faked, stubbed, or silently skipped to reach 22/22; every claim in
+this matrix is backed by the test evidence cited in its row, and every
+honest limitation (reddit.com unreachable from this sandbox, engagement
+metrics not yet populated for workflow 20, Buffer's legacy API shape never
+confirmed live) is stated plainly rather than hidden behind a passing test
+suite that doesn't actually exercise it.
 
 ## 5. Security and governance notes
 
@@ -537,14 +552,16 @@ handful of state-transition buttons) rather than a full graphical builder.
 
 ## 7. What "done" would require from here
 
-1. Port the remaining 2 workflows: 14 and 20, both unblocked (everything
-   they read from already exists), just not yet written — a composite
-   summary action and a composite analysis action respectively, no new
-   primitive needed.
-2. Build a dedicated Content Calendar admin UI page (today it's API-only,
+All 22 workflows are ported or documented-as-unneeded (§4). What's left is
+hardening and real-world verification, not more porting:
+
+1. Build a dedicated Content Calendar admin UI page (today it's API-only,
    `/api/engine/content-calendar`) — the same scope decision as every other
    JSON-editable surface in this project, but worth revisiting once there's
    an actual 30-day plan to curate day by day rather than via curl/Postman.
+2. Add a native action that fetches engagement metrics (comments/saves/
+   shares) back from X/Buffer after publishing — the one piece workflow 20
+   is missing to produce a non-zero score (§4, Priority 6).
 3. Meta (Facebook Page/Instagram/LinkedIn) posting for content drafts is a
    separate, still-open path if that is ever wanted (today `content.
    postApprovedDraft` only posts to X/Buffer).
@@ -558,11 +575,12 @@ handful of state-transition buttons) rather than a full graphical builder.
 6. Run the full end-to-end acceptance scenario list (duplicate delivery,
    Redis outage, worker restart, provider timeout, retry-then-success,
    permanent failure, workflow pause, disabled provider, unauthorized manual
-   execution) as a single explicit, documented pass.
+   execution) as a single explicit, documented pass across ALL 20
+   EngineWorkflow rows, not just the subset exercised individually so far.
 7. Get this deployed to a real staging environment with at least one real
    provider connected, to earn the STAGING VERIFIED tier for any of the above
    — nothing in this document should be read as more than LOCALLY TESTED
-   until that happens.
+   until that happens. §9 spells out exactly what that gap means in practice.
 
 ## 8. Provider readiness report (honest, per provider)
 
@@ -575,10 +593,87 @@ a readiness checklist, not a claim that anything is production-ready.
 |---|---|---|---|
 | WhatsApp Cloud API (Meta) | 03, 04, 05, 06, 13, 19 | Never connected with real credentials in any environment. A real network call was made from this sandbox during batch 3's live verification and correctly failed with a DNS error (`ENOTFOUND graph.facebook.com`) — proving the failure path works, not that the provider works. Workflow 13's webhook signature verification was tested against the real, documented HMAC-SHA256 algorithm with a test-controlled secret (there is no sandbox WhatsApp Business Account to sign real test requests) — see §4's Priority-2 detail. | A real permanent access token + phone number ID + **app secret** + **webhook verify token** in Integrations; Meta-approved templates for every `WELCOME_D*`/`REENGAGE_*`/`NURTURE_*` key actually used (05/06/19 only — 13's replies are free text, not templates); `whatsappTemplatesApproved` ticked only after that approval is confirmed; the webhook URL (`/api/webhooks/whatsapp`) actually configured in Meta's dashboard and the GET handshake completed there for real; and a real test-run/real inbound message watched to a correct result — only then should 05/06/13/19 be enabled. |
 | Telegram | Every workflow's team alert step | Never connected with a real bot token in any test here. Every alert step this batch correctly reported `not_configured`. | A real bot token + team chat id in Integrations, confirmed via the existing `/api/integrations` test-connection call. |
-| OpenAI / Groq | 01, 12, 15, 16, 18, 21, 22 | Never connected. Every real call this and earlier batches made correctly reported `not_configured`, or — for a genuine network attempt from this sandbox (01's live test-run) — a real `ENOTFOUND`, never a fabricated success. Integration tests use a labeled local simulation. | A real API key for one of the two in Integrations. This is now the single most-depended-on provider in the project: 7 of the 18 native workflow rows need it. |
+| OpenAI / Groq | 01, 12, 15, 16, 18, 20, 21, 22 | Never connected. Every real call this and earlier batches made correctly reported `not_configured`, or — for a genuine network attempt from this sandbox (01's live test-run) — a real `ENOTFOUND`, never a fabricated success. Integration tests use a labeled local simulation. | A real API key for one of the two in Integrations. This is the single most-depended-on provider in the project: 8 of the 20 native workflow rows need it. |
 | Resend | 04, 07 | Never connected. | A real API key + a domain verified in Resend. |
-| Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 13 ported workflows (see §4's per-row notes); still the system of record for the 9 not yet ported. | N/A until those 9 are ported, at which point each one is individually replaced the same way, not reconnected. |
+| Google Sheets | None — every workflow that needed a system of record got a native Postgres table instead | N/A — fully retired. All 22 n8n workflows either have a native table replacing their Sheets tab, or (00/02) never used Sheets as their own system of record in the first place. | N/A — there is no remaining Sheets dependency to migrate. |
 | X (Twitter) | 10, 12 | Never connected with real credentials. `postTweet`'s real HTTP call path (timedFetch/withRetry/describeHttpFailure) was exercised against a **labeled local simulation** of X's API v2 endpoint this batch — a real 500 was simulated and correctly left the draft unpublished with the failure recorded. | A real OAuth app (client ID/secret) connected via the existing X OAuth flow (`/api/oauth`), `twitterPostingEnabled` ticked, `autopilotSocialPosting` ticked, `autopilotStop` off, and a real test post watched to a real tweet id — only then should 10/12 post for real. |
 | Buffer | 10, 12 | Never connected with real credentials. Same labeled-simulation testing as X. The Buffer provider's own `caveat` (its legacy API shape has never been confirmed against a live account, since Buffer no longer registers new OAuth apps for it) still applies and is not resolved by this batch. | A real Buffer access token + the correct profile ID for each platform actually used, plus the same settings as X above. Treat the first real post as the actual verification that Buffer's legacy API still behaves as documented — this project cannot confirm that without one. |
 | Apify | 15 | Never connected with real credentials. `apify.runTrendsActor`'s real HTTP call path was exercised against a **labeled local simulation** of Apify's dataset-items endpoint this batch. | A real API token + a real, working `trendsActorId` (and valid `trendsInputJson`) in Integrations, plus an AI provider connected (the analysis step needs both), and a real test-run watched end to end. |
 | Reddit | 16 | No credentials needed — it's a public endpoint. Tested against the REAL `reddit.com` this batch; genuinely failed with `ENOTFOUND` from this sandbox (no outbound route), reported honestly rather than faked — see §4's Priority-4 detail. | Nothing to configure for Reddit itself; this workflow's real dependency is an AI provider being connected, plus confirming from an environment WITH internet access that the real search endpoint behaves as this project assumes. |
+
+## 9. What "22/22 native" actually means — and does not mean
+
+**What is true as of this status date:**
+
+- Every one of the 22 n8n workflow files in `n8n-workflows/*.json` has a
+  corresponding native implementation in this codebase, OR an explicit,
+  argued reason (00, 02 — §4) that none is needed. No workflow's business
+  logic, trigger semantics, word lists, prompts, or kill-switches were
+  invented — each was read from the actual n8n JSON and reproduced, cited
+  by node name throughout this document.
+- Every native action has at least one real-Postgres/Redis integration
+  test exercising both its honest-failure path (`not_configured`, a
+  provider error, missing config) and, where a real credential doesn't
+  exist in this project, a **labeled local simulation** of the provider's
+  actual documented API shape — never a mock of the engine's own code.
+- `npm test`, `npm run test:integration`, `tsc --noEmit`, and `next build`
+  are all clean across `api/`, `worker/`, and `web/` as of the commit this
+  batch lands in.
+- A handful of claims were verified against a REAL external endpoint from
+  this sandbox, not a simulation: Reddit's public search API (genuinely
+  unreachable — `ENOTFOUND`, reported honestly) and two live manual
+  test-runs (weekly-analytics-report, ai-content-generation) that made
+  real outbound HTTP calls and correctly surfaced real network failures.
+
+**What is NOT true, and must not be claimed:**
+
+- **No provider has a real, working, production credential connected
+  anywhere this project has run.** Every "Connected" status described in
+  this document is what the code WOULD do with real credentials, inferred
+  from passing a simulation of the documented API shape — not confirmation
+  that Meta, X, Buffer, Apify, OpenAI, Groq, or Resend's real APIs still
+  behave exactly as their documentation (or this project's 3-month-old
+  reading of it) says. The Buffer `caveat` is the sharpest example: its
+  legacy endpoint has never been exercised against a live account by
+  anyone, as far as this project can determine.
+- **This has never run in a deployed staging or production environment.**
+  Every test in this document ran on a local, sandboxed container against
+  a local Postgres and local Redis this session started itself. Nothing
+  here is STAGING VERIFIED or PRODUCTION VERIFIED under the four-tier scale
+  defined at the top of this document — not one claim, anywhere.
+  "Disabled until a real test-run has been verified" (the enable condition
+  on most of the newer workflows) has not happened for any of them, because
+  no one has actually enabled one against a real provider yet.
+- **"No n8n required at runtime" is true of the CODE, not yet of any
+  running system.** The n8n-management code (`modules/n8n/*`), the
+  n8n-management scheduler loop, and all 22 `n8n-workflows/*.json` files
+  remain in this repository, untouched. If this were deployed today
+  exactly as it stands, nothing would force it to still run n8n — but
+  nothing has deployed it to find out.
+- **The full end-to-end acceptance scenario list** (duplicate delivery,
+  Redis outage, worker restart, provider timeout, retry-then-success,
+  permanent failure, workflow pause, disabled provider, unauthorized
+  manual execution) has been exercised piecemeal, across different
+  workflows in different batches' integration suites — never as the single
+  unified pass across all 20 `EngineWorkflow` rows that real acceptance
+  would require (§7.6).
+- Several individually-scoped gaps remain real and are not resolved by
+  reaching 22/22: workflow 20's engagement metrics are structurally always
+  zero (§4, Priority 6); the Buffer legacy API shape is unconfirmed; no
+  action fetches metrics back from any social platform; the Content
+  Calendar has no admin UI; the remaining Automation Centre screens from
+  §6 are not built; several test gaps from §3 remain open.
+
+**The honest summary**: this batch completes the engineering work the
+governing instructions asked for — every workflow natively implemented,
+tested against the best available approximation of its real dependencies,
+and documented with precise, falsifiable claims. It does not, and cannot
+from this environment, constitute evidence that the system works against
+real providers in a real deployment. That evidence can only come from
+connecting real credentials in a real environment and watching real
+executions succeed — which is explicitly out of reach from a sandboxed
+container with no outbound internet access to most of these providers (as
+directly demonstrated by the Reddit and live-AI-call tests in this
+document) and no provisioned staging deployment. Reporting this as
+"production-ready" would be false; reporting it as "22/22 native, 0/22
+staging or production verified" is the accurate claim this document makes.

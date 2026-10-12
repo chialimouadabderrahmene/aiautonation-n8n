@@ -434,6 +434,38 @@ const SEEDS: Seed[] = [
       ],
     },
   },
+  {
+    key: "autopilot-controller",
+    name: "Autopilot Controller",
+    description: "Native replacement for n8n 14-autopilot-controller.json: runs daily at 08:00 UTC and sends the team a daily report (new leads, content drafts generated/approved, WhatsApp conversations, and config health for every connected provider) built entirely from real native tables — EngineLead, EngineContentDraft, EngineWhatsAppConversation — replacing the n8n original's three separate Google Sheets reads. If the existing autopilotStop emergency setting is on, sends an emergency alert instead of the report. Disabled until Telegram is connected and a real test-run has been verified.",
+    category: "REPORTING",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 8 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "summary", type: "action", action: "automation.dailySummary", input: {} },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "{{summary.text}}" }, onFailure: "continue" },
+      ],
+    },
+  },
+  {
+    key: "ab-testing-engine",
+    name: "A/B Testing Engine",
+    description: "Native replacement for n8n 20-ab-testing-engine.json: runs roughly every 3 days (cron has no direct '72 hours' unit, unlike n8n's interval trigger — '0 9 */3 * *' is the closest faithful equivalent, noted here rather than silently approximated), compares the engagement scores of PUBLISHED content drafts (comments*3 + saves*2 + shares*4, read from EngineContentDraft.metadata — see the honest limitation noted in the action's own doc comment: no native action yet fetches those metrics back from X/Buffer, so every score reads 0 until one does), asks the connected AI provider to extract winning/losing hook and format patterns, and saves them to the SAME EngineTrendPattern table workflow 15 uses (source:\"ab_test\"). Needs at least 6 published drafts to run at all — the same floor the n8n original enforced. Disabled until an AI provider is connected and a real test-run has been verified.",
+    category: "AI",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 9 */3 * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "analyze", type: "action", action: "intelligence.analyzeContentPerformance", input: {} },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "A/B Testing Engine saved {{analyze.savedCount}} pattern(s){{analyze.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
 ];
 
 export async function seedPortedWorkflows(actor = "seed"): Promise<{ created: string[]; alreadyPresent: string[]; upgraded: string[] }> {
