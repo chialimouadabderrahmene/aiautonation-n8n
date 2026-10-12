@@ -332,6 +332,50 @@ const SEEDS: Seed[] = [
       ],
     },
   },
+  {
+    key: "social-post-scheduler",
+    name: "Social Post Scheduler",
+    description: "Native replacement for n8n 10-social-post-scheduler.json: runs every 2 hours (10:00-20:00 UTC) and posts the oldest human-APPROVED content draft to its platform (X or Buffer), oldest first. Never posts a draft the content-drafts review queue has not explicitly approved, and never marks a draft PUBLISHED until the provider's own response confirms it (a real tweet id, or Buffer success:true). Gated by the existing autopilotStop/autopilotSocialPosting/twitterPostingEnabled settings. Disabled until X or Buffer is connected, posting is enabled in Settings, AND a real test post has been verified end to end.",
+    category: "SOCIAL",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 10,12,14,16,18,20 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "post", type: "action", action: "content.postApprovedDraft", input: {} },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "Social Post Scheduler: {{post.posted}} (draft {{post.draftId}}, via {{post.publishedVia}}){{post.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
+  {
+    key: "ai-social-autopilot",
+    name: "AI Social Autopilot",
+    description: "Native replacement for n8n 12-ai-social-autopilot.json: runs daily at 09:00 UTC, asks the connected AI provider to draft a social post, and queues it for human review — a deliberate, documented safety difference from the n8n original, which could self-approve a post via its own AI \"safety check\" step with no human in the loop. This native version NEVER auto-posts anything a human has not explicitly approved in the Content Drafts queue; it then opportunistically tries to post whatever IS already approved (which may be from an earlier run), via the same content.postApprovedDraft action social-post-scheduler uses — one posting pathway, not two. Disabled until an AI provider and X/Buffer are connected AND posting is enabled in Settings.",
+    category: "SOCIAL",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 9 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        {
+          key: "generate",
+          type: "action",
+          action: "ai.complete",
+          input: {
+            system:
+              'You write one daily social media post for a product marketing team promoting a real app. Return ONLY JSON: {"posts":[{"platform":"instagram|x|linkedin","contentType":"caption","body":"...","hashtags":["#..."]}]}. Never invent a statistic, price, or claim not given to you.',
+            user: "Brand: Eki — a marketplace connecting African foodstuff vendors with buyers worldwide.",
+          },
+        },
+        { key: "generated", type: "condition", condition: { path: "generate.ok", op: "eq", value: true }, onFalse: "skip_remaining" },
+        { key: "queue", type: "action", action: "content.queueMany", input: { source: "ai-social-autopilot", drafts: "{{generate.json.posts}}" } },
+        { key: "post", type: "action", action: "content.postApprovedDraft", input: {}, onFailure: "continue" },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "AI Social Autopilot queued {{queue.count}} draft(s); post attempt: {{post.posted}}{{post.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
 ];
 
 export async function seedPortedWorkflows(actor = "seed"): Promise<{ created: string[]; alreadyPresent: string[]; upgraded: string[] }> {

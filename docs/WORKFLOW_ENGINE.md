@@ -1,6 +1,6 @@
 # Native Workflow Engine — Architecture, Scope, and Gap Analysis
 
-Status date: 2026-10-12 (batch 4 — WhatsApp lead funnel webhook security). This document is the honest record of what the native
+Status date: 2026-10-12 (batch 5 — social posting, Buffer/X). This document is the honest record of what the native
 workflow engine (`api/src/modules/engine/`) actually replaces today, what it
 does not yet replace, and how each claim below should be read against the
 four-tier verification scale used throughout this project:
@@ -195,8 +195,8 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 07 | referral-campaign | ✅ Native | `referral-campaign` / WEBHOOK | Google Sheets → `EngineReferral`/`EngineReferralCode` | unit + integration + live curl |
 | 08 | feedback-collection | ✅ Native | `feedback-collection` / WEBHOOK | Google Sheets → `EngineFeedbackRequest` | unit + integration + live curl |
 | 09 | weekly-analytics-report | ✅ Native | `weekly-analytics-report` / CRON `0 9 * * 1` UTC | Google Sheets reads → live Postgres aggregation (`report.weeklyAnalytics`); **this batch replaced an earlier placeholder that only emitted an event with no report logic behind it — see the bug note in §3** | unit + integration + live curl (manual test-run → SUCCEEDED) |
-| 10 | social-post-scheduler | **NOT PORTED** | — | n/a — needs `buffer`/`x` posting actions (see §7) | — |
-| 12 | ai-social-autopilot | **NOT PORTED** | — | n/a — needs posting actions + an "emergency stop" flag | — |
+| 10 | social-post-scheduler | ✅ Native | `social-post-scheduler` / CRON `0 10,12,14,16,18,20 * * *` UTC | New action `content.postApprovedDraft`: posts the oldest human-APPROVED `EngineContentDraft` to X (real API v2 `/2/tweets`) or Buffer (real legacy `/1/updates/create.json`), reusing the EXISTING `autopilotStop`/`autopilotSocialPosting`/`twitterPostingEnabled` settings as the same kill-switches the n8n original read from env vars | unit + integration (9 tests incl. a **labeled simulation** of both providers — no real X/Buffer credentials exist anywhere) — ships disabled |
+| 12 | ai-social-autopilot | ✅ Native | `ai-social-autopilot` / CRON `0 9 * * *` UTC | Same `ai.complete`+`content.queueMany` pipeline as 18/21/22, then opportunistically calls the SAME `content.postApprovedDraft` action 10 uses. **Deliberate safety divergence from the n8n original**, documented below, not a fidelity gap | unit + integration + live curl — ships disabled |
 | 13 | whatsapp-lead-funnel | ✅ Native | `whatsapp-lead-funnel` / EVENT `whatsapp.message_received` | GET-verification handshake + HMAC-SHA256 `X-Hub-Signature-256` check over the RAW body in `routes/whatsappWebhook.ts` (mounted before `express.json()` — raw bytes, not re-serialized JSON), then `whatsapp.processInboundMessage` reproduces the exact STOP/START/greeting/buyer/vendor word-list classification from the n8n original; replies are free-text session messages (not templates), persisted to the new `EngineWhatsAppConversation` table | unit (pure payload parsing) + integration (13 tests against the REAL Express app on a real socket: valid/invalid/missing/tampered signatures, malformed JSON, fails-closed-when-unconfigured, message_id dedup, GET handshake valid/invalid, the full conversation state machine including STOP/START re-subscribe) + live curl — ships disabled, see §8 |
 | 14 | autopilot-controller | **NOT PORTED** | — | n/a — a daily cross-workflow summary; natively trivial once 05/06/10/12/13/19 exist, deferred until they do | — |
 | 15 | viral-intelligence-engine | **NOT PORTED** | — | n/a — needs an `apify.runActor` action | — |
@@ -208,16 +208,47 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 21 | social-proof-engine | ✅ Native | `social-proof-engine` / WEBHOOK | Same `ai.complete` + `EngineContentDraft` pipeline as 18, different prompt | unit + integration + live curl |
 | 22 | performance-analyst-agent | ✅ Native | `performance-analyst-agent` / CRON `30 9 * * 1` UTC | Google Sheets reads → same aggregation as 09, plus an `ai.complete` insights step (skipped honestly, figures still reported, if no AI provider is connected) | unit + integration + live curl (manual test-run → SUCCEEDED) |
 
-**Totals: 13 of 22 workflows (59%) have a native equivalent today — up from 12
-(55%) before this batch. The other 9 (41%) still depend on n8n to run.** The
+**Totals: 15 of 22 workflows (68%) have a native equivalent today — up from 13
+(59%) before this batch. The other 7 (32%) still depend on n8n to run.** The
 objective stated in the governing instructions — "after implementation,
 connecting external API credentials + configuring provider webhooks +
 enabling production settings should be the ONLY remaining integration work"
 — is **not yet achieved** for this repository as a whole, and must not be
-reported as achieved until the remaining 9 are either ported or the user
+reported as achieved until the remaining 7 are either ported or the user
 explicitly accepts them as out of scope.
 
-All 13 native workflows are seeded idempotently on server boot
+### Priority 3 in detail — social posting (10/12) and a deliberate safety divergence
+
+`content.postApprovedDraft` reuses X's and Buffer's REAL documented APIs,
+confirmed from the n8n originals' own `httpRequest` node configuration, not
+guessed: X's API v2 `POST /2/tweets` (OAuth 2.0 Bearer, JSON `{text}`,
+success = a real tweet id in the response) and Buffer's legacy `POST
+/1/updates/create.json` (Bearer access token, JSON `{text, profile_ids:
+[id], now: true}`, success = the response's own `success: true`, which the
+Buffer provider's existing `caveat` field already flags as unconfirmed
+against a live account — that caveat still applies; this change implements
+the documented contract, it does not newly verify it against a real
+Buffer account). A provider failure (e.g. a 500, or Buffer returning
+`success: false`) leaves the draft `APPROVED` — never `PUBLISHED` — with
+the failure reason written to `reviewNote`, verified with a dedicated test.
+
+**Workflow 12's n8n original has its own AI "safety check" step that can
+mark a post `approved` and let it auto-post with no human ever reviewing
+it**, gated only by the `autopilotSocialPosting`/`autopilotStop` env flags.
+The native port deliberately does **not** reproduce this: `ai-social-
+autopilot` generates a draft and queues it into the SAME human-reviewed
+Content Drafts queue 18/21/01 use, then opportunistically tries
+`content.postApprovedDraft` — which only ever finds something to post once
+a human has actually clicked Approve, on this or any earlier run. This is
+a documented safety-over-fidelity choice: the instruction to "preserve
+original n8n business logic" is honored for the posting mechanics and the
+kill-switches, but not for this specific self-approval path, because
+automating away the one human checkpoint the project's own Content Drafts
+feature exists to provide is not a behavior worth preserving. If a true
+auto-post-without-review mode is wanted later, it needs an explicit,
+separate decision — not a silent revert of this choice.
+
+All 15 native workflows are seeded idempotently on server boot
 (`seedPortedWorkflows()` in `server.ts`, with an auto-upgrade path that
 publishes a new version when a seed's definition changes without mutating
 any already-published version — itself covered by an integration test).
@@ -307,22 +338,19 @@ which is the standard way to test an HMAC webhook without a live account
 requests for this project). This is LOCALLY TESTED, not STAGING or
 PRODUCTION VERIFIED, and is reported as such.
 
-### What's blocking the remaining 9 — concrete, not hand-waved
+### What's blocking the remaining 7 — concrete, not hand-waved
 
-- **10, 12 (social posting/scheduling)** need `buffer.post`/`x.post` actions
-  calling the already-configurable Buffer/X providers. Not written yet —
-  `PROVIDERS` in `modules/providers/definitions.ts` already has both, only
-  the action-layer call is missing.
-- **14 (autopilot controller)** is a cross-workflow daily summary; 05/06/13/19
-  now exist, but it still mechanically depends on 10/12's data too, so
-  porting it before THOSE exist would be hollow or duplicate work.
+- **14 (autopilot controller)** is a cross-workflow daily summary; 05/06/10/
+  12/13/19 all now exist, so it is unblocked but not yet built this batch —
+  purely a matter of writing the composite read-and-summarize action, no
+  new primitive needed.
 - **15 (viral intelligence)** needs an `apify.runActor` action; **16 (pain
   discovery)** needs a Reddit-fetch action restricted to Reddit's public API
   (never a generic URL — the engine's SSRF stance, §5, forbids that even for
   this). Neither action exists yet.
-- **20 (A/B testing)** reads "published content" performance data that only
-  exists once 10/12 are posting for real — ordering dependency, not a
-  missing primitive.
+- **20 (A/B testing)** reads "published content" performance data — 10/12
+  are now posting for real (simulated-provider tested), so this is
+  unblocked but not yet built this batch.
 - **00, 01, 02 (error handler, content calendar, content approval)** — 00 is
   n8n's own error-workflow mechanism and has no native equivalent need (the
   native engine has its own dead-letter/audit path instead, see §2); 01/02
@@ -430,14 +458,15 @@ handful of state-transition buttons) rather than a full graphical builder.
 
 ## 7. What "done" would require from here
 
-1. Port the remaining 9 workflows per §4's blocker list. In priority order:
-   `buffer.post`/`x.post` actions unlock 10 and 12; an `apify.runActor`
-   action unlocks 15; a Reddit-fetch action unlocks 16; 14 and 20 become
-   non-hollow once 10/12 exist; 00/01/02 need a content-calendar
-   system-of-record and a Telegram-command-webhook integration.
-2. Add a native action that actually publishes an `APPROVED` content draft
-   somewhere (Buffer/X/Meta) — today's Content Drafts review queue (§6) ends
-   at "approved in the database."
+1. Port the remaining 7 workflows per §4's blocker list. In priority order:
+   14 and 20 (now unblocked, just not yet written); an `apify.runActor`
+   action unlocks 15; a Reddit-fetch action unlocks 16; 00/01/02 need a
+   content-calendar system-of-record and a Telegram-command-webhook
+   integration.
+2. `content.postApprovedDraft` (§4, Priority 3) closes the "approved drafts
+   never actually get published" gap for X/Buffer; Meta (Facebook Page/
+   Instagram/LinkedIn) posting for approved videos is a separate, still-open
+   path if that is ever wanted for content drafts too.
 3. Close the test gaps listed in §3 (version-change-during-execution, a true
    Redis-outage-and-recovery test, provider rate-limit simulation, a
    documented decision on whether the WhatsApp sequences' one-stage-per-run
@@ -468,4 +497,6 @@ a readiness checklist, not a claim that anything is production-ready.
 | OpenAI / Groq | 18, 21, 22 (01 once ported) | Never connected. Every `ai.complete` call this batch and the last correctly reported `not_configured` (or, in integration tests, used a labeled simulation). | A real API key for one of the two in Integrations. |
 | Resend | 04, 07 | Never connected. | A real API key + a domain verified in Resend. |
 | Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 13 ported workflows (see §4's per-row notes); still the system of record for the 9 not yet ported. | N/A until those 9 are ported, at which point each one is individually replaced the same way, not reconnected. |
-| Buffer, X, Apify | 10, 12, 15 (not yet ported) | Never connected; no native action calls them yet. | Blocked on the actions themselves (§7.1), not just credentials. |
+| X (Twitter) | 10, 12 | Never connected with real credentials. `postTweet`'s real HTTP call path (timedFetch/withRetry/describeHttpFailure) was exercised against a **labeled local simulation** of X's API v2 endpoint this batch — a real 500 was simulated and correctly left the draft unpublished with the failure recorded. | A real OAuth app (client ID/secret) connected via the existing X OAuth flow (`/api/oauth`), `twitterPostingEnabled` ticked, `autopilotSocialPosting` ticked, `autopilotStop` off, and a real test post watched to a real tweet id — only then should 10/12 post for real. |
+| Buffer | 10, 12 | Never connected with real credentials. Same labeled-simulation testing as X. The Buffer provider's own `caveat` (its legacy API shape has never been confirmed against a live account, since Buffer no longer registers new OAuth apps for it) still applies and is not resolved by this batch. | A real Buffer access token + the correct profile ID for each platform actually used, plus the same settings as X above. Treat the first real post as the actual verification that Buffer's legacy API still behaves as documented — this project cannot confirm that without one. |
+| Apify, Reddit | 15, 16 (not yet ported) | Never connected; no native action calls them yet. | Blocked on the actions themselves (§7.1), not just credentials. |

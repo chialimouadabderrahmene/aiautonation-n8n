@@ -9,6 +9,7 @@ export default defineConfig({
       "test/engine-batch2-integration.test.ts",
       "test/engine-whatsapp-sequence-integration.test.ts",
       "test/engine-whatsapp-webhook-integration.test.ts",
+      "test/engine-social-posting-integration.test.ts",
     ],
     environment: "node",
     testTimeout: 30_000,

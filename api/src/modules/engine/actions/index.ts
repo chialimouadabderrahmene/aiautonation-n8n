@@ -4,6 +4,7 @@ import { sendTelegramMessage } from "../../telegram/telegram";
 import { sendEmail } from "../../senders/resend";
 import { sendWhatsAppTemplate, sendWhatsAppSessionText } from "../../senders/whatsapp";
 import { aiComplete } from "../../senders/ai";
+import { postTweet, postToBuffer } from "../../senders/social";
 import { getProviderValues } from "../../integrations/vault";
 import { getSetting } from "../../settings/schema";
 import { emitEvent } from "../outbox";
@@ -427,6 +428,66 @@ const whatsappProcessInboundMessage = define({
   },
 });
 
+function bufferProfileField(platform: string): "profileIdInstagram" | "profileIdFacebook" | "profileIdLinkedin" | "profileIdTiktok" | null {
+  const p = platform.toLowerCase();
+  if (p.includes("instagram")) return "profileIdInstagram";
+  if (p.includes("facebook")) return "profileIdFacebook";
+  if (p.includes("linkedin")) return "profileIdLinkedin";
+  if (p.includes("tiktok")) return "profileIdTiktok";
+  return null;
+}
+
+/**
+ * The native replacement for n8n 10-social-post-scheduler.json's "Select Next Post" ->
+ * "Route" -> "Post to Twitter X"/"Post via Buffer" -> "Check Post Result" chain, and the
+ * posting half of 12-ai-social-autopilot.json. Reuses the EXISTING autopilotStop/
+ * autopilotSocialPosting/twitterPostingEnabled settings (already in modules/settings/
+ * schema.ts, already surfaced in the Settings UI) as the same kill-switches the n8n
+ * originals read from env vars — not reinvented. Never claims a post is "published" until
+ * the provider's own response confirms it (a real tweet id, or Buffer's success:true); on
+ * any other outcome the draft stays APPROVED (never silently marked PUBLISHED) with the
+ * failure reason recorded for a human to see.
+ */
+const contentPostApprovedDraft = define({
+  key: "content.postApprovedDraft",
+  idempotent: true, // only ever acts on a draft still in APPROVED status — a re-run after an already-successful publish finds nothing left to post
+  inputSchema: z.object({}),
+  async handler() {
+    if (await getSetting<boolean>("autopilotStop").catch(() => false)) return { posted: false, reason: "autopilot_stopped" };
+    if (!(await getSetting<boolean>("autopilotSocialPosting").catch(() => false))) return { posted: false, reason: "autopilot_disabled" };
+
+    const draft = await prisma.engineContentDraft.findFirst({ where: { status: ContentDraftStatus.APPROVED }, orderBy: [{ reviewedAt: "asc" }, { createdAt: "asc" }] });
+    if (!draft) return { posted: false, reason: "no_approved_drafts" };
+
+    const platform = (draft.platform ?? "").toLowerCase();
+    let result: { ok: true; providerId: string } | { ok: false; reason: string; message: string };
+    let publishedVia: string;
+
+    if (platform.includes("twitter") || platform === "x") {
+      if (!(await getSetting<boolean>("twitterPostingEnabled").catch(() => false))) return { posted: false, reason: "twitter_posting_disabled", draftId: draft.id };
+      publishedVia = "x";
+      result = await postTweet(draft.body);
+    } else {
+      const field = bufferProfileField(platform);
+      if (!field) return { posted: false, reason: "unknown_platform", draftId: draft.id, platform: draft.platform };
+      const v = await getProviderValues("buffer");
+      const profileId = v?.[field];
+      publishedVia = "buffer";
+      result = profileId ? await postToBuffer(draft.body, profileId) : { ok: false, reason: "not_configured", message: `No Buffer profile configured for ${platform}.` };
+    }
+
+    if (!result.ok) {
+      await prisma.engineContentDraft.update({ where: { id: draft.id }, data: { reviewNote: `Publish failed (${publishedVia}): ${result.message}` } });
+      return { posted: false, reason: result.reason, message: result.message, draftId: draft.id };
+    }
+    await prisma.engineContentDraft.update({
+      where: { id: draft.id },
+      data: { status: ContentDraftStatus.PUBLISHED, metadata: { ...(draft.metadata as object), publishedVia, providerId: result.providerId, publishedAt: new Date().toISOString() } },
+    });
+    return { posted: true, draftId: draft.id, publishedVia, providerId: result.providerId };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -442,6 +503,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [reportWeeklyAnalytics.key]: reportWeeklyAnalytics as ActionDefinition,
   [whatsappRunSequence.key]: whatsappRunSequence as ActionDefinition,
   [whatsappProcessInboundMessage.key]: whatsappProcessInboundMessage as ActionDefinition,
+  [contentPostApprovedDraft.key]: contentPostApprovedDraft as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {
