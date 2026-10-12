@@ -14,6 +14,8 @@ const NAV = [
   { name: "Carousels", href: "/carousels" },
   { name: "WhatsApp Onboarding", href: "/whatsapp" },
   { name: "Automations", href: "/automations" },
+  { name: "Workflow Engine", href: "/workflow-engine" },
+  { name: "Content Drafts", href: "/workflow-engine/content-drafts" },
   { name: "Approvals", href: "/approvals" },
   { name: "Executions", href: "/executions" },
   { name: "Reports", href: "/reports" },

@@ -40,7 +40,9 @@ dashboardRouter.get("/", async (_req, res) => {
   const byState = Object.fromEntries(videoJobs.map((g) => [g.state, g._count]));
   const running = ["QUEUED", "SCRIPT_GENERATING", "STORYBOARD_READY", "VOICE_GENERATING", "VISUAL_GENERATING", "ASSEMBLING", "QUALITY_CHECK"].reduce((n, s) => n + (byState[s] ?? 0), 0);
   const ready = workflows.filter((w) => w.readiness === "READY").length;
-  const coreOnline = ["api", "database", "redis", "worker", "n8n"].every((k) => health[k as keyof typeof health].status === "ONLINE");
+  // n8n is optional legacy infrastructure — the native engine executes every workflow
+  // without it, so it is deliberately excluded from the core-online determination.
+  const coreOnline = ["api", "database", "redis", "worker"].every((k) => health[k as keyof typeof health].status === "ONLINE");
 
   res.json({
     system: coreOnline && ready === workflows.length && video.readiness === "READY" ? "READY" : coreOnline ? "PARTIALLY_READY" : "BLOCKED",

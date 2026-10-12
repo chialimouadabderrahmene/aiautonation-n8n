@@ -49,7 +49,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
           </p>
           <p className="text-xs text-slate-500">
             {failing.length ? `${failing.length} blocker(s): ${failing[0]?.note ?? failing[0]?.label}${failing.length > 1 ? " …" : ""}` : "All requirements met"}
-            {" · "}n8n: {wf.n8nPresent ? (wf.n8nActive ? "active" : "imported, inactive") : "not imported"}
+            {" · "}engine: {wf.enabled ? "running" : "stopped"}
             {wf.lastExecutionAt ? ` · last run ${timeAgo(wf.lastExecutionAt)} ${wf.lastExecutionOk ? "✓" : "✕"}` : ""}
           </p>
         </button>

@@ -483,6 +483,94 @@ model AuditLog {
   @@index([createdAt])
 }
 
+// ============================================================================
+// NATIVE WORKFLOW ENGINE — replaces n8n at runtime. No external workflow
+// platform is required to execute these; n8n/* above remains only for the
+// legacy workflows not yet ported (see docs/WORKFLOW_ENGINE.md for status).
+// ============================================================================
+
+enum EngineWorkflowCategory {
+  SYSTEM
+  CONTENT
+  LEAD_AUTOMATION
+  WHATSAPP
+  SOCIAL
+  AI
+  REPORTING
+}
+
+enum EngineTriggerType {
+  WEBHOOK
+  EVENT
+  CRON
+  MANUAL
+}
+
+enum EngineVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// A workflow identity. The executable logic lives in its PUBLISHED EngineWorkflowVersion —
+/// editing never mutates a published version in place (new versions only), so an in-flight
+/// execution always finishes against the exact definition it started with.
+model EngineWorkflow {
+  id               String                  @id @default(cuid())
+  key              String                  @unique // e.g. "lead-capture-webhook"
+  name             String
+  description      String?
+  category         EngineWorkflowCategory
+  triggerType      EngineTriggerType
+  /// WEBHOOK: { path }. EVENT: { eventType }. CRON: { cron, timezone }. MANUAL: {}.
+  triggerConfig    Json
+  enabled          Boolean                 @default(false)
+  currentVersionId String?                 @unique
+  createdBy        String
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  currentVersion EngineWorkflowVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions       EngineWorkflowVersion[] @relation("AllVersions")
+  executions     EngineExecution[]
+  schedule       EngineScheduledTrigger?
+
+  @@index([triggerType, enabled])
+}
+
+/// One immutable published (or draft/archived) revision of a workflow's definition.
+/// `definition` is validated against the engine's Zod schema (modules/engine/definition.ts)
+/// before it can ever be set to PUBLISHED — see workflow-versions route.
+model EngineWorkflowVersion {
+  id          String              @id @default(cuid())
+  workflowId  String
+  workflow    EngineWorkflow      @relation("AllVersions", fields: [workflowId], references: [id], onDelete: Cascade)
+  version     Int
+  status      EngineVersionStatus @default(DRAFT)
+  definition  Json
+  notes       String?
+  createdBy   String
+  createdAt   DateTime            @default(now())
+  publishedAt DateTime?
+  publishedBy String?
+
+  currentFor EngineWorkflow?  @relation("CurrentVersion")
+  executions EngineExecution[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId, status])
+}
+
+enum EngineExecutionStatus {
+  QUEUED
+  RUNNING
+  WAITING
+  RETRYING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
 // --------------------------------------------------------- Brand Brain
 //
 // A reusable, persistent brand-voice and audience-vocabulary profile.
@@ -606,6 +694,364 @@ enum CarouselJobState {
   READY
   FAILED
   CANCELLED
+}
+
+/// One run of one workflow version. `context` is the step-output variable bag, persisted
+/// after every step — a crashed worker resumes from the last committed step instead of
+/// re-running (or losing) anything. `idempotencyKey` is globally unique: the same trigger
+/// event can never produce two executions.
+model EngineExecution {
+  id             String                 @id @default(cuid())
+  workflowId     String
+  workflow       EngineWorkflow         @relation(fields: [workflowId], references: [id])
+  versionId      String
+  version        EngineWorkflowVersion  @relation(fields: [versionId], references: [id])
+  status         EngineExecutionStatus  @default(QUEUED)
+  triggerType    EngineTriggerType
+  triggerPayload Json
+  idempotencyKey String                 @unique
+  correlationId  String
+  context        Json                   @default("{}")
+  cursorStepKey  String?
+  attempt        Int                    @default(1)
+  maxAttempts    Int                    @default(3)
+  nextRetryAt    DateTime?
+  deadLetter     Boolean                @default(false)
+  error          String?
+  startedAt      DateTime               @default(now())
+  finishedAt     DateTime?
+  durationMs     Int?
+  requestedBy    String?
+  /// Set when this execution is a manual replay of a dead-lettered one.
+  replayOfId     String?
+
+  steps EngineStepExecution[]
+
+  @@index([workflowId, status])
+  @@index([status, startedAt])
+  @@index([deadLetter, status])
+  @@index([nextRetryAt])
+}
+
+enum EngineStepStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+/// One attempt of one step within an execution. Kept even for steps that later retry, so the
+/// full history (including failed attempts) is visible — never overwritten.
+model EngineStepExecution {
+  id          String            @id @default(cuid())
+  executionId String
+  execution   EngineExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stepKey     String
+  stepIndex   Int
+  type        String // "action" | "condition" | "delay" | "parallel"
+  attempt     Int               @default(1)
+  status      EngineStepStatus
+  input       Json?
+  output      Json?
+  error       String?
+  startedAt   DateTime          @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+
+  @@unique([executionId, stepKey, attempt])
+  @@index([executionId, stepIndex])
+}
+
+enum EngineOutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+/// Transactional outbox: a business action writes the row that caused a trigger (e.g. a Lead)
+/// AND its EngineOutboxEvent in the SAME db transaction, so the event can never be lost between
+/// the commit and the queue publish — a relay (modules/engine/outbox.ts) polls PENDING rows and
+/// enqueues them, retrying indefinitely (at-least-once) until Redis/the queue answers.
+model EngineOutboxEvent {
+  id          String              @id @default(cuid())
+  eventType   String
+  payload     Json
+  dedupeKey   String?             @unique
+  status      EngineOutboxStatus  @default(PENDING)
+  attempts    Int                 @default(0)
+  lastError   String?
+  createdAt   DateTime            @default(now())
+  publishedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+/// Durable cron schedule for one CRON-trigger workflow. `nextRunAt` is always in the future
+/// once set; the relay locks a row (lockedAt) before firing so two instances of the API can
+/// never double-fire the same tick.
+model EngineScheduledTrigger {
+  id          String         @id @default(cuid())
+  workflowId  String         @unique
+  workflow    EngineWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  cron        String
+  timezone    String         @default("UTC")
+  nextRunAt   DateTime
+  lastRunAt   DateTime?
+  lastRunOk   Boolean?
+  lockedAt    DateTime?
+  lockedBy    String?
+  enabled     Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([enabled, nextRunAt])
+}
+
+// ---------------------------------------------------- Native business entities
+// Replace Google Sheets as the system of record for the ported workflows below
+// (handbook requirement: durable, queryable state — not a spreadsheet).
+
+enum LeadStatus {
+  NEW
+  WELCOMED
+  CONTACTED
+  CONVERTED
+  DEAD
+  /// Replied STOP on WhatsApp. whatsappOptIn is also set false — the engagement/nurture/welcome
+  /// sequences already exclude whatsappOptIn=false leads, but this status is kept distinct too
+  /// so it is visible on the lead itself, not just inferred from the opt-in flag.
+  UNSUBSCRIBED
+}
+
+/// Which n8n-nurture-sequence track a lead belongs to (workflow 19's "VENDOR"/"BUYER" split).
+/// Defaults to UNKNOWN: the nurture sequence deliberately skips a lead until this is set
+/// explicitly — it never guesses, since sending the wrong track's template would be worse than
+/// not sending one at all.
+enum LeadType {
+  UNKNOWN
+  VENDOR
+  BUYER
+}
+
+model EngineLead {
+  id             String     @id @default(cuid())
+  name           String?
+  email          String?
+  phone          String     @unique
+  source         String?
+  market         String?
+  status         LeadStatus @default(NEW)
+  leadType       LeadType   @default(UNKNOWN)
+  whatsappOptIn  Boolean    @default(true)
+  welcomedAt     DateTime?
+  lastContactedAt DateTime?
+  /// Per-WhatsApp-sequence progress, e.g. {"welcome":{"stage":2,"lastSentAt":"..."}}. Read and
+  /// written exclusively by the whatsapp.runSequence action (workflows 05/06/19) — this is what
+  /// makes a re-run after a crash resume from exactly the leads not yet at their next stage,
+  /// without a dedicated "for each" step type in the engine (see docs/WORKFLOW_ENGINE.md §2).
+  sequenceState  Json       @default("{}")
+  /// Workflow 13's conversation state machine step (e.g. "greeting", "type_identified",
+  /// "unsubscribed") — written only by whatsapp.processInboundMessage.
+  conversationStep String?
+  /// Set true when the lead's most recent inbound message was classified high-intent
+  /// (vendor/buyer self-identification) — drives the Telegram "follow up ASAP" alert.
+  highIntent     Boolean    @default(false)
+  metadata       Json       @default("{}")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}
+
+/// One inbound WhatsApp message and whatever reply it got (workflow 13) — the native
+/// replacement for the n8n "WhatsApp Conversations" Google Sheets tab, which likewise logs one
+/// row per inbound message with the reply text embedded, not a separate row per direction.
+model EngineWhatsAppConversation {
+  id               String   @id @default(cuid())
+  phone            String
+  messageText      String
+  replySent        String?
+  conversationStep String?
+  messageId        String   @unique
+  createdAt        DateTime @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model EngineWaitlistEntry {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  phone       String?
+  wantsEmail  Boolean  @default(true)
+  wantsWhatsapp Boolean @default(false)
+  emailSentAt DateTime?
+  waSentAt    DateTime?
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model EngineReferralCode {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  ownerName      String?
+  ownerEmail     String   @unique
+  referralCount  Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  referrals EngineReferral[]
+}
+
+enum ReferralStatus {
+  MATCHED
+  DUPLICATE
+  UNMATCHED
+  REWARDED
+}
+
+model EngineReferral {
+  id             String         @id @default(cuid())
+  codeId         String?
+  code           EngineReferralCode? @relation(fields: [codeId], references: [id])
+  referralCode   String
+  refereeEmail   String
+  refereeName    String?
+  status         ReferralStatus
+  rewardSentAt   DateTime?
+  createdAt      DateTime       @default(now())
+
+  @@unique([referralCode, refereeEmail])
+  @@index([createdAt])
+}
+
+enum FeedbackRequestStatus {
+  SENT
+  RESPONDED
+  SKIPPED
+}
+
+model EngineFeedbackRequest {
+  id          String                 @id @default(cuid())
+  leadPhone   String
+  email       String?
+  status      FeedbackRequestStatus  @default(SENT)
+  sentAt      DateTime               @default(now())
+  respondedAt DateTime?
+  rating      Int?
+  comment     String?
+
+  @@unique([leadPhone])
+  @@index([status])
+}
+
+model EngineWeeklyReportRun {
+  id          String   @id @default(cuid())
+  periodStart DateTime
+  periodEnd   DateTime
+  metrics     Json
+  recipients  String[]
+  sentAt      DateTime @default(now())
+
+  @@index([periodStart])
+}
+
+enum ContentDraftStatus {
+  DRAFT
+  QUEUED
+  APPROVED
+  REJECTED
+  PUBLISHED
+}
+
+/// Replaces the n8n workflows' Google Sheets "content calendar" / "social posts" /
+/// "content queue" tabs as the system of record for AI-generated content (workflows
+/// 01, 02, 18, 21). Each row is one piece of content, regardless of which native
+/// workflow produced it — distinguished by `source`.
+model EngineContentDraft {
+  id          String             @id @default(cuid())
+  source      String
+  platform    String?
+  contentType String?
+  body        String
+  hashtags    String[]
+  status      ContentDraftStatus @default(DRAFT)
+  reviewNote  String?
+  metadata    Json               @default("{}")
+  /// Set only by the content-calendar flow (workflow 01/02): the 1-30 day-number this draft
+  /// belongs to, so a Telegram /approve|/reject|/edit <day> command can find it, and so a
+  /// day already drafted is never drafted twice.
+  dayNumber   Int?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  reviewedAt  DateTime?
+  reviewedBy  String?
+
+  @@index([source, status, createdAt])
+  @@index([dayNumber])
+}
+
+/// The 30-day content plan (workflow 01's "Content Calendar" Google Sheets tab) — one row per
+/// day-number, curated by an admin ahead of time. Durable system-of-record, not AI-generated;
+/// the AI only drafts the day's actual post FROM this plan.
+model EngineContentCalendarEntry {
+  dayNumber      Int      @id
+  platform       String
+  pillar         String?
+  topicBrief     String
+  suggestedHook  String?
+  cta            String?
+  targetAudience String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+/// A commenter/subscriber identified on a social channel (e.g. ManyChat), distinct from
+/// EngineLead because it arrives with a platform handle, not necessarily a phone number
+/// (workflow 17). Promoted to a full EngineLead only once a phone number is known.
+model EngineSocialLead {
+  id            String    @id @default(cuid())
+  channel       String
+  externalId    String
+  name          String?
+  phone         String?
+  lastCommentAt DateTime  @default(now())
+  commentCount  Int       @default(1)
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now())
+
+  @@unique([channel, externalId])
+}
+
+/// Replaces the n8n workflow's "Intelligence" Google Sheets tab (workflow 15): one row per
+/// AI-extracted pattern (a hook, an emotional trigger, or a content format) from trending posts.
+model EngineTrendPattern {
+  id        String   @id @default(cuid())
+  type      String
+  content   String
+  score     Int      @default(0)
+  source    String   @default("apify")
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+}
+
+/// Replaces the n8n workflow's "Pain DB" Google Sheets tab (workflow 16): one row per
+/// AI-categorized community pain point found in a Reddit search.
+model EnginePainPoint {
+  id        String   @id @default(cuid())
+  pain      String
+  category  String
+  intensity Int
+  persona   String?
+  keywords  String[]
+  upvotes   Int      @default(0)
+  source    String   @default("reddit")
+  createdAt DateTime @default(now())
+
+  @@index([category, createdAt])
 }
 
 model CarouselJob {

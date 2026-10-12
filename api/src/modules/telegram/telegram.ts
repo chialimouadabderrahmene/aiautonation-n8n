@@ -96,6 +96,17 @@ export async function editDecisionMarkup(chatId: string | number, messageId: num
   }).catch(() => undefined);
 }
 
+/**
+ * Sends a plain message to an arbitrary chat id. Used by the native workflow engine's
+ * "notify.telegram" action (modules/engine/actions/notify.ts) — unlike notifyAdmin() this
+ * does NOT check the "notifyAdminOnFailure" setting (it's a business notification, not an
+ * operator alert) and it throws on failure so the action/step records the real error.
+ */
+export async function sendTelegramMessage(chatId: string | number, text: string): Promise<{ messageId: number }> {
+  const result = await botCall<{ message_id: number }>("sendMessage", { chat_id: chatId, text: text.slice(0, 4000), disable_web_page_preview: true });
+  return { messageId: result.message_id };
+}
+
 /** Sends a failure/alert line to the team chat when enabled in Settings. Never throws. */
 export async function notifyAdmin(text: string): Promise<void> {
   try {

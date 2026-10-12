@@ -24,6 +24,9 @@ import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { leadsPublicRouter } from "./routes/leads";
 import { contentRouter } from "./routes/content";
 import { internalRouter } from "./routes/internal";
+import { engineRouter } from "./routes/engine";
+import { hooksRouter } from "./routes/hooks";
+import { whatsappWebhookRouter } from "./routes/whatsappWebhook";
 import { requireAdmin, requireWrite } from "./modules/auth/auth";
 import { usersRouter } from "./routes/users";
 import { systemHealth, checkDatabase } from "./modules/system/health";
@@ -45,6 +48,9 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } }));
   const origins = process.env.WEB_ORIGIN?.split(",").map((o) => o.trim()).filter(Boolean);
   app.use(cors({ origin: origins && origins.length ? origins : false, credentials: false }));
+  // MUST be mounted before express.json(): this route needs the raw, unparsed request body to
+  // verify Meta's HMAC signature (see routes/whatsappWebhook.ts's own doc comment).
+  app.use("/api/webhooks", whatsappWebhookRouter);
   // `verify` stashes the raw bytes on every request — needed by the WhatsApp
   // webhook's HMAC-SHA256 signature check (Meta signs the exact raw body;
   // re-serializing the parsed JSON would not reproduce the same bytes).
@@ -70,6 +76,7 @@ export function createApp() {
   app.use("/api/telegram", telegramPublicRouter); // secret_token header
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
+  app.use("/api/hooks", hooksRouter); // native WEBHOOK-trigger ingestion — rate-limited, Zod-validated per workflow
   app.use("/api/whatsapp", whatsappPublicRouter); // GET challenge + X-Hub-Signature-256
   app.use("/api/leads", leadsPublicRouter); // X-Api-Key header, checked against Settings
 
@@ -92,6 +99,7 @@ export function createApp() {
   app.use("/api/settings", requireAdmin, requireWrite, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);
+  app.use("/api/engine", requireAdmin, engineRouter);
   app.use("/api/media", requireAdmin, requireWrite, mediaRouter);
 
   app.use((_req, res) => res.status(404).json({ message: "Not found" }));
