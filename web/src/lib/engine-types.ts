@@ -85,3 +85,17 @@ export interface EngineScheduledTrigger {
 export interface QueueCounts {
   active: number; completed: number; delayed: number; failed: number; paused: number; waiting: number;
 }
+
+export interface EngineContentDraft {
+  id: string;
+  source: string;
+  platform: string | null;
+  contentType: string | null;
+  body: string;
+  hashtags: string[];
+  status: "DRAFT" | "QUEUED" | "APPROVED" | "REJECTED" | "PUBLISHED";
+  reviewNote: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+}

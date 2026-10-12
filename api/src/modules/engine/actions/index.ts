@@ -3,9 +3,11 @@ import { prisma } from "../../../lib/prisma";
 import { sendTelegramMessage } from "../../telegram/telegram";
 import { sendEmail } from "../../senders/resend";
 import { sendWhatsAppTemplate } from "../../senders/whatsapp";
+import { aiComplete } from "../../senders/ai";
+import { getProviderValues } from "../../integrations/vault";
 import { emitEvent } from "../outbox";
 import type { EngineEventType } from "../triggers";
-import { LeadStatus, ReferralStatus } from "@prisma/client";
+import { LeadStatus, ReferralStatus, ContentDraftStatus } from "@prisma/client";
 
 /**
  * The action registry. Every action is: a Zod input schema (validated before the handler
@@ -93,10 +95,14 @@ const feedbackRecord = define({
 const notifyTelegram = define({
   key: "notify.telegram",
   idempotent: false, // sending a message twice is a real duplicate send, not a safe no-op
-  inputSchema: z.object({ chatId: z.string().min(1), text: z.string().min(1).max(4000) }),
+  // chatId is optional: scheduled/system workflows (no per-recipient trigger data) alert the
+  // team's configured chat — the same "approvalChatId" the Integrations page already tests.
+  inputSchema: z.object({ chatId: z.string().min(1).optional(), text: z.string().min(1).max(4000) }),
   async handler(input) {
-    const result = await sendTelegramMessage(input.chatId, input.text);
-    return { messageId: result.messageId };
+    const chatId = input.chatId ?? (await getProviderValues("telegram"))?.approvalChatId;
+    if (!chatId) return { sent: false, reason: "not_configured", message: "Telegram team chat id is not configured." };
+    const result = await sendTelegramMessage(chatId, input.text);
+    return { sent: true, messageId: result.messageId };
   },
 });
 
@@ -138,6 +144,91 @@ const emitEventAction = define({
   },
 });
 
+const aiCompleteAction = define({
+  key: "ai.complete",
+  idempotent: false, // a second AI call is a new (possibly different) generation, not a safe no-op
+  inputSchema: z.object({ system: z.string().min(1), user: z.string().min(1), jsonMode: z.boolean().optional() }),
+  async handler(input) {
+    const result = await aiComplete(input);
+    if (!result.ok) {
+      // "not configured" is an expected, recoverable state — the equivalent n8n flow just has
+      // nothing to generate with; never a hard failure that burns retries for a config problem.
+      if (result.reason === "not_configured") return { ok: false, reason: result.reason, message: result.message, json: null as unknown };
+      throw new Error(`ai.complete: ${result.message}`);
+    }
+    return { ok: true, raw: result.raw, json: result.json, provider: result.provider, model: result.model };
+  },
+});
+
+const contentDraftInput = z.object({
+  platform: z.string().optional(),
+  contentType: z.string().optional(),
+  body: z.string().min(1),
+  hashtags: z.array(z.string()).optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+const contentQueueMany = define({
+  key: "content.queueMany",
+  idempotent: true, // re-running on retry just queues the same drafts again under a fresh id — acceptable duplication for a retried AI-generation step, never silently lost
+  // `source` is attached here (the workflow that produced them), not expected from the AI's own
+  // JSON output — the model is only ever asked to produce {platform, contentType, body, hashtags}.
+  inputSchema: z.object({ source: z.string().min(1), drafts: z.array(contentDraftInput).max(50) }),
+  async handler(input) {
+    if (input.drafts.length === 0) return { count: 0, ids: [] as string[] };
+    const rows = await prisma.$transaction(
+      input.drafts.map((d) =>
+        prisma.engineContentDraft.create({
+          data: { source: input.source, platform: d.platform, contentType: d.contentType, body: d.body, hashtags: d.hashtags ?? [], metadata: (d.metadata ?? {}) as object, status: ContentDraftStatus.DRAFT },
+        }),
+      ),
+    );
+    return { count: rows.length, ids: rows.map((r) => r.id) };
+  },
+});
+
+const socialLeadUpsert = define({
+  key: "socialLead.upsert",
+  idempotent: true,
+  inputSchema: z.object({ channel: z.string().min(1), externalId: z.string().min(1), name: z.string().optional(), phone: z.string().optional() }),
+  async handler(input) {
+    const existing = await prisma.engineSocialLead.findUnique({ where: { channel_externalId: { channel: input.channel, externalId: input.externalId } } });
+    const row = await prisma.engineSocialLead.upsert({
+      where: { channel_externalId: { channel: input.channel, externalId: input.externalId } },
+      update: { name: input.name ?? undefined, phone: input.phone ?? undefined, lastCommentAt: new Date(), commentCount: { increment: 1 } },
+      create: { channel: input.channel, externalId: input.externalId, name: input.name, phone: input.phone },
+    });
+    return { socialLeadId: row.id, isNew: !existing, commentCount: row.commentCount };
+  },
+});
+
+const reportWeeklyAnalytics = define({
+  key: "report.weeklyAnalytics",
+  idempotent: true, // re-running recomputes the same window's figures; it does not double-count anything
+  inputSchema: z.object({ periodDays: z.number().int().min(1).max(31).default(7) }),
+  async handler(input) {
+    const periodEnd = new Date();
+    const periodStart = new Date(periodEnd.getTime() - (input.periodDays ?? 7) * 24 * 60 * 60 * 1000);
+    const [newLeads, waitlistSignups, referralsMatched, feedbackResponses, negativeFeedback] = await Promise.all([
+      prisma.engineLead.count({ where: { createdAt: { gte: periodStart, lte: periodEnd } } }),
+      prisma.engineWaitlistEntry.count({ where: { createdAt: { gte: periodStart, lte: periodEnd } } }),
+      prisma.engineReferral.count({ where: { createdAt: { gte: periodStart, lte: periodEnd }, status: "MATCHED" } }),
+      prisma.engineFeedbackRequest.count({ where: { respondedAt: { gte: periodStart, lte: periodEnd } } }),
+      prisma.engineFeedbackRequest.count({ where: { respondedAt: { gte: periodStart, lte: periodEnd }, rating: { lte: 2 } } }),
+    ]);
+    const metrics = { newLeads, waitlistSignups, referralsMatched, feedbackResponses, negativeFeedback };
+    const row = await prisma.engineWeeklyReportRun.create({ data: { periodStart, periodEnd, metrics, recipients: [] } });
+    const summary = [
+      `Automation report (${periodStart.toISOString().slice(0, 10)} - ${periodEnd.toISOString().slice(0, 10)})`,
+      `New leads: ${newLeads}`,
+      `Waitlist signups: ${waitlistSignups}`,
+      `Referrals matched: ${referralsMatched}`,
+      `Feedback responses: ${feedbackResponses} (${negativeFeedback} rated <=2)`,
+    ].join("\n");
+    return { runId: row.id, metrics, summary, periodStart: periodStart.toISOString(), periodEnd: periodEnd.toISOString() };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -147,6 +238,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [emailSend.key]: emailSend as ActionDefinition,
   [whatsappSendTemplate.key]: whatsappSendTemplate as ActionDefinition,
   [emitEventAction.key]: emitEventAction as ActionDefinition,
+  [aiCompleteAction.key]: aiCompleteAction as ActionDefinition,
+  [contentQueueMany.key]: contentQueueMany as ActionDefinition,
+  [socialLeadUpsert.key]: socialLeadUpsert as ActionDefinition,
+  [reportWeeklyAnalytics.key]: reportWeeklyAnalytics as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {

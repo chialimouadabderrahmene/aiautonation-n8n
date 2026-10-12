@@ -289,3 +289,42 @@ engineRouter.get("/dead-letter", async (_req, res) => {
   });
   res.json(items);
 });
+
+// ─── Content drafts (AI-generated, from content-multiplication-engine / social-proof-engine
+// / the future content-calendar workflow) — the human review step n8n's Telegram-approval
+// workflow (02) used to do. Approve/reject here is itself the review action; nothing is ever
+// auto-published from a draft row. ───────────────────────────────────────────
+
+const CONTENT_DRAFT_STATUSES = ["DRAFT", "QUEUED", "APPROVED", "REJECTED", "PUBLISHED"] as const;
+
+engineRouter.get("/content-drafts", async (req, res) => {
+  const { status, source } = req.query as Record<string, string | undefined>;
+  const items = await prisma.engineContentDraft.findMany({
+    where: {
+      ...(status && (CONTENT_DRAFT_STATUSES as readonly string[]).includes(status) ? { status: status as (typeof CONTENT_DRAFT_STATUSES)[number] } : {}),
+      ...(source ? { source } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  res.json(items);
+});
+
+engineRouter.post("/content-drafts/:id/approve", async (req: AuthedRequest, res) => {
+  const draft = await prisma.engineContentDraft.findUnique({ where: { id: String(req.params.id) } });
+  if (!draft) return res.status(404).json({ message: "Draft not found" });
+  if (draft.status !== "DRAFT" && draft.status !== "QUEUED") return res.status(409).json({ message: `Only a DRAFT/QUEUED draft can be approved (this one is ${draft.status})` });
+  await prisma.engineContentDraft.update({ where: { id: draft.id }, data: { status: "APPROVED", reviewedAt: new Date(), reviewedBy: actor(req) } });
+  await recordAudit(actor(req), "engine.content_draft.approved", "EngineContentDraft", draft.id, { source: draft.source });
+  res.json({ ok: true, message: "Approved. No native action publishes it anywhere yet — see docs/WORKFLOW_ENGINE.md for what remains out of scope." });
+});
+
+engineRouter.post("/content-drafts/:id/reject", async (req: AuthedRequest, res) => {
+  const draft = await prisma.engineContentDraft.findUnique({ where: { id: String(req.params.id) } });
+  if (!draft) return res.status(404).json({ message: "Draft not found" });
+  if (draft.status !== "DRAFT" && draft.status !== "QUEUED") return res.status(409).json({ message: `Only a DRAFT/QUEUED draft can be rejected (this one is ${draft.status})` });
+  const note = (req.body as { note?: string })?.note;
+  await prisma.engineContentDraft.update({ where: { id: draft.id }, data: { status: "REJECTED", reviewedAt: new Date(), reviewedBy: actor(req), reviewNote: note } });
+  await recordAudit(actor(req), "engine.content_draft.rejected", "EngineContentDraft", draft.id, { source: draft.source, note });
+  res.json({ ok: true });
+});

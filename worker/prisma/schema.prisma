@@ -724,3 +724,50 @@ model EngineWeeklyReportRun {
 
   @@index([periodStart])
 }
+
+enum ContentDraftStatus {
+  DRAFT
+  QUEUED
+  APPROVED
+  REJECTED
+  PUBLISHED
+}
+
+/// Replaces the n8n workflows' Google Sheets "content calendar" / "social posts" /
+/// "content queue" tabs as the system of record for AI-generated content (workflows
+/// 01, 02, 18, 21). Each row is one piece of content, regardless of which native
+/// workflow produced it — distinguished by `source`.
+model EngineContentDraft {
+  id          String             @id @default(cuid())
+  source      String
+  platform    String?
+  contentType String?
+  body        String
+  hashtags    String[]
+  status      ContentDraftStatus @default(DRAFT)
+  reviewNote  String?
+  metadata    Json               @default("{}")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  reviewedAt  DateTime?
+  reviewedBy  String?
+
+  @@index([source, status, createdAt])
+}
+
+/// A commenter/subscriber identified on a social channel (e.g. ManyChat), distinct from
+/// EngineLead because it arrives with a platform handle, not necessarily a phone number
+/// (workflow 17). Promoted to a full EngineLead only once a phone number is known.
+model EngineSocialLead {
+  id            String    @id @default(cuid())
+  channel       String
+  externalId    String
+  name          String?
+  phone         String?
+  lastCommentAt DateTime  @default(now())
+  commentCount  Int       @default(1)
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now())
+
+  @@unique([channel, externalId])
+}

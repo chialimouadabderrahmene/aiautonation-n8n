@@ -62,7 +62,10 @@ async function main() {
   await getTelegramWebhookSecret();
   await autoVerifyGeneratedIntegrations();
   await recomputeAllReadiness();
-  await seedPortedWorkflows().then((r) => r.created.length && logger.info({ created: r.created }, "[engine] seeded native workflows"));
+  await seedPortedWorkflows().then((r) => {
+    if (r.created.length) logger.info({ created: r.created }, "[engine] seeded native workflows");
+    if (r.upgraded.length) logger.info({ upgraded: r.upgraded }, "[engine] published a newer native definition for existing workflows");
+  });
 
   const port = Number(process.env.PORT ?? 4100);
   const internalPort = Number(process.env.INTERNAL_PORT ?? 4110);
