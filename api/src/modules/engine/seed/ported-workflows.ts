@@ -31,7 +31,7 @@ interface Seed {
   key: string;
   name: string;
   description: string;
-  category: "LEAD_AUTOMATION" | "WHATSAPP" | "REPORTING" | "SOCIAL" | "CONTENT";
+  category: "LEAD_AUTOMATION" | "WHATSAPP" | "REPORTING" | "SOCIAL" | "CONTENT" | "AI";
   triggerType: "WEBHOOK" | "EVENT" | "CRON";
   triggerConfig: Record<string, unknown>;
   definition: Record<string, unknown>;
@@ -373,6 +373,41 @@ const SEEDS: Seed[] = [
         { key: "queue", type: "action", action: "content.queueMany", input: { source: "ai-social-autopilot", drafts: "{{generate.json.posts}}" } },
         { key: "post", type: "action", action: "content.postApprovedDraft", input: {}, onFailure: "continue" },
         { key: "alert", type: "action", action: "notify.telegram", input: { text: "AI Social Autopilot queued {{queue.count}} draft(s); post attempt: {{post.posted}}{{post.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
+  {
+    key: "viral-intelligence-engine",
+    name: "Viral Intelligence Engine",
+    description: "Native replacement for n8n 15-viral-intelligence-engine.json: runs every 6 hours, runs the configured Apify actor to scrape trending posts, asks the connected AI provider to extract hook/emotion/content-format patterns, and persists them to EngineTrendPattern (replacing the n8n workflow's \"Intelligence\" Google Sheets tab). Skips honestly if Apify or an AI provider is not connected — never fabricates patterns. Disabled until Apify AND an AI provider are connected and a real test-run has been verified.",
+    category: "AI",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 */6 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "run", type: "action", action: "apify.runTrendsActor", input: {} },
+        { key: "configured", type: "condition", condition: { path: "run.ok", op: "eq", value: true }, onFalse: "skip_remaining" },
+        { key: "analyze", type: "action", action: "intelligence.analyzeTrends", input: { items: "{{run.items}}" } },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "Viral Intelligence Engine saved {{analyze.savedCount}} pattern(s){{analyze.reason}}" }, onFailure: "continue" },
+      ],
+    },
+  },
+  {
+    key: "pain-discovery-engine",
+    name: "Pain Discovery Engine",
+    description: "Native replacement for n8n 16-pain-discovery-engine.json: runs daily at 06:00 UTC, searches r/Nigeria+diaspora+AfricanFood on Reddit's public API for \"foodstuff vendor problem\" posts from the past week, asks the connected AI provider to categorize which ones describe a real pain point, and persists them to EnginePainPoint (replacing the \"Pain DB\" Google Sheets tab). Skips honestly if no AI provider is connected. Reddit's search endpoint needs no credentials, so this workflow's only real dependency is the AI provider — disabled until one is connected and a real test-run has been verified.",
+    category: "AI",
+    triggerType: "CRON",
+    triggerConfig: { cron: "0 6 * * *", timezone: "UTC" },
+    enabled: false,
+    definition: {
+      maxAttempts: 3,
+      steps: [
+        { key: "fetch", type: "action", action: "reddit.searchPosts", input: { subreddits: ["Nigeria", "diaspora", "AfricanFood"], query: "foodstuff vendor problem", sort: "top", time: "week", limit: 20 } },
+        { key: "analyze", type: "action", action: "intelligence.analyzePainPoints", input: { posts: "{{fetch.posts}}" } },
+        { key: "alert", type: "action", action: "notify.telegram", input: { text: "Pain Discovery Engine saved {{analyze.savedCount}} pain point(s){{analyze.reason}}" }, onFailure: "continue" },
       ],
     },
   },

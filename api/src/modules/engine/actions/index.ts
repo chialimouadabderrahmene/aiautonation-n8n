@@ -5,6 +5,8 @@ import { sendEmail } from "../../senders/resend";
 import { sendWhatsAppTemplate, sendWhatsAppSessionText } from "../../senders/whatsapp";
 import { aiComplete } from "../../senders/ai";
 import { postTweet, postToBuffer } from "../../senders/social";
+import { runTrendsActor } from "../../senders/apify";
+import { searchRedditPosts } from "../../senders/reddit";
 import { getProviderValues } from "../../integrations/vault";
 import { getSetting } from "../../settings/schema";
 import { emitEvent } from "../outbox";
@@ -488,6 +490,120 @@ const contentPostApprovedDraft = define({
   },
 });
 
+/** The native replacement for n8n 15's "Run Apify Actor" node. */
+const apifyRunTrendsActor = define({
+  key: "apify.runTrendsActor",
+  idempotent: false, // re-running genuinely re-scrapes and may return different items — not a safe no-op
+  inputSchema: z.object({}),
+  async handler() {
+    const result = await runTrendsActor();
+    if (!result.ok) {
+      if (result.reason === "not_configured") return { ok: false, reason: result.reason, message: result.message, items: [] as unknown[] };
+      throw new Error(`apify.runTrendsActor: ${result.message}`);
+    }
+    return { ok: true, items: result.items };
+  },
+});
+
+/** The native replacement for n8n 16's "Fetch Reddit" node — fixed to reddit.com, see
+ * senders/reddit.ts's doc comment for why this is not the forbidden generic-HTTP-action shape. */
+const redditSearchPosts = define({
+  key: "reddit.searchPosts",
+  idempotent: false, // a later identical search can legitimately return new posts
+  inputSchema: z.object({ subreddits: z.array(z.string()).min(1), query: z.string().min(1), sort: z.string().optional(), time: z.string().optional(), limit: z.number().int().optional() }),
+  async handler(input) {
+    const result = await searchRedditPosts(input);
+    if (!result.ok) throw new Error(`reddit.searchPosts: ${result.message}`);
+    return { ok: true, posts: result.posts };
+  },
+});
+
+/**
+ * Collapses n8n 15's "Build AI Request" -> "AI Analyze Trends" -> "Parse Patterns" into one
+ * action: the per-item prompt formatting and the hook/emotion/format row persistence are real
+ * array logic the engine's path-based templating cannot express directly (same rationale as
+ * whatsapp.processInboundMessage). The prompt text is reproduced from the n8n original
+ * verbatim, not reworded.
+ */
+const intelligenceAnalyzeTrends = define({
+  key: "intelligence.analyzeTrends",
+  idempotent: false, // a second AI pass is a new (possibly different) analysis, not a safe no-op
+  inputSchema: z.object({ items: z.array(z.record(z.unknown())).default([]) }),
+  async handler(input) {
+    const posts = (input.items ?? []).filter((p) => p.text || p.caption || p.description);
+    if (posts.length === 0) return { ok: true, savedCount: 0, reason: "no_posts" };
+    const compact = posts.slice(0, 30).map((p, i) => {
+      const text = String(p.text ?? p.caption ?? p.description ?? "").slice(0, 280);
+      const likes = Number(p.likesCount ?? p.likes ?? 0);
+      const comments = Number(p.commentsCount ?? p.comments ?? 0);
+      return `${i + 1}. ${text} | likes=${likes} comments=${comments}`;
+    });
+    const result = await aiComplete({
+      system: "You analyse trending social posts for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Return ONLY JSON.",
+      user: `Analyze these trending posts. Extract: 1) hook patterns 2) emotional triggers 3) content formats. Return JSON with fields: hooks[], emotions[], formats[], creators[] (arrays of short strings).\n\n${compact.join("\n")}`,
+    });
+    if (!result.ok) {
+      if (result.reason === "not_configured") return { ok: false, reason: result.reason, message: result.message, savedCount: 0 };
+      throw new Error(`intelligence.analyzeTrends: ${result.message}`);
+    }
+    const parsed = result.json as { hooks?: unknown[]; emotions?: unknown[]; formats?: unknown[] };
+    const rows: { type: string; content: string }[] = [];
+    const add = (type: string, arr: unknown[] | undefined) =>
+      (Array.isArray(arr) ? arr : []).slice(0, 20).forEach((c) => {
+        const s = (typeof c === "string" ? c : JSON.stringify(c)).trim();
+        if (s) rows.push({ type, content: s });
+      });
+    add("hook", parsed.hooks);
+    add("emotion", parsed.emotions);
+    add("format", parsed.formats);
+    if (rows.length === 0) return { ok: true, savedCount: 0, reason: "ai_returned_nothing_usable" };
+    await prisma.engineTrendPattern.createMany({ data: rows.map((r) => ({ ...r, source: "apify" })) });
+    return { ok: true, savedCount: rows.length };
+  },
+});
+
+/**
+ * Collapses n8n 16's "Build AI Request" -> "AI Categorize" -> "Build Pain Rows" into one
+ * action, for the same reason as intelligence.analyzeTrends — the index-based mapping back
+ * from the AI's categorization to the original Reddit post is real array logic.
+ */
+const intelligenceAnalyzePainPoints = define({
+  key: "intelligence.analyzePainPoints",
+  idempotent: false,
+  inputSchema: z.object({ posts: z.array(z.object({ title: z.string(), selftext: z.string().optional(), ups: z.number().optional() })).default([]) }),
+  async handler(input) {
+    const posts = (input.posts ?? []).slice(0, 20);
+    if (posts.length === 0) return { ok: true, savedCount: 0, reason: "no_posts" };
+    const listing = posts.map((p, i) => `${i + 1}. ${p.title.slice(0, 200)} :: ${(p.selftext ?? "").slice(0, 300)}`);
+    const result = await aiComplete({
+      system: "You categorize community posts for Eki, a marketplace connecting African foodstuff vendors with buyers worldwide. Return ONLY JSON.",
+      user: `For each numbered post decide if it describes a pain point. Return JSON {"items":[{"index":1,"persona":"vendor|buyer","category":"DM_Chaos|Payment_Fraud|Scam_Fear|No_Buyers|Trust|Other","intensity":1-10,"keywords":["..."]}]}. Skip posts that are not pain points.\n\n${listing.join("\n")}`,
+    });
+    if (!result.ok) {
+      if (result.reason === "not_configured") return { ok: false, reason: result.reason, message: result.message, savedCount: 0 };
+      throw new Error(`intelligence.analyzePainPoints: ${result.message}`);
+    }
+    const parsed = result.json as { items?: { index?: number; persona?: string; category?: string; intensity?: number; keywords?: string[] }[] };
+    const rows = (Array.isArray(parsed.items) ? parsed.items : [])
+      .map((it) => {
+        const post = posts[(Number(it.index) || 0) - 1];
+        if (!post) return null;
+        return {
+          pain: post.title,
+          category: String(it.category ?? "Other"),
+          intensity: Math.max(0, Math.min(10, Math.trunc(Number(it.intensity) || 0))),
+          persona: it.persona ?? null,
+          keywords: Array.isArray(it.keywords) ? it.keywords.map(String) : [],
+          upvotes: post.ups ?? 0,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    if (rows.length === 0) return { ok: true, savedCount: 0, reason: "no_pain_points_found" };
+    await prisma.enginePainPoint.createMany({ data: rows.map((r) => ({ ...r, source: "reddit" })) });
+    return { ok: true, savedCount: rows.length };
+  },
+});
+
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [leadUpsert.key]: leadUpsert as ActionDefinition,
   [waitlistAdd.key]: waitlistAdd as ActionDefinition,
@@ -504,6 +620,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   [whatsappRunSequence.key]: whatsappRunSequence as ActionDefinition,
   [whatsappProcessInboundMessage.key]: whatsappProcessInboundMessage as ActionDefinition,
   [contentPostApprovedDraft.key]: contentPostApprovedDraft as ActionDefinition,
+  [apifyRunTrendsActor.key]: apifyRunTrendsActor as ActionDefinition,
+  [redditSearchPosts.key]: redditSearchPosts as ActionDefinition,
+  [intelligenceAnalyzeTrends.key]: intelligenceAnalyzeTrends as ActionDefinition,
+  [intelligenceAnalyzePainPoints.key]: intelligenceAnalyzePainPoints as ActionDefinition,
 };
 
 export function getAction(key: string): ActionDefinition | undefined {

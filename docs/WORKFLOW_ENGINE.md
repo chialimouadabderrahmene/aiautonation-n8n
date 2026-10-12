@@ -1,6 +1,6 @@
 # Native Workflow Engine — Architecture, Scope, and Gap Analysis
 
-Status date: 2026-10-12 (batch 5 — social posting, Buffer/X). This document is the honest record of what the native
+Status date: 2026-10-12 (batch 6 — intelligence engines, Apify/Reddit). This document is the honest record of what the native
 workflow engine (`api/src/modules/engine/`) actually replaces today, what it
 does not yet replace, and how each claim below should be read against the
 four-tier verification scale used throughout this project:
@@ -199,8 +199,8 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 12 | ai-social-autopilot | ✅ Native | `ai-social-autopilot` / CRON `0 9 * * *` UTC | Same `ai.complete`+`content.queueMany` pipeline as 18/21/22, then opportunistically calls the SAME `content.postApprovedDraft` action 10 uses. **Deliberate safety divergence from the n8n original**, documented below, not a fidelity gap | unit + integration + live curl — ships disabled |
 | 13 | whatsapp-lead-funnel | ✅ Native | `whatsapp-lead-funnel` / EVENT `whatsapp.message_received` | GET-verification handshake + HMAC-SHA256 `X-Hub-Signature-256` check over the RAW body in `routes/whatsappWebhook.ts` (mounted before `express.json()` — raw bytes, not re-serialized JSON), then `whatsapp.processInboundMessage` reproduces the exact STOP/START/greeting/buyer/vendor word-list classification from the n8n original; replies are free-text session messages (not templates), persisted to the new `EngineWhatsAppConversation` table | unit (pure payload parsing) + integration (13 tests against the REAL Express app on a real socket: valid/invalid/missing/tampered signatures, malformed JSON, fails-closed-when-unconfigured, message_id dedup, GET handshake valid/invalid, the full conversation state machine including STOP/START re-subscribe) + live curl — ships disabled, see §8 |
 | 14 | autopilot-controller | **NOT PORTED** | — | n/a — a daily cross-workflow summary; natively trivial once 05/06/10/12/13/19 exist, deferred until they do | — |
-| 15 | viral-intelligence-engine | **NOT PORTED** | — | n/a — needs an `apify.runActor` action | — |
-| 16 | pain-discovery-engine | **NOT PORTED** | — | n/a — needs a Reddit-fetch action | — |
+| 15 | viral-intelligence-engine | ✅ Native | `viral-intelligence-engine` / CRON `0 */6 * * *` UTC | New action `apify.runTrendsActor` (real Apify `POST /v2/acts/{actorId}/run-sync-get-dataset-items`, confirmed from the n8n node's own URL construction) feeds `intelligence.analyzeTrends`, which collapses the prompt-formatting/AI-call/pattern-parsing chain into one action and persists to new table `EngineTrendPattern` | unit + integration (labeled simulation of Apify + the AI provider — no real credentials for either exist anywhere) — ships disabled |
+| 16 | pain-discovery-engine | ✅ Native | `pain-discovery-engine` / CRON `0 6 * * *` UTC | New action `reddit.searchPosts` (real, unauthenticated Reddit search JSON endpoint, URL built entirely from Reddit's own fixed host/path — never a caller-supplied base URL, so this cannot be redirected to another host) feeds `intelligence.analyzePainPoints`, which maps the AI's index-based categorization back to the original posts and persists to new table `EnginePainPoint` | unit + integration (Reddit tested against the REAL public endpoint — no credentials to simulate; AI provider still simulated) — ships disabled |
 | 17 | manychat-comment-funnel | ✅ Native | `manychat-comment-funnel` / WEBHOOK | Google Sheets → `EngineSocialLead` (new model, distinct from `EngineLead` since a commenter may have no phone number yet) | unit + integration + live curl |
 | 18 | content-multiplication-engine | ✅ Native | `content-multiplication-engine` / WEBHOOK | Google Sheets content queue → `EngineContentDraft`; AI step uses the new `ai.complete` action (OpenAI/Groq, whichever is CONNECTED) | unit + integration (incl. a **labeled simulation** of a connected AI provider — no real OpenAI/Groq credentials exist anywhere in this project's test environments) + live curl (honest "not configured" skip, zero drafts fabricated) |
 | 19 | whatsapp-nurture-sequences | ✅ Native | `whatsapp-nurture-sequences` / CRON `0 8 * * *` UTC | Same action, run twice (VENDOR/BUYER tracks) via the new `EngineLead.leadType` field — a lead with no `leadType` set is never guessed at and is excluded from both | unit + integration + live curl — ships disabled |
@@ -208,14 +208,45 @@ Every row's status is IMPLEMENTED + LOCALLY TESTED (never more) unless noted.
 | 21 | social-proof-engine | ✅ Native | `social-proof-engine` / WEBHOOK | Same `ai.complete` + `EngineContentDraft` pipeline as 18, different prompt | unit + integration + live curl |
 | 22 | performance-analyst-agent | ✅ Native | `performance-analyst-agent` / CRON `30 9 * * 1` UTC | Google Sheets reads → same aggregation as 09, plus an `ai.complete` insights step (skipped honestly, figures still reported, if no AI provider is connected) | unit + integration + live curl (manual test-run → SUCCEEDED) |
 
-**Totals: 15 of 22 workflows (68%) have a native equivalent today — up from 13
-(59%) before this batch. The other 7 (32%) still depend on n8n to run.** The
+**Totals: 17 of 22 workflows (77%) have a native equivalent today — up from 15
+(68%) before this batch. The other 5 (23%) still depend on n8n to run.** The
 objective stated in the governing instructions — "after implementation,
 connecting external API credentials + configuring provider webhooks +
 enabling production settings should be the ONLY remaining integration work"
 — is **not yet achieved** for this repository as a whole, and must not be
-reported as achieved until the remaining 7 are either ported or the user
+reported as achieved until the remaining 5 are either ported or the user
 explicitly accepts them as out of scope.
+
+### Priority 4 in detail — intelligence engines (15/16)
+
+Two new senders implement each provider's REAL, confirmed-not-guessed
+contract: `apify.runTrendsActor` calls Apify's `POST /v2/acts/{actorId}/
+run-sync-get-dataset-items` (the exact URL n8n 15's "Run Apify Actor" node
+built), reading the actor id and its JSON input from the Apify
+integration's OWN stored config (`trendsActorId`/`trendsInputJson`) rather
+than from the workflow definition — operator-owned config stays
+operator-owned. `reddit.searchPosts` calls Reddit's real, unauthenticated
+search JSON endpoint (`GET /r/{subs}/search.json`), confirmed from n8n 16's
+"Fetch Reddit" node. Both prompt-formatting/AI-call/result-parsing chains
+("Build AI Request" → "AI Analyze Trends"/"AI Categorize" → "Parse
+Patterns"/"Build Pain Rows" in the n8n originals) are collapsed into one
+action each (`intelligence.analyzeTrends`, `intelligence.analyzePainPoints`)
+for the same reason as `whatsapp.processInboundMessage` and
+`whatsapp.runSequence` before them: the per-item prompt formatting and the
+AI's index-based mapping back to the original post are real array logic
+the engine's path-based templating cannot express directly. Both reproduce
+the n8n originals' exact prompt text, not a rewording.
+
+**Reddit needs no credentials** — its search endpoint is public — so
+`reddit.searchPosts` was tested against the REAL `reddit.com` over the
+network, not a simulation (there is nothing to simulate for a public,
+unauthenticated endpoint). That test genuinely failed with `ENOTFOUND` in
+this sandbox, which has no outbound route to the public internet for that
+host; the test catches this and reports it honestly (a console warning,
+not a fabricated pass) rather than asserting success it cannot actually
+observe. This is the one case in the whole project where "LOCALLY TESTED"
+for a specific provider call could not be fully demonstrated from this
+sandbox — reported here rather than silently worked around.
 
 ### Priority 3 in detail — social posting (10/12) and a deliberate safety divergence
 
@@ -248,7 +279,7 @@ feature exists to provide is not a behavior worth preserving. If a true
 auto-post-without-review mode is wanted later, it needs an explicit,
 separate decision — not a silent revert of this choice.
 
-All 15 native workflows are seeded idempotently on server boot
+All 17 native workflows are seeded idempotently on server boot
 (`seedPortedWorkflows()` in `server.ts`, with an auto-upgrade path that
 publishes a new version when a seed's definition changes without mutating
 any already-published version — itself covered by an integration test).
@@ -338,16 +369,12 @@ which is the standard way to test an HMAC webhook without a live account
 requests for this project). This is LOCALLY TESTED, not STAGING or
 PRODUCTION VERIFIED, and is reported as such.
 
-### What's blocking the remaining 7 — concrete, not hand-waved
+### What's blocking the remaining 5 — concrete, not hand-waved
 
-- **14 (autopilot controller)** is a cross-workflow daily summary; 05/06/10/
-  12/13/19 all now exist, so it is unblocked but not yet built this batch —
-  purely a matter of writing the composite read-and-summarize action, no
-  new primitive needed.
-- **15 (viral intelligence)** needs an `apify.runActor` action; **16 (pain
-  discovery)** needs a Reddit-fetch action restricted to Reddit's public API
-  (never a generic URL — the engine's SSRF stance, §5, forbids that even for
-  this). Neither action exists yet.
+- **14 (autopilot controller)** is a cross-workflow daily summary; every
+  workflow it reads from (05/06/10/12/13/19) now exists, so it is unblocked
+  but not yet built this batch — purely a matter of writing the composite
+  read-and-summarize action, no new primitive needed.
 - **20 (A/B testing)** reads "published content" performance data — 10/12
   are now posting for real (simulated-provider tested), so this is
   unblocked but not yet built this batch.
@@ -458,11 +485,11 @@ handful of state-transition buttons) rather than a full graphical builder.
 
 ## 7. What "done" would require from here
 
-1. Port the remaining 7 workflows per §4's blocker list. In priority order:
-   14 and 20 (now unblocked, just not yet written); an `apify.runActor`
-   action unlocks 15; a Reddit-fetch action unlocks 16; 00/01/02 need a
-   content-calendar system-of-record and a Telegram-command-webhook
-   integration.
+1. Port the remaining 5 workflows per §4's blocker list: 14 and 20 (both
+   unblocked, just not yet written — a composite summary action and a
+   composite analysis action respectively, no new primitive needed); 00/01/
+   02 need a content-calendar system-of-record and a Telegram-command-
+   webhook integration.
 2. `content.postApprovedDraft` (§4, Priority 3) closes the "approved drafts
    never actually get published" gap for X/Buffer; Meta (Facebook Page/
    Instagram/LinkedIn) posting for approved videos is a separate, still-open
@@ -499,4 +526,5 @@ a readiness checklist, not a claim that anything is production-ready.
 | Google Sheets | None — every ported workflow replaced it with a native Postgres table | N/A — intentionally retired for the 13 ported workflows (see §4's per-row notes); still the system of record for the 9 not yet ported. | N/A until those 9 are ported, at which point each one is individually replaced the same way, not reconnected. |
 | X (Twitter) | 10, 12 | Never connected with real credentials. `postTweet`'s real HTTP call path (timedFetch/withRetry/describeHttpFailure) was exercised against a **labeled local simulation** of X's API v2 endpoint this batch — a real 500 was simulated and correctly left the draft unpublished with the failure recorded. | A real OAuth app (client ID/secret) connected via the existing X OAuth flow (`/api/oauth`), `twitterPostingEnabled` ticked, `autopilotSocialPosting` ticked, `autopilotStop` off, and a real test post watched to a real tweet id — only then should 10/12 post for real. |
 | Buffer | 10, 12 | Never connected with real credentials. Same labeled-simulation testing as X. The Buffer provider's own `caveat` (its legacy API shape has never been confirmed against a live account, since Buffer no longer registers new OAuth apps for it) still applies and is not resolved by this batch. | A real Buffer access token + the correct profile ID for each platform actually used, plus the same settings as X above. Treat the first real post as the actual verification that Buffer's legacy API still behaves as documented — this project cannot confirm that without one. |
-| Apify, Reddit | 15, 16 (not yet ported) | Never connected; no native action calls them yet. | Blocked on the actions themselves (§7.1), not just credentials. |
+| Apify | 15 | Never connected with real credentials. `apify.runTrendsActor`'s real HTTP call path was exercised against a **labeled local simulation** of Apify's dataset-items endpoint this batch. | A real API token + a real, working `trendsActorId` (and valid `trendsInputJson`) in Integrations, plus an AI provider connected (the analysis step needs both), and a real test-run watched end to end. |
+| Reddit | 16 | No credentials needed — it's a public endpoint. Tested against the REAL `reddit.com` this batch; genuinely failed with `ENOTFOUND` from this sandbox (no outbound route), reported honestly rather than faked — see §4's Priority-4 detail. | Nothing to configure for Reddit itself; this workflow's real dependency is an AI provider being connected, plus confirming from an environment WITH internet access that the real search endpoint behaves as this project assumes. |

@@ -812,3 +812,32 @@ model EngineSocialLead {
 
   @@unique([channel, externalId])
 }
+
+/// Replaces the n8n workflow's "Intelligence" Google Sheets tab (workflow 15): one row per
+/// AI-extracted pattern (a hook, an emotional trigger, or a content format) from trending posts.
+model EngineTrendPattern {
+  id        String   @id @default(cuid())
+  type      String
+  content   String
+  score     Int      @default(0)
+  source    String   @default("apify")
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+}
+
+/// Replaces the n8n workflow's "Pain DB" Google Sheets tab (workflow 16): one row per
+/// AI-categorized community pain point found in a Reddit search.
+model EnginePainPoint {
+  id        String   @id @default(cuid())
+  pain      String
+  category  String
+  intensity Int
+  persona   String?
+  keywords  String[]
+  upvotes   Int      @default(0)
+  source    String   @default("reddit")
+  createdAt DateTime @default(now())
+
+  @@index([category, createdAt])
+}
