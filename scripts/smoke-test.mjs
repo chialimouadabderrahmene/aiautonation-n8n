@@ -14,7 +14,7 @@
  *   SMOKE_WORKFLOW=16-pain-discovery-engine
  *       workflow to enable/test-run/disable (default: first READY one).
  *       WARNING: a test run is a REAL run with real side effects.
- *   SMOKE_RESTART_CMD="docker compose -f docker/docker-compose.yml restart api worker n8n"
+ *   SMOKE_RESTART_CMD="docker compose -f docker/docker-compose.yml restart api worker"
  *       command that restarts the services for steps 19-20 (on Railway use
  *       `railway redeploy --service api -y && ...` or restart from the dashboard
  *       and re-run with SMOKE_ONLY_PERSISTENCE=1).
@@ -83,7 +83,7 @@ async function waitForHealthy(timeoutMs) {
       if (login.status === 200) {
         token = login.json.token;
         const h = await health();
-        if (["api", "database", "redis", "worker", "n8n"].every((k) => h[k].status === "ONLINE")) return h;
+        if (["api", "database", "redis", "worker"].every((k) => h[k].status === "ONLINE")) return h;
       }
     } catch {
       /* still restarting */
@@ -128,7 +128,11 @@ async function main() {
         assert(h?.[key]?.status === "ONLINE", `${key}: ${h?.[key]?.status} — ${h?.[key]?.message}`);
         return h[key].message;
       });
-    await comp(4, "n8n", "n8n");
+    await step(4, "Native engine reachable (no n8n required)", async () => {
+      const r = await call("GET", "/api/engine/workflows");
+      assert(r.status === 200 && Array.isArray(r.json), `engine workflows → ${r.status}`);
+      return `${r.json.length} native engine workflow(s) registered`;
+    });
     await comp(5, "database", "Database");
     await comp(6, "redis", "Redis");
     await comp(7, "worker", "Worker");
@@ -136,17 +140,16 @@ async function main() {
       assert(h?.worker?.details?.ffmpeg && h?.worker?.details?.ffprobe, "worker did not report ffmpeg/ffprobe");
       return `${h.worker.details.ffmpeg} | ${h.worker.details.ffprobe}`;
     });
-    await step(9, "22 workflows present in n8n", async () => {
-      assert(h?.n8n?.details?.present === 22, `present=${h?.n8n?.details?.present}`);
+    await step(9, "22 workflows registered", async () => {
+      const wfs = (await call("GET", "/api/workflows")).json;
+      assert(wfs.length === 22, `present=${wfs.length}`);
       return "22/22";
     });
-    await step(10, "Workflows inactive unless enabled", async () => {
+    await step(10, "Workflows disabled unless explicitly enabled", async () => {
       const wfs = (await call("GET", "/api/workflows")).json;
-      const unexpected = wfs.filter((w) => w.n8nActive && !w.enabled).map((w) => w.key);
-      assert(unexpected.length === 0, `active in n8n but not enabled: ${unexpected.join(", ")}`);
-      const active = h.n8n.details.active;
+      const active = wfs.filter((w) => w.enabled).length;
       if (process.env.SMOKE_EXPECT_ALL_INACTIVE === "1") assert(active === 0, `${active} active`);
-      return `${active} active in n8n, all of them enabled on purpose`;
+      return `${active} enabled on purpose (out of ${wfs.length})`;
     });
 
     snapshotBefore = (await call("GET", "/api/workflows")).json.map((w) => ({ key: w.key, readiness: w.readiness, failing: w.readinessDetail.filter((d) => !d.ok).length }));
@@ -195,8 +198,8 @@ async function main() {
       const r = await call("POST", `/api/workflows/${chosenWorkflow.key}/enable`);
       assert(r.status === 200, `enable → ${r.status} ${r.json?.message ?? ""}`);
       const wf = (await call("GET", "/api/workflows")).json.find((w) => w.key === chosenWorkflow.key);
-      assert(wf.enabled && wf.n8nActive, "n8n does not report it active");
-      return `${chosenWorkflow.key} active in n8n`;
+      assert(wf.enabled, "native engine does not report it enabled");
+      return `${chosenWorkflow.key} enabled in the native engine`;
     });
     await step(15, "Execute workflow (TEST RUN)", async () => {
       if (!chosenWorkflow) return { skipped: "no READY workflow" };
@@ -236,12 +239,12 @@ async function main() {
       const r = await call("POST", `/api/workflows/${chosenWorkflow.key}/disable`);
       assert(r.status === 200, `disable → ${r.status}`);
       const wf = (await call("GET", "/api/workflows")).json.find((w) => w.key === chosenWorkflow.key);
-      assert(!wf.enabled && !wf.n8nActive, "still active");
-      return `${chosenWorkflow.key} inactive in n8n`;
+      assert(!wf.enabled, "still enabled");
+      return `${chosenWorkflow.key} disabled`;
     });
   }
 
-  const before = { integrations: (await call("GET", "/api/integrations")).json?.map((i) => `${i.provider}:${i.status}`).sort(), active: (await call("GET", "/api/workflows")).json?.filter((w) => w.n8nActive).map((w) => w.key).sort() };
+  const before = { integrations: (await call("GET", "/api/integrations")).json?.map((i) => `${i.provider}:${i.status}`).sort(), active: (await call("GET", "/api/workflows")).json?.filter((w) => w.enabled).map((w) => w.key).sort() };
   await step(19, "Restart services", async () => {
     if (!process.env.SMOKE_RESTART_CMD) return { skipped: "SMOKE_RESTART_CMD not set — restart from the platform, then run again with SMOKE_ONLY_PERSISTENCE=1" };
     execSync(process.env.SMOKE_RESTART_CMD, { stdio: "inherit" });
@@ -250,9 +253,10 @@ async function main() {
     return "all core services back ONLINE";
   });
   await step(20, "Persistence after restart", async () => {
-    const h = await waitForHealthy(3 * 60_000);
-    assert(h.n8n.details.present === 22, `n8n workflows present: ${h.n8n.details.present}`);
-    const after = { integrations: (await call("GET", "/api/integrations")).json.map((i) => `${i.provider}:${i.status}`).sort(), active: (await call("GET", "/api/workflows")).json.filter((w) => w.n8nActive).map((w) => w.key).sort() };
+    await waitForHealthy(3 * 60_000);
+    const wfs = (await call("GET", "/api/workflows")).json;
+    assert(wfs.length === 22, `workflows present: ${wfs.length}`);
+    const after = { integrations: (await call("GET", "/api/integrations")).json.map((i) => `${i.provider}:${i.status}`).sort(), active: wfs.filter((w) => w.enabled).map((w) => w.key).sort() };
     assert(JSON.stringify(after.integrations) === JSON.stringify(before.integrations), "integration states changed across restart");
     assert(JSON.stringify(after.active) === JSON.stringify(before.active), `active workflows changed: ${before.active} → ${after.active}`);
     return `22/22 workflows, ${after.active.length} active (unchanged), ${after.integrations.length} integration states unchanged`;
