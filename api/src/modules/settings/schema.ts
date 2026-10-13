@@ -22,11 +22,12 @@ export interface SettingDefinition {
 }
 
 export const SETTINGS: SettingDefinition[] = [
-  { key: "aiProvider", label: "AI provider for the n8n workflows", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }], help: "The connected provider whose key and model every AI step in n8n uses." },
+  { key: "aiProvider", label: "AI provider (scripts, carousels, critic, n8n)", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }, { value: "anthropic", label: "Anthropic (Claude)" }], help: "The connected provider every generation call tries first — script/carousel writing, the brand critic, and every AI step in n8n. Falls back to the next connected provider if this one isn't." },
   { key: "launchDate", label: "Launch date (day 1 of the 30-day content calendar)", type: "date", group: "Business", default: "", n8nEnv: "LAUNCH_DATE" },
   { key: "appDownloadLink", label: "App download / public link", type: "url", group: "Business", default: "https://culinarytales.app", n8nEnv: "APP_DOWNLOAD_LINK" },
   { key: "appVendorLink", label: "Vendor sign-up link", type: "url", group: "Business", default: "https://culinarytales.app/sell", n8nEnv: "APP_VENDOR_LINK" },
   { key: "whatsappCtaLink", label: "WhatsApp click-to-chat link (wa.me/...)", type: "url", group: "Business", default: "", n8nEnv: "WHATSAPP_CTA_LINK" },
+  { key: "whatsappGroupInviteLink", label: "WhatsApp community group invite link (chat.whatsapp.com/...)", type: "url", group: "Business", default: "", help: "Sent in reply to the JOIN keyword. The Cloud API cannot message people inside a WhatsApp group, so signup still happens in this 1:1 conversation — the group's own pinned message should point back here." },
   { key: "feedbackFormUrl", label: "Feedback survey URL", type: "url", group: "Business", default: "", n8nEnv: "FEEDBACK_FORM_URL" },
   { key: "feedbackRewardText", label: "Feedback reward sentence (leave empty unless a reward exists)", type: "text", group: "Business", default: "", n8nEnv: "FEEDBACK_REWARD_TEXT" },
   { key: "appStoreReviewUrl", label: "App Store review URL", type: "url", group: "Business", default: "", n8nEnv: "APP_STORE_REVIEW_URL" },
@@ -37,6 +38,8 @@ export const SETTINGS: SettingDefinition[] = [
   { key: "autopilotStop", label: "EMERGENCY STOP social autopilot", type: "boolean", group: "Automation safety", default: false, n8nEnv: "AUTOPILOT_STOP" },
 
   { key: "whatsappTemplatesApproved", label: "I confirm Meta approved the WhatsApp templates entered in Integrations", type: "boolean", group: "Confirmations", default: false, help: "Meta's approval cannot be checked by API; this confirmation unblocks the WhatsApp sequences." },
+
+  { key: "leadCaptureApiKey", label: "External intake API key", type: "text", group: "Automation safety", default: "", help: "Shared secret external systems (landing pages, ad forms) send as the X-Api-Key header to POST /api/leads/capture and /api/leads/waitlist. Empty = both endpoints are disabled." },
 
   { key: "defaultLanguage", label: "Default video language", type: "text", group: "Video defaults", default: "en" },
   { key: "defaultTone", label: "Default tone", type: "text", group: "Video defaults", default: "Professional" },

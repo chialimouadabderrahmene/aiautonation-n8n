@@ -38,6 +38,8 @@ const createProjectSchema = z.object({
   brand: z.string().trim().max(60).default("Eki"),
   cta: z.string().trim().max(200).optional(),
   publishTargets: z.array(z.enum(PUBLISH_TARGETS)).max(4).default([]),
+  /// Specific ConnectedAccount ids (multi-account distribution) — additive to publishTargets, see schema.prisma.
+  publishAccountIds: z.array(z.string().cuid()).max(20).default([]),
 });
 
 async function attempts(): Promise<number> {

@@ -118,6 +118,25 @@ export const PROVIDERS: ProviderDefinition[] = [
     ],
     testConnection: (v) => probe("Groq", "https://api.groq.com/openai/v1/models", { Authorization: `Bearer ${v.apiKey}` }),
   },
+  {
+    key: "anthropic",
+    label: "Anthropic (Claude)",
+    category: "AI",
+    authType: "API_KEY",
+    description: "Script writing and the Brand/Audience critic pass, when chosen as the AI provider.",
+    docsUrl: "https://console.anthropic.com/settings/keys",
+    fields: [
+      { name: "apiKey", label: "API key", type: "secret", secret: true, required: true, placeholder: "sk-ant-...", pattern: "^sk-ant-[A-Za-z0-9_-]{20,}$", patternMessage: "Anthropic keys start with sk-ant-" },
+      { name: "model", label: "Default model", type: "text", secret: false, required: false, default: "claude-sonnet-4-5", group: "Settings" },
+    ],
+    testConnection: (v) =>
+      probe("Anthropic", "https://api.anthropic.com/v1/models", { "x-api-key": v.apiKey ?? "", "anthropic-version": "2023-06-01" }, (body) => {
+        const models = (body as { data?: { id: string }[] } | null)?.data ?? [];
+        const model = v.model || "claude-sonnet-4-5";
+        const has = models.some((m) => m.id === model || m.id.startsWith(model));
+        return { message: has ? `Connected — model ${model} available` : `Connected — but model "${model}" was not found in this key's model list` };
+      }),
+  },
 
   // ------------------------------------------------------- Orchestration
   {

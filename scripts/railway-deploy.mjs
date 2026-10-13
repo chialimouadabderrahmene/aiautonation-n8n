@@ -30,6 +30,10 @@
  *   --init "<name>"    create a new Railway project first
  *   --verify-only      skip provisioning/deploys, only run the verification
  *   --no-smoke         skip scripts/smoke-test.mjs
+ *   --check-cli        read-only: show which Railway executable is used, its
+ *                      version, login and linked project/environment, then exit
+ *   RAILWAY_CLI        path to the railway executable, if PATH lookup fails
+ *                      (see scripts/lib/railway-cli.mjs for the resolution order)
  *
  * Safety:
  *   - Secret values are generated here (crypto.randomBytes), sent to Railway
@@ -45,13 +49,33 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveRailwayCli } from "./lib/railway-cli.mjs";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+// fileURLToPath, not URL.pathname: the latter keeps %20 for spaces and yields
+// "/C:/..." on Windows — an invalid cwd, which Node reports as "spawnSync railway ENOENT".
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const flagValue = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const APP_SERVICES = ["api", "worker", "web"];
-const CONFIG_FILES = { api: "/railway/api.json", worker: "/railway/worker.json", web: "/railway/web.json" };
+// `railway environment edit --service-config <svc> configFile <path>` (the
+// documented config-as-code mechanism the railway/*.json files were written
+// for) was tried against a real Railway account and reproduced as a silent
+// no-op: it always exits 0 and prints `{"committed":false,"message":"No
+// changes to apply"}` — for that path, for its own build.builder /
+// build.dockerfilePath / deploy.numReplicas equivalents, and even for a
+// deliberately invalid dot-path, all identically. A subsequent build then
+// used Railpack instead of the intended Dockerfile ("Railpack could not
+// determine how to build the app"). The actually-effective mechanism,
+// confirmed by a real build log switching from Railpack to the correct
+// multi-stage Dockerfile: the legacy `RAILWAY_DOCKERFILE_PATH` build
+// variable (set like any other var, honored at build time). It only covers
+// `build.dockerfilePath`; `deploy.healthcheckPath` / `restartPolicyType` /
+// `numReplicas` have no confirmed variable equivalent (see DEPLOYMENT.md) —
+// Railway's defaults (TCP-only health check, ON_FAILURE/10 retries, 1
+// replica) apply instead until that gap is closed.
+const DOCKERFILE_PATHS = { api: "docker/Dockerfile.api", worker: "docker/Dockerfile.worker", web: "docker/Dockerfile.web" };
 const SECRET_KEYS = ["AUTOMATION_SECRET_KEY", "JWT_SECRET", "INTERNAL_API_TOKEN"];
 const secretTargets = {
   AUTOMATION_SECRET_KEY: ["api", "worker"],
@@ -77,16 +101,31 @@ function step(name, detail) {
   log(`${name}${detail ? ` — ${detail}` : ""}`);
 }
 
+let cli;
+/** The Railway executable, resolved once from PATH without a shell (Windows: .exe or npm .cmd shim target). */
+function railwayCli() {
+  if (!cli) {
+    try {
+      cli = resolveRailwayCli();
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+  return cli;
+}
+
 /** Runs the Railway CLI. `secret: true` = output may contain secrets: never echoed. */
 function rw(cliArgs, { input, allowFail = false, secret = false, interactive = false } = {}) {
-  const res = spawnSync("railway", cliArgs, {
+  const { command, args: prefix } = railwayCli();
+  const res = spawnSync(command, [...prefix, ...cliArgs], {
     cwd: ROOT,
     input,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    windowsHide: true,
     stdio: interactive ? ["inherit", "pipe", "inherit"] : ["pipe", "pipe", "pipe"],
   });
-  if (res.error) fail(`could not run railway ${cliArgs[0]}: ${res.error.message}`);
+  if (res.error) fail(`could not run railway ${cliArgs[0]} (${command}): ${res.error.message}`);
   if (res.status !== 0 && !allowFail) {
     const detail = secret ? "(output suppressed: may contain secrets)" : `${res.stderr ?? ""}${res.stdout ?? ""}`.trim().slice(-1500);
     fail(`railway ${cliArgs.filter((a) => !a.includes("=")).join(" ")} exited ${res.status}\n${detail}`);
@@ -162,7 +201,7 @@ function githubRepo() {
 // ------------------------------------------------------------ provisioning
 async function provision() {
   const version = rw(["--version"]).stdout.trim();
-  step("Railway CLI", version);
+  step("Railway CLI", `${version} — ${railwayCli().source}`);
   const major = Number(/(\d+)\.\d+\.\d+/.exec(version)?.[1] ?? 0);
   if (major < 5) fail(`this script needs Railway CLI v5+ (bucket, tcp-proxy, service source, environment edit). Run: railway upgrade`);
   const who = rw(["whoami"], { allowFail: true });
@@ -245,12 +284,14 @@ async function provision() {
   services = listServices();
   for (const name of APP_SERVICES) if (!byName(services, name)) fail(`service ${name} missing after creation`);
 
-  // ---- config-as-code paths (Dockerfile, healthchecks, restart policy)
-  const cfgArgs = ["environment", "edit"];
-  for (const name of APP_SERVICES) cfgArgs.push("--service-config", name, "configFile", CONFIG_FILES[name]);
-  cfgArgs.push("--message", "Eki Control Center: config-as-code paths");
-  rw(cfgArgs);
-  step("Config-as-code", APP_SERVICES.map((n) => `${n}→${CONFIG_FILES[n]}`).join(", "));
+  // ---- Dockerfile selection (see DOCKERFILE_PATHS comment above for why
+  // this is a plain build variable and not `environment edit --service-config`)
+  for (const name of APP_SERVICES) {
+    if (getVars(name).RAILWAY_DOCKERFILE_PATH !== DOCKERFILE_PATHS[name]) {
+      rw(["variable", "set", `RAILWAY_DOCKERFILE_PATH=${DOCKERFILE_PATHS[name]}`, "--service", name, "--skip-deploys"]);
+    }
+  }
+  step("Dockerfile path", APP_SERVICES.map((n) => `${n}→${DOCKERFILE_PATHS[n]}`).join(", "));
 
   // ---- public domain (web only — api/worker stay on the private network)
   const domainOf = (svc) => domainUrls(svc)[0] ?? null;
@@ -263,7 +304,7 @@ async function provision() {
   // ---- secrets: reuse existing values, generate only what is missing
   const current = Object.fromEntries(APP_SERVICES.map((s) => [s, getVars(s)]));
   const existsAnywhere = (key) => APP_SERVICES.some((s) => has(current[s], key));
-  const pick = (key) => current.api[key] || current.worker[key] || null;
+  const pick = (key) => APP_SERVICES.map((s) => current[s][key]).find((v) => v) || null;
   for (const k of SECRET_KEYS) {
     // A sealed secret cannot be read back, so it cannot be copied to a service that lacks it.
     if (existsAnywhere(k) && !pick(k)) {
@@ -273,7 +314,7 @@ async function provision() {
   }
   const secrets = Object.fromEntries(SECRET_KEYS.map((k) => [k, pick(k) || (existsAnywhere(k) ? null : secret())]));
   for (const k of SECRET_KEYS) {
-    const values = new Set(secretTargets[k].map((s) => current[s][k]).filter((x) => typeof x === "string" && x));
+    const values = new Set(secretTargets[k].map((s) => current[s]?.[k]).filter((x) => typeof x === "string" && x));
     if (values.size > 1) warn(`${k} differed between ${secretTargets[k].join(" and ")} (services could not talk to each other / decrypt); aligning all to the ${secretTargets[k][0]} value`);
   }
   const generated = SECRET_KEYS.filter((k) => !existsAnywhere(k));
@@ -577,7 +618,23 @@ async function verify() {
 }
 
 // ------------------------------------------------------------------ main
+async function checkCli() {
+  const { command, args: prefix, source } = railwayCli();
+  step("Railway executable", `${[command, ...prefix].join(" ")} (from ${source})`);
+  step("railway --version", rw(["--version"]).stdout.trim());
+  const who = rw(["whoami"], { allowFail: true });
+  step("railway whoami", who.ok ? who.stdout.trim().split("\n").pop() : "NOT logged in — run `railway login`");
+  const status = rw(["status"], { allowFail: true });
+  if (!status.ok) fail(`railway status failed — ${who.ok ? `run \`railway link\` in ${ROOT}` : "run `railway login` first"}\n${(status.stderr + status.stdout).trim().slice(0, 300)}`);
+  const lines = status.stdout.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim());
+  for (const l of lines.filter((l) => /^(Project|Environment|Service)\s*:/i.test(l))) step("railway status", l);
+  const projects = rwJson(["project", "list"], { allowFail: true });
+  step("railway project list", Array.isArray(projects) ? `${projects.length} project(s) visible to this login` : "not available");
+  log("CLI check passed — nothing was created or changed.");
+}
+
 (async () => {
+  if (flag("--check-cli")) return checkCli();
   if (!flag("--verify-only")) {
     const ctx = await provision();
     await deploy(ctx);
