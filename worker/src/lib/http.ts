@@ -66,7 +66,17 @@ export async function timedFetch(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const start = Date.now();
   try {
-    const res = await fetch(applyOverride(url), { ...init, signal: controller.signal });
+    const res = await fetch(applyOverride(url), {
+      ...init,
+      // Some providers front their API with
+      // Cloudflare bot-protection that serves a JS challenge page (not their real API
+      // response) to requests with no User-Agent — Node's fetch sends none by default.
+      // A real UA is enough to pass the check for an API route that isn't actually meant
+      // to be challenged (confirmed against CodeCraft's API, which returned Cloudflare's
+      // "Just a moment..." page with no UA set).
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; EkiAutomation/1.0; +https://eki.app)", Accept: "application/json", ...init.headers },
+      signal: controller.signal,
+    });
     return { res, latencyMs: Date.now() - start };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
