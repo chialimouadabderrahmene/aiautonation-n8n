@@ -16,6 +16,7 @@ async function chooseProvider(): Promise<{ key: string; baseUrl: string; apiKey:
   for (const [key, baseUrl, fallbackModel] of [
     ["openai", "https://api.openai.com/v1", "gpt-4o-mini"],
     ["groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"],
+    ["codecraft", "https://codecraftapi.com/v1", "gpt-4o-mini"],
   ] as const) {
     const integration = await prisma.integration.findUnique({ where: { provider: key } });
     if (integration?.status !== "CONNECTED") continue;
@@ -34,7 +35,7 @@ async function chooseProvider(): Promise<{ key: string; baseUrl: string; apiKey:
  */
 export async function aiComplete(input: { system: string; user: string; jsonMode?: boolean }): Promise<AICompleteResult> {
   const ai = await chooseProvider();
-  if (!ai) return { ok: false, reason: "not_configured", message: "Neither OpenAI nor Groq is connected — configure one in Integrations." };
+  if (!ai) return { ok: false, reason: "not_configured", message: "No AI provider is connected (OpenAI, Groq or CodeCraft API) — configure one in Integrations." };
   try {
     const data = await withRetry(async () => {
       const { res } = await timedFetch(
@@ -54,7 +55,7 @@ export async function aiComplete(input: { system: string; user: string; jsonMode
         },
         60_000,
       );
-      if (!res.ok) throw describeHttpFailure(ai.key === "openai" ? "OpenAI" : "Groq", res.status, await readErrorDetail(res));
+      if (!res.ok) throw describeHttpFailure(ai.key === "openai" ? "OpenAI" : ai.key === "groq" ? "Groq" : "CodeCraft API", res.status, await readErrorDetail(res));
       return (await res.json()) as { choices: { message: { content: string } }[] };
     });
     const raw = data.choices[0]?.message.content ?? "";

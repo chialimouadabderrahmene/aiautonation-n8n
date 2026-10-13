@@ -29,7 +29,7 @@ export interface WorkflowManifestEntry {
   optional?: string[];
 }
 
-const AI = "openai|groq";
+const AI = "openai|groq|codecraft";
 
 export const WORKFLOW_MANIFEST: WorkflowManifestEntry[] = [
   { key: "00-global-error-handler", name: "Global Error Handler", category: "System", required: ["telegram"] },
