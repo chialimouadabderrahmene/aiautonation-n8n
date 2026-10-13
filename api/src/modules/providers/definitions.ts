@@ -91,7 +91,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     label: "OpenAI",
     category: "AI",
     authType: "API_KEY",
-    description: "Video scripts and (when chosen as the AI provider in Settings) every AI step in the n8n workflows.",
+    description: "Video scripts and (when chosen as the AI provider in Settings) every AI step in the native workflow engine.",
     docsUrl: "https://platform.openai.com/api-keys",
     fields: [
       { name: "apiKey", label: "API key", type: "secret", secret: true, required: true, placeholder: "sk-...", pattern: "^sk-[A-Za-z0-9_-]{20,}$", patternMessage: "OpenAI keys start with sk-" },
@@ -110,7 +110,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     label: "Groq",
     category: "AI",
     authType: "API_KEY",
-    description: "Fast, low-cost OpenAI-compatible AI. Default provider for the n8n content workflows.",
+    description: "Fast, low-cost OpenAI-compatible AI. Default provider for the native content workflows.",
     docsUrl: "https://console.groq.com/keys",
     fields: [
       { name: "apiKey", label: "API key", type: "secret", secret: true, required: true, placeholder: "gsk_...", pattern: "^gsk_[A-Za-z0-9]{20,}$", patternMessage: "Groq keys start with gsk_" },
@@ -158,11 +158,11 @@ export const PROVIDERS: ProviderDefinition[] = [
   // ------------------------------------------------------- Orchestration
   {
     key: "n8n",
-    label: "n8n",
+    label: "n8n (optional, legacy)",
     category: "ORCHESTRATION",
     authType: "INFRA",
     description:
-      "Workflow engine running the 22 automations. Connected automatically by the deployment (private network + an API key the Control Center creates itself). Edit only if you moved n8n elsewhere.",
+      "NOT REQUIRED. All 22 workflows run natively in this Control Center's own workflow engine (see Automations / Workflow Engine) — nothing here ever calls n8n. This card exists only for operators who still keep a legacy n8n instance connected as a side-by-side reference to the original workflow diagrams; leaving it \"Not configured\" is the normal, fully-functional state.",
     fields: [
       { name: "baseUrl", label: "n8n URL (internal)", type: "url", secret: false, required: true, placeholder: "http://n8n.railway.internal:5678" },
       { name: "publicUrl", label: "n8n public URL (editor + webhooks)", type: "url", secret: false, required: false, placeholder: "https://n8n-yourproject.up.railway.app" },
@@ -180,7 +180,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     category: "ORCHESTRATION",
     authType: "API_KEY",
     description:
-      "The workflows' database (leads, content calendar, analytics). Uses a Google Cloud service account — the right mechanism for a server: no browser consent that expires. The same key is pushed into n8n automatically.",
+      "OPTIONAL, legacy — not required. Every workflow's \"database\" (leads, content calendar, analytics) is now a native Postgres table instead, so no workflow reads or writes Google Sheets anymore. Uses a Google Cloud service account if you still want a live export.",
     docsUrl: "https://console.cloud.google.com/iam-admin/serviceaccounts",
     caveat: "Share the spreadsheet with the service account's client_email as an Editor, otherwise the test fails with 'access denied'.",
     fields: [
@@ -233,7 +233,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     async testConnection(v) {
       const len = (v.sharedSecret ?? "").length;
       if (len < 24) return { ok: false, message: "Secret missing or shorter than 24 characters", latencyMs: 0 };
-      return { ok: true, message: `Secret set (${len} characters). It is pushed into n8n's header-auth credential on sync.`, latencyMs: 0 };
+      return { ok: true, message: `Secret set (${len} characters). Checked by the native webhook routes on every inbound request.`, latencyMs: 0 };
     },
   },
 
