@@ -1,13 +1,61 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { prisma } from "../lib/prisma";
 import { n8nClient } from "../modules/n8n/client";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { recomputeAllReadiness, toEngineKey } from "../modules/workflows/readiness";
 import { runN8nSync, schedulerStatus } from "../modules/system/scheduler";
-import { testRunWorkflow } from "../modules/n8n/testRun";
 import { checkN8n } from "../modules/system/health";
 import { safeErrorMessage } from "../lib/http";
+import { enqueueExecutionRun } from "../modules/engine/queue";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Real test run against the native engine — queues a genuine execution of the
+ * workflow's published version (real actions, no simulated/mocked send) and waits
+ * briefly for a terminal result so the Automations screen can show it immediately.
+ * Never requires n8n. */
+async function testRunNative(key: string, requestedBy: string): Promise<{ ok: boolean; kind: "execution" | "not-runnable"; message: string; executionId?: string }> {
+  const engineKey = toEngineKey(key);
+  if (BUILT_IN_ENGINE_KEYS.has(engineKey)) {
+    return { ok: true, kind: "not-runnable", message: "This is a built-in engine behavior (always on), not a workflow to test-run." };
+  }
+  const workflow = await prisma.engineWorkflow.findUnique({ where: { key: engineKey }, include: { currentVersion: true } });
+  if (!workflow || !workflow.currentVersion || workflow.currentVersion.status !== "PUBLISHED") {
+    return { ok: false, kind: "not-runnable", message: "No published version exists for this workflow in the native engine yet." };
+  }
+  const execution = await prisma.engineExecution.create({
+    data: {
+      workflowId: workflow.id,
+      versionId: workflow.currentVersion.id,
+      status: "QUEUED",
+      triggerType: "MANUAL",
+      triggerPayload: {},
+      idempotencyKey: `manual:${workflow.id}:${crypto.randomUUID()}`,
+      correlationId: crypto.randomUUID(),
+      requestedBy,
+      maxAttempts: (workflow.currentVersion.definition as { maxAttempts?: number }).maxAttempts ?? 3,
+    },
+  });
+  await enqueueExecutionRun(execution.id);
+  // Wait briefly for a terminal result — long enough for a typical action, short
+  // enough to keep the request responsive; a still-running execution is reported
+  // honestly as queued/running rather than guessed at.
+  for (let i = 0; i < 12; i++) {
+    await sleep(1_000);
+    const row = await prisma.engineExecution.findUnique({ where: { id: execution.id }, select: { status: true, error: true } });
+    if (row && ["SUCCEEDED", "FAILED", "CANCELLED"].includes(row.status)) {
+      return {
+        ok: row.status === "SUCCEEDED",
+        kind: "execution",
+        executionId: execution.id,
+        message: row.status === "SUCCEEDED" ? "Real execution finished successfully." : `Execution ${row.status.toLowerCase()}: ${row.error ?? "see execution detail"}`,
+      };
+    }
+  }
+  return { ok: true, kind: "execution", executionId: execution.id, message: "Queued and still running — check Executions for the real result." };
+}
 
 const BUILT_IN_ENGINE_KEYS = new Set(["global-error-handler", "content-approval"]);
 
@@ -112,8 +160,9 @@ workflowsRouter.post("/:key/test-run", async (req: AuthedRequest, res) => {
   const wf = await prisma.workflowConfig.findUnique({ where: { key } });
   if (!wf) return res.status(404).json({ message: "Unknown workflow" });
   try {
-    const result = await testRunWorkflow(key, req.admin?.email ?? "unknown");
-    await recordAudit(req.admin?.email ?? "unknown", "workflow.test_run", "WorkflowConfig", key, { ok: result.ok, kind: result.kind, message: result.message });
+    const result = await testRunNative(key, req.admin?.email ?? "unknown");
+    await prisma.workflowConfig.update({ where: { key }, data: { lastTestRunAt: new Date(), lastTestRunOk: result.ok, lastTestRunMessage: result.message } });
+    await recordAudit(req.admin?.email ?? "unknown", "workflow.test_run", "WorkflowConfig", key, { ok: result.ok, kind: result.kind, message: result.message, executionId: result.executionId });
     res.json(result);
   } catch (err) {
     res.status(502).json({ ok: false, message: safeErrorMessage(err) });

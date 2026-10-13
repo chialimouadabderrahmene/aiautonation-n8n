@@ -269,6 +269,13 @@ export interface DashboardSummary {
   };
   today: { executions: number; successful: number; failed: number; running: number };
   actionRequired: { label: string; detail: string; link: string }[];
+  metrics: {
+    content: { total: number; last7d: number; pct: number | null };
+    leads: { total: number; last7d: number; pct: number | null };
+    messages: { total: number; last7d: number; pct: number | null };
+  };
+  recentActivity: { at: string; label: string; detail: string }[];
+  performance: { date: string; total: number }[];
   testModeOverrides: string[] | null;
   generatedAt: string;
 }

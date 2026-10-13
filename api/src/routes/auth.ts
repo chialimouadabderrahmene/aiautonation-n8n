@@ -28,7 +28,7 @@ authRouter.post("/login", loginLimiter, async (req, res) => {
 });
 
 authRouter.get("/me", requireAdmin, (req: AuthedRequest, res) => {
-  res.json({ email: req.admin?.email });
+  res.json({ email: req.admin?.email, role: req.admin?.role });
 });
 
 const passwordSchema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(12).max(200) });
