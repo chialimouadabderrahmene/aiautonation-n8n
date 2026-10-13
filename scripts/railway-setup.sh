@@ -10,11 +10,13 @@
 #   ADMIN_EMAIL=you@company.com BUCKET_REGION=ams bash scripts/railway-setup.sh
 #
 # Creates what is missing (never duplicates): Postgres, Redis, a Bucket, and the
-# services api, worker, n8n, web; wires every variable; deploys in order
-# (api → worker → n8n → web) stopping with logs on any failure; then verifies
-# health, the 22 workflows in n8n, FFmpeg on the worker, security and runs the
-# smoke test. Secrets are generated locally and sent via stdin, never printed.
-# Safe to re-run: existing secrets are reused, never rotated.
+# services api, worker, web; wires every variable; deploys in order
+# (api → worker → web) stopping with logs on any failure; then verifies
+# health, the 22 native workflows, FFmpeg on the worker, security and runs the
+# smoke test. There is no n8n service in this topology — the native workflow
+# engine executes all 22 workflows directly. Secrets are generated locally and
+# sent via stdin, never printed. Safe to re-run: existing secrets are reused,
+# never rotated.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v railway >/dev/null || [ -n "${RAILWAY_CLI:-}" ] || { echo "Install the Railway CLI (v5+): https://docs.railway.com/guides/cli (or set RAILWAY_CLI)"; exit 1; }

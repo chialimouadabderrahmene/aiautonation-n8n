@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
 import { Badge, Button, Card, Checklist, ErrorState, LoadingState, Notice, PageHeader, StatusBadge, timeAgo } from "@/components/ui";
+import { BoltIcon } from "@/components/icons";
 import { api, APIError } from "@/lib/api";
 import { ComponentHealth, WorkflowConfig } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
@@ -43,15 +44,20 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button className="min-w-0 text-left" onClick={() => setOpen((v) => !v)}>
-          <p className="font-bold text-slate-900">
-            {wf.name} <span className="text-xs font-normal text-slate-400">{wf.key.slice(0, 2)} · {wf.category} · {wf.triggerKind === "manual" ? "scheduled" : wf.triggerKind}</span>
-          </p>
-          <p className="text-xs text-slate-500">
-            {failing.length ? `${failing.length} blocker(s): ${failing[0]?.note ?? failing[0]?.label}${failing.length > 1 ? " …" : ""}` : "All requirements met"}
-            {" · "}engine: {wf.enabled ? "running" : "stopped"}
-            {wf.lastExecutionAt ? ` · last run ${timeAgo(wf.lastExecutionAt)} ${wf.lastExecutionOk ? "✓" : "✕"}` : ""}
-          </p>
+        <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => setOpen((v) => !v)}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${wf.enabled ? "bg-brand-50 text-brand-600" : "bg-slate-100 text-slate-400"}`}>
+            <BoltIcon size={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900">
+              {wf.name} <span className="text-xs font-normal text-slate-400">{wf.key.slice(0, 2)} · {wf.category} · {wf.triggerKind === "manual" ? "scheduled" : wf.triggerKind}</span>
+            </p>
+            <p className="text-xs text-slate-500">
+              {failing.length ? `${failing.length} blocker(s): ${failing[0]?.note ?? failing[0]?.label}${failing.length > 1 ? " …" : ""}` : "All requirements met"}
+              {" · "}engine: {wf.enabled ? "running" : "stopped"}
+              {wf.lastExecutionAt ? ` · last run ${timeAgo(wf.lastExecutionAt)} ${wf.lastExecutionOk ? "✓" : "✕"}` : ""}
+            </p>
+          </div>
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={wf.readiness} />
@@ -65,7 +71,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
               {busy === "enable" ? "…" : "Enable"}
             </Button>
           )}
-          <Button variant="secondary" onClick={() => void act("test-run")} disabled={Boolean(busy) || !wf.n8nPresent || wf.triggerKind === "error"}>
+          <Button variant="secondary" onClick={() => void act("test-run")} disabled={Boolean(busy) || wf.triggerKind === "error"}>
             {busy === "test" ? "Running…" : wf.triggerKind === "webhook" ? "Test webhook" : "Test run"}
           </Button>
         </div>
@@ -83,7 +89,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
         <div className="mt-4 border-t border-slate-100 pt-4">
           <Checklist items={wf.readinessDetail} />
           {wf.triggerKind === "manual" ? (
-            <p className="mt-3 text-xs text-slate-400">Test run executes the workflow for real in n8n (real messages, real sheet writes).</p>
+            <p className="mt-3 text-xs text-slate-400">Test run executes the workflow for real in the native engine (real messages, real sends) — watch the result below.</p>
           ) : wf.triggerKind === "webhook" ? (
             <p className="mt-3 text-xs text-slate-400">Webhook workflows are tested by checking the production webhook is live and rejects unauthenticated calls — no fake data is sent.</p>
           ) : null}

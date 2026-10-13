@@ -2,7 +2,15 @@
 
 This is done **once** by whoever deploys the system. After it, the client
 configures everything in the Control Center (see `CLIENT_SETUP_CHECKLIST.md`)
-— no code, no `.env`, no n8n screens, no restarts.
+— no code, no `.env`, no restarts.
+
+**There is no n8n service in this topology.** The native workflow engine
+(`api/src/modules/engine/`) executes all 22 workflows directly against
+Postgres + Redis/BullMQ — nothing here starts, configures, or depends on n8n
+at runtime. If an n8n service happens to still exist in a given Railway
+project from before this migration, nothing in this document or its scripts
+creates, redeploys, or requires it; removing it is a separate, explicit
+decision for whoever owns that project.
 
 ## Topology
 
@@ -12,38 +20,39 @@ configures everything in the Control Center (see `CLIENT_SETUP_CHECKLIST.md`)
         ┌──────────┴───────────┐
         │ web  (PUBLIC)        │  Next.js UI + same-origin proxy for /api/*
         └──────────┬───────────┘  (browser, Telegram webhook, OAuth callbacks,
-                   │ private net   signed local media links all enter here)
-        ┌──────────┴───────────┐        ┌───────────────────────┐
-        │ api  (PRIVATE)       │◄──────►│ n8n (PUBLIC editor +  │
-        │ :4100 app            │ :5678  │ webhooks; supervisor   │
-        │ :4110 internal only  │◄───────│ pulls config from      │
-        └──┬──────┬─────────┬──┘ :4110  │ api:4110, :5690 test-run)
-           │      │         │           └───────────┬───────────┘
-      Postgres  Redis   S3 bucket                    │
-      (PRIVATE)(PRIVATE) (private, signed URLs)   Postgres schema "n8n"
+                   │ private net   webhook ingestion, signed local media links
+        ┌──────────┴───────────┐  all enter here)
+        │ api  (PRIVATE)       │
+        │ :4100 app            │
+        │ :4110 internal only  │
+        └──┬──────┬─────────┬──┘
+           │      │         │
+      Postgres  Redis   S3 bucket
+      (PRIVATE)(PRIVATE) (private, signed URLs)
            │      │         │
         ┌──┴──────┴─────────┴──┐
-        │ worker (PRIVATE)     │  BullMQ consumer, FFmpeg/ffprobe
+        │ worker (PRIVATE)     │  BullMQ consumer, FFmpeg/ffprobe, video pipeline
         └──────────────────────┘
 ```
 
 | Service | Public? | Why |
 |---|---|---|
 | web | **yes** | the only UI; proxies `/api/*` to the API at request time |
-| api | no | reached by web (and n8n's supervisor) over private networking |
+| api | no | reached by web over private networking; owns the native workflow engine, scheduler, and webhook routes (which Meta/ManyChat/Telegram/Resend/etc. reach through the web proxy) |
 | worker | no | no inbound traffic at all (health endpoint for the platform only) |
-| n8n | editor + webhooks only | leads/WhatsApp/ManyChat webhooks must reach n8n; the editor is behind n8n's own owner login |
 | Postgres | no | private networking only (no TCP proxy) |
-| Redis | no | private networking only |
+| Redis | no | private networking only; BullMQ queues live here |
 | Bucket | S3 endpoint | objects are private; access only through short-lived signed URLs |
 
-One Postgres serves both: schema `public` = Control Center, schema `n8n` =
-n8n (n8n creates its schema itself — verified).
+One Postgres schema (`public`) serves the whole application — workflow
+definitions/versions, execution history, leads, content drafts, integrations,
+audit log, everything.
 
 ## Railway — automated path
 
 Prerequisites: Railway CLI **v5+** logged in (`railway login`), Node.js 20+,
-this repository pushed to GitHub with Railway's GitHub app allowed to read it.
+this repository pushed to GitHub with Railway's GitHub app allowed to read it,
+and the target Railway project already linked (or created with `--init`).
 
 ```bash
 railway link                     # the target project (or add --init "Eki AI Automation" below)
@@ -58,26 +67,24 @@ What it does — everything looked up first, nothing duplicated, safe to re-run:
 
 1. Postgres and Redis (`railway add --database`), their public TCP proxies
    removed; a Bucket (`railway bucket create`) unless one exists.
-2. Empty services `api`, `worker`, `n8n`, `web`; config-as-code path
+2. Empty services `api`, `worker`, `web`; config-as-code path
    `/railway/<service>.json` on each (`railway environment edit --service-config`).
-3. Public domains for **web** (port 3200) and **n8n** (port 5678) only; volume
-   on n8n at `/home/node/.n8n`.
-4. Secrets `AUTOMATION_SECRET_KEY`, `JWT_SECRET`, `INTERNAL_API_TOKEN`,
-   `N8N_ENCRYPTION_KEY` generated locally and sent via `railway variable set --stdin`
-   (never on a command line, never printed). Existing values are reused, never
-   rotated. Admin and n8n-owner passwords go to
+3. A public domain for **web** only (port 3200). `api`/`worker` stay private.
+4. Secrets `AUTOMATION_SECRET_KEY`, `JWT_SECRET`, `INTERNAL_API_TOKEN`
+   generated locally and sent via `railway variable set --stdin` (never on a
+   command line, never printed). Existing values are reused, never rotated.
+   The admin password goes to
    `~/.eki-control-center/<project>-credentials.txt` (mode 600).
 5. All variables below, S3 values read from `railway bucket credentials`.
-6. Deploys api → worker → n8n → web from GitHub, waiting for each to reach
-   SUCCESS; on a failed build/deploy it prints that deployment's build and
-   deploy logs and stops.
-7. Verifies the live deployment: admin login, all 6 components ONLINE, 22/22
-   workflows in n8n and 0 active (read directly from n8n's API by
-   `railway ssh --service api node dist/tools/n8n-verify.js`), n8n rejects
-   unauthenticated API calls, FFmpeg render + storage round-trip on the worker
-   (`railway ssh --service worker node dist/tools/selftest.js`), no secrets in
-   the frontend bundle or `/api/integrations`, private services unreachable,
-   then `scripts/smoke-test.mjs` with `SMOKE_EXPECT_ALL_INACTIVE=1`.
+6. Deploys api → worker → web from GitHub, waiting for each to reach SUCCESS;
+   on a failed build/deploy it prints that deployment's build and deploy logs
+   and stops.
+7. Verifies the live deployment: admin login, core components (api, database,
+   redis, worker) ONLINE, the native engine reachable with all 22 workflows
+   registered and 0 enabled on a fresh deploy, FFmpeg render + storage
+   round-trip on the worker (`railway ssh --service worker node dist/tools/selftest.js`),
+   no secrets in the frontend bundle or `/api/integrations`, private services
+   unreachable, then `scripts/smoke-test.mjs` with `SMOKE_EXPECT_ALL_INACTIVE=1`.
    A report without secrets is written to `~/.eki-control-center/`.
 
 Once the admin has changed the password in Settings, re-run verification with
@@ -89,16 +96,19 @@ Once the admin has changed the password in Settings, re-run verification with
 >
 > **Run for real against a live Railway account (2026-09-28).** Two real bugs
 > in this script were found and fixed by that run, not by inspection:
-> 1. **Windows `spawnSync`/`shell:true` arg mangling.** `shell: true` (needed
->    on win32 so the `railway.cmd` npm shim can execute at all — see the
->    `WINDOWS_SHELL` comment in the script) does **not** quote array
->    arguments for you; Node just `[file, ...args].join(' ')`s them before
->    handing one string to `cmd.exe`. A `--message "Eki Control Center: ..."`
->    value with spaces silently got re-split into separate cmd.exe tokens
+> 1. **Windows `spawnSync("railway", ...)` resolution/quoting.** Node spawns
+>    only real executables — it cannot resolve the npm `railway.cmd` shim
+>    (or a cmd.exe metacharacter/whitespace-containing argument like
+>    `--message "Eki Control Center: ..."`) without going through `cmd.exe`,
+>    and `shell: true` does not re-quote array arguments for you, so a value
+>    with spaces silently got re-split into separate cmd.exe tokens
 >    (`railway environment edit ... exited 2: unexpected argument 'Control'`).
->    Fixed with a `winShellQuote()` helper that wraps any argument containing
->    whitespace or a cmd.exe metacharacter in `"..."` before it reaches
->    `spawnSync`.
+>    **Fixed** in `scripts/lib/railway-cli.mjs`: resolve the actual `railway`
+>    executable from `PATH` once (following a `.cmd`/`.bat` shim to the real
+>    binary it launches, or `RAILWAY_CLI=<path>` as an explicit override) and
+>    `spawnSync` that executable directly with the argument array — no shell,
+>    so no quoting problem exists to work around. `--check-cli` prints which
+>    executable this resolves to on a given machine without changing anything.
 > 2. **`railway environment edit --service-config <svc> configFile <path>` is
 >    a silent no-op on this CLI/account.** It always exits 0 and prints
 >    `{"committed":false,"message":"No changes to apply"}` — reproduced for
@@ -153,13 +163,13 @@ Once the admin has changed the password in Settings, re-run verification with
 
 ## Railway — manual path (dashboard)
 
-Create: Postgres, Redis, a Bucket, and four services from this repo, each with
-**Settings → Config-as-code** pointing at `railway/api.json`, `railway/worker.json`,
-`railway/web.json`, `railway/n8n.json`. Generate public domains for **web** and
-**n8n** only. Add a volume to **n8n** mounted at `/home/node/.n8n`.
+Create: Postgres, Redis, a Bucket, and three services from this repo, each
+with **Settings → Config-as-code** pointing at `railway/api.json`,
+`railway/worker.json`, `railway/web.json`. Generate a public domain for
+**web** only.
 
 Shared variables (generate each with `openssl rand -hex 32`):
-`AUTOMATION_SECRET_KEY`, `JWT_SECRET`, `INTERNAL_API_TOKEN`, `N8N_ENCRYPTION_KEY`.
+`AUTOMATION_SECRET_KEY`, `JWT_SECRET`, `INTERNAL_API_TOKEN`.
 
 **api**
 ```
@@ -174,11 +184,6 @@ ADMIN_BOOTSTRAP_EMAIL=<admin email>
 ADMIN_BOOTSTRAP_PASSWORD=<strong password — change it in Settings after first login>
 PUBLIC_WEB_URL=https://${{web.RAILWAY_PUBLIC_DOMAIN}}
 WEB_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}
-N8N_INTERNAL_URL=http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5678
-N8N_PUBLIC_URL=https://${{n8n.RAILWAY_PUBLIC_DOMAIN}}
-N8N_SUPERVISOR_URL=http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5690
-N8N_OWNER_EMAIL=<admin email>
-N8N_OWNER_PASSWORD=<8+ chars incl. an uppercase letter and a digit>
 STORAGE_DRIVER=s3 + S3_* (bucket)
 ```
 
@@ -198,30 +203,6 @@ PORT=3200
 API_INTERNAL_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4100
 ```
 
-**n8n**
-```
-PORT=5678
-RAILWAY_RUN_UID=0                     # lets n8n write the mounted volume
-N8N_USER_FOLDER=/home/node            # REQUIRED with RAILWAY_RUN_UID=0: as root n8n would
-                                      # otherwise use /root/.n8n and the volume stays empty
-DB_TYPE=postgresdb
-DB_POSTGRESDB_HOST=${{Postgres.PGHOST}}
-DB_POSTGRESDB_PORT=${{Postgres.PGPORT}}
-DB_POSTGRESDB_DATABASE=${{Postgres.PGDATABASE}}
-DB_POSTGRESDB_USER=${{Postgres.PGUSER}}
-DB_POSTGRESDB_PASSWORD=${{Postgres.PGPASSWORD}}
-DB_POSTGRESDB_SCHEMA=n8n
-N8N_ENCRYPTION_KEY=${{shared.N8N_ENCRYPTION_KEY}}
-N8N_HOST=${{RAILWAY_PUBLIC_DOMAIN}}
-N8N_PROTOCOL=https
-N8N_PROXY_HOPS=1
-N8N_EDITOR_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}/
-N8N_WEBHOOK_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}/
-WEBHOOK_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}/
-CONTROL_CENTER_INTERNAL_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4110
-INTERNAL_API_TOKEN=${{shared.INTERNAL_API_TOKEN}}
-```
-
 Do **not** set `ALLOW_PROVIDER_OVERRIDES` / `PROVIDER_API_OVERRIDES` in
 production — they exist only for the local test overlay (the Dashboard shows a
 red TEST MODE banner if they are ever on).
@@ -229,27 +210,27 @@ red TEST MODE banner if they are ever on).
 ## What happens automatically on every deploy / restart
 
 1. **api** entrypoint runs `prisma migrate deploy` (idempotent, retried while
-   Postgres starts), then the server verifies all 16 tables exist, bootstraps
-   the admin (first boot only), creates integration rows, generates the inbound
-   webhook secret and the Telegram webhook secret, verifies them, recomputes
-   readiness, and starts listening (`:4100`, internal `:4110`).
-2. **n8n**'s supervisor waits for the API, loads the runtime configuration
-   (whatever the admin entered — nothing on first boot), starts n8n.
-3. **api** background tasks (every 15 s until done, then periodically):
-   create the n8n owner (first boot only) → log in → mint an API key → store
-   it encrypted → test it → import the 22 workflows **inactive** (idempotent;
-   matched by stored id then by name) → create the n8n credentials from the
-   vault → mirror executions every 30 s → re-sync every 5 min → deactivate any
-   workflow active in n8n but not enabled in the Control Center.
-4. **worker** waits for Postgres, removes stale temp files, detects
+   Postgres starts), then the server verifies the required tables exist,
+   bootstraps the admin (first boot only), creates integration rows, generates
+   the inbound webhook secret and the Telegram webhook secret, verifies them,
+   recomputes workflow readiness against the native engine, starts the
+   workflow-trigger/execution BullMQ workers and the outbox-relay/cron-
+   scheduler/stalled-execution background ticks, and starts listening
+   (`:4100`, internal `:4110`).
+2. **worker** waits for Postgres, removes stale temp files, detects
    ffmpeg/ffprobe/subtitle support/storage, reports a heartbeat every 30 s.
-5. After an admin changes an integration or setting, n8n credentials are
-   re-synced (seconds) and the supervisor restarts n8n with the new
-   configuration (≤ ~30 s). Nobody restarts anything by hand.
+3. Every workflow ships **disabled**. An admin enables one from the Control
+   Center's Automations page only once its readiness check (required
+   providers connected and tested, required settings filled in, a published
+   native engine version) is READY — enabling toggles the engine's own
+   `EngineWorkflow.enabled` flag directly; nothing external needs to be
+   configured or restarted for that to take effect.
+4. After an admin changes an integration or setting, readiness is
+   recalculated immediately — no restart, no external supervisor involved.
 
 Verified locally with the same images: fresh stack → all of the above with no
-manual step; full restart of every service → back ONLINE in ~60 s with the same
-22 workflows and the same active set (see the report's test evidence).
+manual step; full restart of every service → back ONLINE with the same 22
+workflows and the same enabled set (see the report's test evidence).
 
 ## Verify the deployment
 
@@ -267,8 +248,13 @@ railway ssh --service worker -- node dist/tools/selftest.js
 ```bash
 cp docker/.env.example docker/.env      # fill with `openssl rand -hex 32` values
 docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
-# http://localhost:3200 (Control Center)   http://localhost:5679 (n8n editor)
+# http://localhost:3200 (Control Center)
 ```
+
+The compose file also defines an optional `n8n` service purely for operators
+who want to browse the original n8n workflow diagrams side-by-side as
+migration reference — it is not started by default and the application does
+not read or write anything through it.
 
 Test mode (mock providers, for exercising the whole pipeline without real
 accounts — never for production):
@@ -280,7 +266,6 @@ E2E_EMAIL=... E2E_PASSWORD=... node scripts/local-e2e-test-mode.mjs
 
 ## Secrets that must be backed up outside Railway
 
-`AUTOMATION_SECRET_KEY` (all Control Center credentials) and
-`N8N_ENCRYPTION_KEY` (all n8n credentials). Losing either makes the matching
-stored credentials unreadable (the admin would have to re-enter them). Backups
-and restore: `docs/BACKUP_RESTORE.md`.
+`AUTOMATION_SECRET_KEY` — encrypts every stored provider credential. Losing
+it makes every stored credential unreadable (the admin would have to re-enter
+them all). Backups and restore: `docs/BACKUP_RESTORE.md`.

@@ -102,6 +102,50 @@ export function MetricTile({ label, value, tone = "slate" }: { label: string; va
   );
 }
 
+const statTileTones: Record<string, { bg: string; text: string }> = {
+  green: { bg: "bg-emerald-50", text: "text-emerald-600" },
+  purple: { bg: "bg-violet-50", text: "text-violet-600" },
+  blue: { bg: "bg-blue-50", text: "text-blue-600" },
+  amber: { bg: "bg-amber-50", text: "text-amber-600" },
+  slate: { bg: "bg-slate-100", text: "text-slate-600" },
+  red: { bg: "bg-red-50", text: "text-red-600" },
+};
+
+/** A dashboard stat tile: icon chip, value, optional real week-over-week delta
+ * (never a decorative/fabricated one — pass `pct={null}` when there's nothing to compare). */
+export function StatTile({
+  icon,
+  label,
+  value,
+  sub,
+  pct,
+  tone = "slate",
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | number;
+  sub?: string;
+  pct?: number | null;
+  tone?: keyof typeof statTileTones;
+}) {
+  const t = statTileTones[tone] ?? statTileTones.slate!;
+  return (
+    <Card>
+      <div className="flex items-start justify-between">
+        <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${t.bg} ${t.text}`}>{icon}</span>
+        {typeof pct === "number" ? (
+          <span className={`flex items-center gap-0.5 text-xs font-bold ${pct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+            {pct >= 0 ? "↑" : "↓"} {Math.abs(pct)}%
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-3 text-2xl font-bold text-slate-900">{value}</p>
+      <p className="mt-0.5 text-xs font-medium text-slate-500">{label}</p>
+      {sub ? <p className="mt-1 text-[11px] text-slate-400">{sub}</p> : null}
+    </Card>
+  );
+}
+
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return "never";
   const diff = Date.now() - new Date(iso).getTime();
