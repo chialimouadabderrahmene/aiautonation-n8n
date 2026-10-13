@@ -18,6 +18,7 @@ const CANDIDATES: Candidate[] = [
   { key: "openai", label: "OpenAI", fallbackModel: "gpt-4o-mini", build: (k, m) => createOpenAICompatible("openai", "OpenAI", "https://api.openai.com/v1", k, m) },
   { key: "groq", label: "Groq", fallbackModel: "llama-3.3-70b-versatile", build: (k, m) => createOpenAICompatible("groq", "Groq", "https://api.groq.com/openai/v1", k, m) },
   { key: "anthropic", label: "Anthropic", fallbackModel: "claude-sonnet-4-5", build: (k, m) => createAnthropic(k, m) },
+  { key: "codecraft", label: "CodeCraft API", fallbackModel: "gpt-4o-mini", build: (k, m) => createOpenAICompatible("codecraft", "CodeCraft API", "https://codecraftapi.com/v1", k, m) },
 ];
 
 async function tryBuild(c: Candidate): Promise<AIProvider | null> {
@@ -46,5 +47,5 @@ export async function chooseProvider(): Promise<AIProvider> {
     const provider = await tryBuild(c);
     if (provider) return provider;
   }
-  throw new ProviderError("No AI provider is connected (OpenAI, Groq or Anthropic) — connect one in Connected Apps", null, false);
+  throw new ProviderError("No AI provider is connected (OpenAI, Groq, Anthropic or CodeCraft API) — connect one in Connected Apps", null, false);
 }

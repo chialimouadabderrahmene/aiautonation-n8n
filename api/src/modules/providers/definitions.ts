@@ -137,6 +137,23 @@ export const PROVIDERS: ProviderDefinition[] = [
         return { message: has ? `Connected — model ${model} available` : `Connected — but model "${model}" was not found in this key's model list` };
       }),
   },
+  {
+    key: "codecraft",
+    label: "CodeCraft API",
+    category: "AI",
+    authType: "API_KEY",
+    description: "OpenAI-compatible unified AI endpoint — an alternative AI provider for content/script generation steps.",
+    docsUrl: "https://codecraftapi.com/docs/getting-started",
+    fields: [
+      { name: "apiKey", label: "API key", type: "secret", secret: true, required: true, placeholder: "cc_...", pattern: "^cc_[A-Za-z0-9]{20,}$", patternMessage: "CodeCraft keys start with cc_" },
+      { name: "model", label: "Default model", type: "text", secret: false, required: false, default: "gpt-4o-mini", group: "Settings" },
+    ],
+    testConnection: (v) =>
+      probe("CodeCraft API", "https://codecraftapi.com/v1/models", { Authorization: `Bearer ${v.apiKey}` }, (body) => {
+        const models = (body as { data?: { id: string }[] } | null)?.data ?? [];
+        return { message: models.length ? `Connected — ${models.length} model(s) available` : "Connected" };
+      }),
+  },
 
   // ------------------------------------------------------- Orchestration
   {
