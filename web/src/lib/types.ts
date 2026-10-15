@@ -197,7 +197,7 @@ export interface VideoJob {
 
 export interface AutomationExecution {
   id: string;
-  source: "VIDEO_WORKER" | "CONTROL_CENTER";
+  source: "N8N" | "VIDEO_WORKER" | "CONTROL_CENTER";
   workflowConfig?: { key: string; name: string } | null;
   externalId: string | null;
   trigger: string | null;
@@ -229,14 +229,14 @@ export interface SystemHealth {
   worker: ComponentHealth;
   database: ComponentHealth;
   redis: ComponentHealth;
-  nativeAutomation: ComponentHealth;
+  n8n: ComponentHealth;
   storage: ComponentHealth;
 }
 
 export interface DashboardSummary {
   system: "READY" | "PARTIALLY_READY" | "BLOCKED";
   health: SystemHealth;
-  nativeAutomationStatus: HealthStatus;
+  n8nStatus: IntegrationStatus;
   integrations: {
     total: number;
     connected: number;
@@ -244,7 +244,7 @@ export interface DashboardSummary {
     actionRequired: number;
     list: { provider: string; label: string; status: IntegrationStatus; lastTestedAt: string | null }[];
   };
-  automations: { total: number; enabled: number; activeNative: number; presentNative: number; ready: number; blocked: number; actionRequired: number; readyNotEnabled: number };
+  automations: { total: number; enabled: number; activeInN8n: number; presentInN8n: number; ready: number; blocked: number; actionRequired: number; readyNotEnabled: number };
   video: {
     readiness: Readiness;
     detail: ReadinessDetail[];
@@ -270,6 +270,7 @@ export interface SettingDefinition {
   default: string | number | boolean;
   help?: string;
   options?: { value: string; label: string }[];
+  n8nEnv?: string;
 }
 
 export interface MediaFile {

@@ -1,105 +1,243 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
-import { Button, Card, ErrorState, LoadingState, PageHeader } from "@/components/ui";
+import { Button, Card, ErrorState, LoadingState, Notice, PageHeader, formatBytes, inputClass, labelClass, timeAgo } from "@/components/ui";
 import { api, APIError } from "@/lib/api";
+import { MediaFile, SettingDefinition } from "@/lib/types";
 
-type Settings = Record<string, unknown>;
+function SettingRow({ def, value, onSaved }: { def: SettingDefinition; value: unknown; onSaved: () => Promise<void> }) {
+  const [draft, setDraft] = useState<string | number | boolean>(value as string | number | boolean);
+  const [state, setState] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => setDraft(value as string | number | boolean), [value]);
+  const dirty = draft !== value;
 
-const BOOLEAN_SETTINGS: { key: string; label: string; help: string }[] = [
-  { key: "whatsappTemplatesApproved", label: "WhatsApp templates approved", help: "Confirm only after Meta has actually approved all 15 templates (whatsapp-templates.md) — this cannot be checked automatically." },
-  { key: "autopilotSocialPostingEnabled", label: "Autopilot social posting", help: "Keep off until a week of human-reviewed output has passed, per the existing safety guidance." },
-  { key: "feedbackFormConfigured", label: "Feedback form configured", help: "Confirm once FEEDBACK_FORM_URL points at a real form." },
-];
-
-const TEXT_SETTINGS: { key: string; label: string }[] = [
-  { key: "defaultAiProvider", label: "Default AI provider" },
-  { key: "defaultVideoProvider", label: "Default video provider" },
-  { key: "defaultVoiceProvider", label: "Default voice provider" },
-  { key: "defaultLanguage", label: "Default language" },
-  { key: "defaultTone", label: "Default tone" },
-  { key: "defaultAspectRatio", label: "Default aspect ratio" },
-];
-
-export default function SettingsPage() {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState<string | null>(null);
-
-  async function load() {
+  async function save(v: string | number | boolean = draft) {
+    setState(null);
     try {
-      setSettings(await api.get<Settings>("/api/settings"));
+      const r = await api.put<{ appliesToN8n: boolean }>(`/api/settings/${def.key}`, { value: v });
+      setState({ ok: true, text: r.appliesToN8n ? "Saved — n8n picks it up automatically within a minute" : "Saved" });
+      await onSaved();
     } catch (err) {
-      setError(err instanceof APIError ? err.message : "Failed to load settings");
+      setState({ ok: false, text: err instanceof APIError ? err.message : "Save failed" });
     }
   }
 
+  return (
+    <div className="border-t border-slate-100 py-3 first:border-t-0">
+      {def.type === "boolean" ? (
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={Boolean(draft)}
+            onChange={(e) => {
+              setDraft(e.target.checked);
+              void save(e.target.checked);
+            }}
+          />
+          <span>
+            <span className={`font-semibold ${def.key === "autopilotStop" && draft ? "text-red-700" : "text-slate-800"}`}>{def.label}</span>
+            {def.help ? <span className="block text-xs text-slate-500">{def.help}</span> : null}
+          </span>
+        </label>
+      ) : (
+        <div className="grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr_auto]">
+          <div>
+            <label className={labelClass}>{def.label}</label>
+            {def.type === "select" ? (
+              <select value={String(draft)} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
+                {def.options?.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type={def.type === "date" ? "date" : def.type === "number" ? "number" : "text"}
+                value={String(draft ?? "")}
+                onChange={(e) => setDraft(def.type === "number" ? Number(e.target.value) : e.target.value)}
+                className={inputClass}
+              />
+            )}
+            {def.help ? <p className="mt-1 text-xs text-slate-400">{def.help}</p> : null}
+          </div>
+          <Button onClick={() => void save()} disabled={!dirty}>
+            Save
+          </Button>
+        </div>
+      )}
+      {state ? <p className={`mt-1 text-xs ${state.ok ? "text-emerald-700" : "text-red-700"}`}>{state.text}</p> : null}
+    </div>
+  );
+}
+
+function MusicLibrary() {
+  const [files, setFiles] = useState<MediaFile[]>([]);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  async function load() {
+    setFiles(await api.get<MediaFile[]>("/api/media/music").catch(() => []));
+  }
   useEffect(() => {
     void load();
   }, []);
 
-  async function save(key: string, value: unknown) {
-    setSaving(key);
+  async function upload(e: FormEvent) {
+    e.preventDefault();
+    const file = input.current?.files?.[0];
+    if (!file || !name.trim()) return;
+    setBusy(true);
+    setMsg(null);
     try {
-      await api.put(`/api/settings/${key}`, { value });
+      const res = await fetch(`/api/media/music?name=${encodeURIComponent(name.trim())}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "audio/mpeg", Authorization: `Bearer ${localStorage.getItem("eki_automation_token") ?? ""}` },
+        body: file,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message ?? `Upload failed (${res.status})`);
+      setMsg({ ok: true, text: "Uploaded" });
+      setName("");
+      if (input.current) input.current.value = "";
       await load();
     } catch (err) {
-      alert(err instanceof APIError ? err.message : "Failed to save");
+      setMsg({ ok: false, text: err instanceof Error ? err.message : "Upload failed" });
     } finally {
-      setSaving(null);
+      setBusy(false);
     }
   }
 
-  if (error) return <ControlCenterLayout><ErrorState message={error} onRetry={load} /></ControlCenterLayout>;
-  if (!settings) return <ControlCenterLayout><LoadingState /></ControlCenterLayout>;
+  async function remove(id: string) {
+    if (!confirm("Delete this track?")) return;
+    await api.delete(`/api/media/music/${id}`).catch(() => undefined);
+    await load();
+  }
+
+  return (
+    <Card>
+      <p className="font-bold text-slate-900">Music library</p>
+      <p className="mt-1 text-xs text-slate-500">Royalty-free tracks you own the rights to. Selected per video; mixed quietly under the voiceover. MP3/WAV/AAC/M4A, max 25 MB.</p>
+      <form onSubmit={upload} className="mt-3 grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr_1fr_auto]">
+        <div>
+          <label className={labelClass}>Track name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} maxLength={120} />
+        </div>
+        <input ref={input} type="file" accept="audio/mpeg,audio/wav,audio/aac,audio/mp4,audio/x-m4a,.mp3,.wav,.m4a,.aac" className="text-sm" />
+        <Button type="submit" disabled={busy}>
+          {busy ? "Uploading…" : "Upload"}
+        </Button>
+      </form>
+      {msg ? <p className={`mt-2 text-xs ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.text}</p> : null}
+      <ul className="mt-3 space-y-1 text-sm">
+        {files.map((f) => (
+          <li key={f.id} className="flex items-center justify-between">
+            <span>
+              {f.name} <span className="text-xs text-slate-400">· {formatBytes(f.sizeBytes)} · {timeAgo(f.createdAt)}</span>
+            </span>
+            <button onClick={() => void remove(f.id)} className="text-xs font-semibold text-red-600">
+              Delete
+            </button>
+          </li>
+        ))}
+        {files.length === 0 ? <li className="text-xs text-slate-400">No tracks yet.</li> : null}
+      </ul>
+    </Card>
+  );
+}
+
+function PasswordCard() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    try {
+      await api.post("/api/auth/password", { currentPassword: current, newPassword: next });
+      setMsg({ ok: true, text: "Password changed" });
+      setCurrent("");
+      setNext("");
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof APIError ? err.message : "Failed" });
+    }
+  }
+  return (
+    <Card>
+      <p className="font-bold text-slate-900">Admin password</p>
+      <form onSubmit={submit} className="mt-3 grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr_1fr_auto]">
+        <div>
+          <label className={labelClass}>Current password</label>
+          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} className={inputClass} autoComplete="current-password" />
+        </div>
+        <div>
+          <label className={labelClass}>New password (min 12 characters)</label>
+          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} className={inputClass} minLength={12} autoComplete="new-password" />
+        </div>
+        <Button type="submit">Change</Button>
+      </form>
+      {msg ? <p className={`mt-2 text-xs ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.text}</p> : null}
+    </Card>
+  );
+}
+
+export default function SettingsPage() {
+  const [schema, setSchema] = useState<SettingDefinition[]>([]);
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function load() {
+    try {
+      const r = await api.get<{ schema: SettingDefinition[]; values: Record<string, unknown> }>("/api/settings");
+      setSchema(r.schema);
+      setValues(r.values);
+      setError("");
+    } catch (err) {
+      setError(err instanceof APIError ? err.message : "Failed to load settings");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const groups = useMemo(() => {
+    const m = new Map<string, SettingDefinition[]>();
+    for (const s of schema) m.set(s.group, [...(m.get(s.group) ?? []), s]);
+    return [...m.entries()];
+  }, [schema]);
 
   return (
     <ControlCenterLayout>
-      <PageHeader title="Settings" subtitle="Defaults for the Video Generator, plus manual confirmations the readiness engine can't verify by itself." />
-
-      <div className="space-y-6">
-        <Card>
-          <h2 className="text-lg font-bold text-slate-900">Manual confirmations</h2>
-          <p className="mt-1 text-sm text-slate-500">These feed workflow readiness — only confirm what is actually true.</p>
-          <div className="mt-4 space-y-4">
-            {BOOLEAN_SETTINGS.map((s) => (
-              <label key={s.key} className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  checked={Boolean(settings[s.key])}
-                  disabled={saving === s.key}
-                  onChange={(e) => save(s.key, e.target.checked)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block text-sm font-semibold text-slate-800">{s.label}</span>
-                  <span className="block text-xs text-slate-400">{s.help}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </Card>
-
-        <Card>
-          <h2 className="text-lg font-bold text-slate-900">Video Generator defaults</h2>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {TEXT_SETTINGS.map((s) => (
-              <div key={s.key}>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">{s.label}</label>
-                <div className="flex gap-2">
-                  <input
-                    defaultValue={String(settings[s.key] ?? "")}
-                    onBlur={(e) => e.target.value !== String(settings[s.key]) && save(s.key, e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-500"
-                  />
-                  {saving === s.key ? <Button disabled>...</Button> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+      <PageHeader title="Settings" subtitle="Business details, safety switches and defaults. Values marked for n8n are delivered to the automations automatically — no server access needed." />
+      {values.autopilotStop === true ? (
+        <div className="mb-4">
+          <Notice tone="red">Emergency stop is ON: social autopilot generation and posting are halted.</Notice>
+        </div>
+      ) : null}
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : (
+        <div className="space-y-6">
+          {groups.map(([group, defs]) => (
+            <Card key={group}>
+              <p className="mb-2 font-bold text-slate-900">{group}</p>
+              {defs.map((d) => (
+                <SettingRow key={d.key} def={d} value={values[d.key]} onSaved={load} />
+              ))}
+            </Card>
+          ))}
+          <MusicLibrary />
+          <PasswordCard />
+        </div>
+      )}
     </ControlCenterLayout>
   );
 }

@@ -36,7 +36,15 @@ export default function ContentStudioPage() {
 
   return (
     <ControlCenterLayout>
-      <PageHeader title="AI Content Studio" subtitle="Brief → script → storyboard → voice → video → captions → approval → publish, per project." />
+      <PageHeader
+        title="AI Content Studio"
+        subtitle="Every content project and where it stands: brief → script → storyboard → voice → video → subtitles → approval → publish."
+        action={
+          <Link href="/video" className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+            New content
+          </Link>
+        }
+      />
       {loading ? (
         <LoadingState />
       ) : error ? (
@@ -57,6 +65,7 @@ export default function ContentStudioPage() {
               { label: "Video", done: !!job && ["ASSEMBLING", "QUALITY_CHECK", "READY"].includes(job.state) },
               { label: "Subtitles", done: p.subtitles && !!job && ["QUALITY_CHECK", "READY"].includes(job.state) },
               { label: "Ready", done: job?.state === "READY" },
+              { label: "Approved", done: job?.approval?.status === "APPROVED" },
             ];
             return (
               <Link key={p.id} href={job ? `/video/${job.id}` : "#"}>
@@ -66,7 +75,10 @@ export default function ContentStudioPage() {
                       <p className="font-bold text-slate-900">{p.name}</p>
                       <p className="text-sm text-slate-500">{p.topic}</p>
                     </div>
-                    {job ? <Badge tone={statusTone(job.state)}>{job.state.replace(/_/g, " ")}</Badge> : <Badge tone="slate">No job</Badge>}
+                    <div className="flex gap-2">
+                      {job?.approval ? <Badge tone={statusTone(job.approval.status)}>{job.approval.status}</Badge> : null}
+                      {job ? <Badge tone={statusTone(job.state)}>{job.state.replace(/_/g, " ")}</Badge> : <Badge tone="slate">No job</Badge>}
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3 text-sm">
                     {steps.map((s) => (

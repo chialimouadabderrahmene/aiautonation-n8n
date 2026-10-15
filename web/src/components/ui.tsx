@@ -101,3 +101,76 @@ export function MetricTile({ label, value, tone = "slate" }: { label: string; va
     </Card>
   );
 }
+
+export function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return "just now";
+  const s = Math.round(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+export function formatDateTime(iso: string | null | undefined): string {
+  return iso ? new Date(iso).toLocaleString() : "—";
+}
+
+export function formatBytes(n: number | null | undefined): string {
+  if (!n) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  NOT_CONFIGURED: "Not configured",
+  CONFIGURED: "Configured",
+  TEST_FAILED: "Test failed",
+  CONNECTED: "Connected",
+  ACTION_REQUIRED: "Action required",
+  TESTING: "Testing…",
+  ONLINE: "Online",
+  OFFLINE: "Offline",
+  DEGRADED: "Degraded",
+  READY: "Ready",
+  BLOCKED: "Blocked",
+};
+
+export function StatusBadge({ status }: { status: string }) {
+  const tone =
+    status === "TESTING" ? "blue" : status === "ONLINE" ? "green" : status === "OFFLINE" ? "red" : status === "DEGRADED" ? "amber" : status === "NOT_CONFIGURED" ? "slate" : statusTone(status);
+  return <Badge tone={tone}>{STATUS_LABELS[status] ?? status.replace(/_/g, " ")}</Badge>;
+}
+
+export function Checklist({ items }: { items: { label: string; ok: boolean; note?: string }[] }) {
+  return (
+    <ul className="space-y-1 text-sm">
+      {items.map((d, i) => (
+        <li key={`${d.label}-${i}`} className="flex gap-2">
+          <span className={d.ok ? "text-emerald-600" : "text-red-600"}>{d.ok ? "✓" : "✕"}</span>
+          <span className={d.ok ? "text-slate-700" : "text-slate-900"}>
+            {d.label}
+            {!d.ok && d.note ? <span className="block text-xs text-slate-500">{d.note}</span> : null}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export const inputClass = "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-500";
+export const labelClass = "block text-xs font-semibold uppercase tracking-wide text-slate-500";
+
+export function Notice({ tone = "amber", children }: { tone?: "amber" | "red" | "green" | "blue"; children: ReactNode }) {
+  const styles = {
+    amber: "border-amber-200 bg-amber-50 text-amber-900",
+    red: "border-red-200 bg-red-50 text-red-800",
+    green: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    blue: "border-blue-200 bg-blue-50 text-blue-900",
+  };
+  return <div className={`rounded-xl border p-4 text-sm ${styles[tone]}`}>{children}</div>;
+}
