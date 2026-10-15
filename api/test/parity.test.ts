@@ -9,6 +9,8 @@ describe("api/worker shared code parity (separately deployed copies)", () => {
   it("storage.ts is identical", () => expect(read("worker/src/lib/storage.ts")).toBe(read("api/src/lib/storage.ts")));
   it("outbound-guard.ts is identical (the emergency stop must mean the same thing in both services)", () =>
     expect(read("worker/src/lib/outbound-guard.ts")).toBe(read("api/src/lib/outbound-guard.ts")));
+  it("usage-ledger.ts is identical (both services record usage with the same pricing and idempotency rules)", () =>
+    expect(read("worker/src/lib/usage-ledger.ts")).toBe(read("api/src/lib/usage-ledger.ts")));
   it("crypto.ts is identical", () => expect(read("worker/src/lib/crypto.ts")).toBe(read("api/src/lib/crypto.ts")));
   it("http.ts is identical apart from the sync note", () => {
     const strip = (s: string) => s.split("\n").filter((l) => !l.startsWith("// Keep in sync")).join("\n");

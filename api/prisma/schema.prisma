@@ -1279,3 +1279,66 @@ model ContentVariant {
 
   @@index([idea])
 }
+
+// ---------------------------------------------------------- Provider usage & cost
+//
+// One row per billable provider call attempt. A retry is a new attempt and is recorded as one
+// (attempt = n). A duplicate report of the SAME call is rejected by idempotencyKey, so it cannot be
+// counted twice. Cost is NULL when it cannot be determined honestly: unknown is never recorded as zero.
+
+enum UsageCostSource {
+  /// The provider's own response stated the amount.
+  PROVIDER_REPORTED
+  /// Computed from the configured ProviderPrice table and the units the provider reported or we sent.
+  ESTIMATED_FROM_PRICING
+  /// No usable units or no price configured. costAmount is null.
+  UNKNOWN
+}
+
+model ProviderUsage {
+  id             String          @id @default(cuid())
+  createdAt      DateTime        @default(now())
+  provider       String
+  model          String?
+  operation      String
+  workflowKey    String?
+  /// EngineExecution id, AutomationExecution id, or pipeline job id this call belonged to.
+  executionRef   String?
+  attempt        Int             @default(1)
+  status         String // SUCCEEDED | FAILED
+  inputTokens    Int?
+  outputTokens   Int?
+  mediaUnits     Decimal?        @db.Decimal(14, 3)
+  /// seconds | characters | credits | requests
+  mediaUnitType  String?
+  costAmount     Decimal?        @db.Decimal(14, 6)
+  currency       String          @default("USD")
+  costSource     UsageCostSource
+  idempotencyKey String          @unique
+  errorCode      String?
+  latencyMs      Int?
+
+  @@index([createdAt])
+  @@index([provider, createdAt])
+  @@index([workflowKey, createdAt])
+  @@index([executionRef])
+}
+
+/// Configurable unit prices. The newest row whose effectiveFrom has passed wins for a provider,
+/// model (or any model when model is null) and unit. There are no built-in prices in the code.
+model ProviderPrice {
+  id            String   @id @default(cuid())
+  provider      String
+  model         String?
+  /// input_token | output_token | second | character | credit | request
+  unit          String
+  unitPrice     Decimal  @db.Decimal(14, 8)
+  currency      String   @default("USD")
+  effectiveFrom DateTime @default(now())
+  note          String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  @@index([provider, unit, effectiveFrom])
+}
+
