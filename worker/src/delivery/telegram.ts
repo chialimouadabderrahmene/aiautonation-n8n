@@ -78,6 +78,17 @@ export async function sendVideoForApproval(videoJobId: string): Promise<void> {
   });
 }
 
+export async function sendCarouselForApproval(carouselJobId: string): Promise<void> {
+  const tg = await requireConnected("telegram", "Telegram");
+  if (!tg.approvalChatId) throw new ProviderError("Telegram team chat ID is not set", null, false);
+  const job = await prisma.carouselJob.findUniqueOrThrow({ where: { id: carouselJobId }, include: { project: true, slides: true } });
+  if (job.state !== "READY") throw new ProviderError(`Carousel is ${job.state}, not READY`, null, false);
+  const replyMarkup = { inline_keyboard: [[{ text: "✅ APPROVE", callback_data: `car:approve:${job.id}` }, { text: "❌ REJECT", callback_data: `car:reject:${job.id}` }]] };
+  const message = `🖼️ ${job.project.name}\nCarousel: ${job.slides.length} slides\nTopic: ${job.project.topic}\n\nReview the slides in the Control Center, then approve or reject.`;
+  const sent = await telegram<{ message_id: number }>(tg.botToken ?? "", "sendMessage", { chat_id: tg.approvalChatId, text: message.slice(0, 4000), reply_markup: replyMarkup });
+  await prisma.carouselApproval.upsert({ where: { carouselJobId }, update: { status: "PENDING", channel: "TELEGRAM", note: `Sent to Telegram message ${sent.message_id}`, decidedAt: null, decidedBy: null, rejectionReason: null }, create: { carouselJobId, note: `Sent to Telegram message ${sent.message_id}` } });
+}
+
 /** Failure alert to the team chat (never throws; respects Settings → notifications). */
 export async function notifyTeam(text: string): Promise<void> {
   try {

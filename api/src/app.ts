@@ -20,6 +20,7 @@ import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { internalRouter } from "./routes/internal";
 import { usageRouter } from "./routes/usage";
 import { campaignsRouter } from "./routes/campaigns";
+import { carouselsRouter } from "./routes/carousels";
 import { requireAdmin } from "./modules/auth/auth";
 import { systemHealth, checkDatabase } from "./modules/system/health";
 import { recordAudit } from "./modules/audit/audit";
@@ -68,6 +69,7 @@ export function createApp() {
   app.use("/api/integrations", requireAdmin, integrationsRouter);
   app.use("/api/workflows", requireAdmin, workflowsRouter);
   app.use("/api/video", requireAdmin, videoRouter);
+  app.use("/api/carousels", requireAdmin, carouselsRouter);
   app.use("/api/approvals", requireAdmin, approvalsRouter);
   app.use("/api/executions", requireAdmin, executionsRouter);
   app.use("/api/reports", requireAdmin, reportsRouter);

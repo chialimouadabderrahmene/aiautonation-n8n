@@ -2,15 +2,19 @@ import IORedis from "ioredis";
 
 // Keep in sync with api/src/lib/queue.ts — see the note there.
 export const VIDEO_QUEUE_NAME = "video-generation";
+export const CAROUSEL_QUEUE_NAME = "carousel-generation";
 export const DELIVERY_QUEUE_NAME = "video-delivery";
 
 export interface VideoGenerationJobPayload {
   videoJobId: string;
 }
+export interface CarouselGenerationJobPayload { carouselJobId: string }
 
 export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
-  | { kind: "publish"; videoJobId: string; target: string; requestedBy: string };
+  | { kind: "publish"; videoJobId: string; target: string; requestedBy: string }
+  | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string }
+  | { kind: "publish-carousel"; carouselJobId: string; target: string; requestedBy: string };
 
 export function getRedisConnection(): IORedis {
   const url = process.env.REDIS_URL;

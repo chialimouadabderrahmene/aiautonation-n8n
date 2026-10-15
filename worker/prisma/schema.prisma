@@ -204,6 +204,7 @@ model Campaign {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   projects    VideoProject[]
+  carouselProjects CarouselProject[]
   executions  AutomationExecution[]
   usage       UsageLedger[]
 }
@@ -314,6 +315,112 @@ model VideoProject {
   updatedAt     DateTime @updatedAt
 
   jobs VideoJob[]
+}
+
+enum CarouselJobState {
+  QUEUED
+  GENERATING
+  RENDERING
+  VALIDATING
+  READY
+  FAILED
+  CANCELLED
+}
+
+model CarouselProject {
+  id            String   @id @default(cuid())
+  name          String
+  topic         String
+  prompt        String
+  audience      String?
+  language      String   @default("en")
+  tone          String   @default("Professional")
+  brand         String   @default("Eki")
+  cta           String?
+  slideCount    Int      @default(6)
+  publishTargets String[] @default([])
+  campaignId    String?
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  jobs          CarouselJob[]
+}
+
+model CarouselJob {
+  id            String          @id @default(cuid())
+  projectId     String
+  project       CarouselProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  state         CarouselJobState @default(QUEUED)
+  error         String?
+  retryCount    Int             @default(0)
+  completedAt   DateTime?
+  createdAt     DateTime        @default(now())
+  slides        CarouselSlide[]
+  assets        CarouselAsset[]
+  approval      CarouselApproval?
+  publications  CarouselPublication[]
+}
+
+model CarouselSlide {
+  id          String      @id @default(cuid())
+  jobId       String
+  job         CarouselJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  index       Int
+  headline    String
+  body        String
+  imageKey    String?
+  status      String      @default("PENDING")
+  createdAt   DateTime    @default(now())
+  @@unique([jobId, index])
+}
+
+model CarouselAsset {
+  id          String      @id @default(cuid())
+  jobId       String
+  job         CarouselJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type        String
+  index       Int?
+  url         String
+  mimeType    String
+  sizeBytes   Int
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+}
+
+model CarouselApproval {
+  id                String      @id @default(cuid())
+  carouselJobId     String      @unique
+  carouselJob       CarouselJob @relation(fields: [carouselJobId], references: [id], onDelete: Cascade)
+  status            ApprovalStatus @default(PENDING)
+  channel           String      @default("TELEGRAM")
+  note              String?
+  rejectionReason   String?
+  decidedBy         String?
+  decidedAt         DateTime?
+  contentHash       String?
+  createdAt         DateTime    @default(now())
+}
+
+enum CarouselPublicationStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+model CarouselPublication {
+  id            String                   @id @default(cuid())
+  carouselJobId String
+  carouselJob   CarouselJob              @relation(fields: [carouselJobId], references: [id], onDelete: Cascade)
+  target        String
+  status        CarouselPublicationStatus @default(PENDING)
+  externalId    String?
+  externalUrl   String?
+  error         String?
+  attempts      Int                      @default(0)
+  createdAt     DateTime                 @default(now())
+  publishedAt   DateTime?
+  @@unique([carouselJobId, target])
 }
 
 model VideoJob {

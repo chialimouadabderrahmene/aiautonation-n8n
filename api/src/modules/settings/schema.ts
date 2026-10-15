@@ -22,6 +22,31 @@ export interface SettingDefinition {
 }
 
 export const SETTINGS: SettingDefinition[] = [
+  // Client requirements intake. Blank values are intentional until the
+  // questionnaire is answered; no product facts are invented here.
+  { key: "brandLegalName", label: "Legal/business name", type: "text", group: "Business", default: "" },
+  { key: "brandWebsite", label: "Public website URL", type: "url", group: "Business", default: "" },
+  { key: "brandVoice", label: "Brand voice (three words)", type: "text", group: "Business", default: "" },
+  { key: "brandPrimaryColor", label: "Primary brand color", type: "text", group: "Business", default: "" },
+  { key: "brandSecondaryColor", label: "Secondary brand color", type: "text", group: "Business", default: "" },
+  { key: "brandAccentColor", label: "Accent brand color", type: "text", group: "Business", default: "" },
+  { key: "brandFonts", label: "Brand fonts", type: "text", group: "Business", default: "" },
+  { key: "operatingCountries", label: "Operating countries", type: "text", group: "Business", default: "" },
+  { key: "targetDiasporaCommunities", label: "Target diaspora communities", type: "text", group: "Business", default: "" },
+  { key: "marketplaceTruth", label: "Approved marketplace facts", type: "text", group: "Business", default: "", help: "Only client-approved facts may be used in generated content." },
+  { key: "vendorAudienceProfile", label: "Ideal vendor profile", type: "text", group: "Business", default: "" },
+  { key: "buyerAudienceProfile", label: "Ideal buyer profile", type: "text", group: "Business", default: "" },
+  { key: "vendorPainPoints", label: "Vendor pain points", type: "text", group: "Business", default: "" },
+  { key: "buyerFears", label: "Buyer fears", type: "text", group: "Business", default: "" },
+  { key: "productCategories", label: "Approved product categories", type: "text", group: "Business", default: "" },
+  { key: "audienceLanguages", label: "Audience languages", type: "text", group: "Business", default: "" },
+  { key: "brandedHashtags", label: "Approved branded hashtags", type: "text", group: "Business", default: "" },
+  { key: "contentForbiddenTopics", label: "Forbidden content topics", type: "text", group: "Business", default: "" },
+  { key: "inspirationAccounts", label: "Inspiration accounts", type: "text", group: "Business", default: "" },
+  { key: "pidginPolicy", label: "Pidgin policy", type: "select", group: "Business", default: "unspecified", options: [{ value: "unspecified", label: "Not specified" }, { value: "regularly", label: "Use regularly" }, { value: "occasionally", label: "Use occasionally" }, { value: "none", label: "English only" }] },
+  { key: "contentFormats", label: "Priority content formats", type: "text", group: "Business", default: "" },
+  { key: "postsPerDay", label: "Target posts per day", type: "number", group: "Business", default: 0 },
+  { key: "contentTimezone", label: "Content scheduling timezone", type: "text", group: "Business", default: "" },
   { key: "aiProvider", label: "AI provider for the n8n workflows", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }], help: "The connected provider whose key and model every AI step in n8n uses." },
   { key: "launchDate", label: "Launch date (day 1 of the 30-day content calendar)", type: "date", group: "Business", default: "", n8nEnv: "LAUNCH_DATE" },
   { key: "appDownloadLink", label: "App download / public link", type: "url", group: "Business", default: "https://culinarytales.app", n8nEnv: "APP_DOWNLOAD_LINK" },
