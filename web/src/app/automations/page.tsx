@@ -14,9 +14,9 @@ interface ActivateResult {
   summary: { activated: number; alreadyActive: number; skipped: number };
 }
 
-interface NativeStatus {
+interface N8nStatus {
   health: ComponentHealth;
-  native: { total: number; enabled: number };
+  lastReconcile: { at: string; imported: string[]; updated: string[]; failed: { key: string; error: string }[]; present: number; active: number } | null;
 }
 
 function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => Promise<void> }) {
@@ -49,7 +49,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
           </p>
           <p className="text-xs text-slate-500">
             {failing.length ? `${failing.length} blocker(s): ${failing[0]?.note ?? failing[0]?.label}${failing.length > 1 ? " …" : ""}` : "All requirements met"}
-            {" · "}native engine: {wf.enabled ? "active" : "inactive"}
+            {" · "}n8n: {wf.n8nPresent ? (wf.n8nActive ? "active" : "imported, inactive") : "not imported"}
             {wf.lastExecutionAt ? ` · last run ${timeAgo(wf.lastExecutionAt)} ${wf.lastExecutionOk ? "✓" : "✕"}` : ""}
           </p>
         </button>
@@ -65,7 +65,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
               {busy === "enable" ? "…" : "Enable"}
             </Button>
           )}
-          <Button variant="secondary" onClick={() => void act("test-run")} disabled={Boolean(busy) || wf.triggerKind === "error"}>
+          <Button variant="secondary" onClick={() => void act("test-run")} disabled={Boolean(busy) || !wf.n8nPresent || wf.triggerKind === "error"}>
             {busy === "test" ? "Running…" : wf.triggerKind === "webhook" ? "Test webhook" : "Test run"}
           </Button>
         </div>
@@ -83,7 +83,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
         <div className="mt-4 border-t border-slate-100 pt-4">
           <Checklist items={wf.readinessDetail} />
           {wf.triggerKind === "manual" ? (
-            <p className="mt-3 text-xs text-slate-400">Native workflow test fixtures are run without real provider side effects.</p>
+            <p className="mt-3 text-xs text-slate-400">Test run executes the workflow for real in n8n (real messages, real sheet writes).</p>
           ) : wf.triggerKind === "webhook" ? (
             <p className="mt-3 text-xs text-slate-400">Webhook workflows are tested by checking the production webhook is live and rejects unauthenticated calls — no fake data is sent.</p>
           ) : null}
@@ -95,7 +95,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
 
 export default function AutomationsPage() {
   const [workflows, setWorkflows] = useState<WorkflowConfig[]>([]);
-  const [native, setNative] = useState<NativeStatus | null>(null);
+  const [n8n, setN8n] = useState<N8nStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -104,9 +104,9 @@ export default function AutomationsPage() {
 
   async function load() {
     try {
-      const [w, s] = await Promise.all([api.get<WorkflowConfig[]>("/api/workflows"), api.get<NativeStatus>("/api/workflows/native-status")]);
+      const [w, s] = await Promise.all([api.get<WorkflowConfig[]>("/api/workflows"), api.get<N8nStatus>("/api/workflows/n8n-status")]);
       setWorkflows(w);
-      setNative(s);
+      setN8n(s);
       setError("");
     } catch (err) {
       setError(err instanceof APIError ? err.message : "Failed to load automations");
@@ -163,7 +163,7 @@ export default function AutomationsPage() {
     <ControlCenterLayout>
       <PageHeader
         title="Automations"
-        subtitle={`${workflows.length} native workflows · ${ready} ready · ${workflows.filter((w) => w.enabled).length} enabled`}
+        subtitle={`${workflows.length} workflows · ${ready} ready · ${workflows.filter((w) => w.enabled).length} enabled · ${workflows.filter((w) => w.n8nPresent).length} present in n8n`}
         action={
           <div className="flex flex-wrap gap-2">
             <Button onClick={activateReady} disabled={Boolean(busy)}>
@@ -176,12 +176,13 @@ export default function AutomationsPage() {
         }
       />
 
-      {native ? (
+      {n8n ? (
         <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-          <StatusBadge status={native.health.status} />
-          <span>{native.health.message}</span>
+          <StatusBadge status={n8n.health.status} />
+          <span>{n8n.health.message}</span>
+          {n8n.lastReconcile ? <span>· last sync {timeAgo(n8n.lastReconcile.at)}</span> : null}
           <button onClick={sync} disabled={Boolean(busy)} className="font-semibold text-brand-600 underline">
-            {busy === "sync" ? "Refreshing…" : "Refresh native workflows"}
+            {busy === "sync" ? "Syncing…" : "Sync with n8n now"}
           </button>
         </div>
       ) : null}

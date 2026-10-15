@@ -10,7 +10,6 @@ const NAV = [
   { name: "Integrations", href: "/integrations" },
   { name: "AI Content Studio", href: "/content-studio" },
   { name: "Video Generator", href: "/video" },
-  { name: "Carousel Studio", href: "/carousels" },
   { name: "Automations", href: "/automations" },
   { name: "Approvals", href: "/approvals" },
   { name: "Executions", href: "/executions" },

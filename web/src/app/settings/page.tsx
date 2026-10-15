@@ -15,8 +15,8 @@ function SettingRow({ def, value, onSaved }: { def: SettingDefinition; value: un
   async function save(v: string | number | boolean = draft) {
     setState(null);
     try {
-      await api.put<{ appliesToNativeAutomation: boolean }>(`/api/settings/${def.key}`, { value: v });
-      setState({ ok: true, text: "Saved — native automation uses this setting immediately" });
+      const r = await api.put<{ appliesToN8n: boolean }>(`/api/settings/${def.key}`, { value: v });
+      setState({ ok: true, text: r.appliesToN8n ? "Saved — n8n picks it up automatically within a minute" : "Saved" });
       await onSaved();
     } catch (err) {
       setState({ ok: false, text: err instanceof APIError ? err.message : "Save failed" });
@@ -214,7 +214,7 @@ export default function SettingsPage() {
 
   return (
     <ControlCenterLayout>
-      <PageHeader title="Settings" subtitle="Business details, safety switches and defaults used by the native automation engine." />
+      <PageHeader title="Settings" subtitle="Business details, safety switches and defaults. Values marked for n8n are delivered to the automations automatically — no server access needed." />
       {values.autopilotStop === true ? (
         <div className="mb-4">
           <Notice tone="red">Emergency stop is ON: social autopilot generation and posting are halted.</Notice>

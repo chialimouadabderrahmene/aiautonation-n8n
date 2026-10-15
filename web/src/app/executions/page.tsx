@@ -7,7 +7,7 @@ import { api, APIError } from "@/lib/api";
 import { AutomationExecution } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
-const SOURCE_LABEL: Record<string, string> = { VIDEO_WORKER: "Video worker", CONTROL_CENTER: "Control Center" };
+const SOURCE_LABEL: Record<string, string> = { N8N: "n8n workflow", VIDEO_WORKER: "Video worker", CONTROL_CENTER: "Control Center" };
 
 function duration(ms: number | null): string {
   if (ms === null) return "—";
@@ -48,7 +48,7 @@ export default function ExecutionsPage() {
 
   return (
     <ControlCenterLayout>
-      <PageHeader title="Executions" subtitle="Every native automation run, video generation, Telegram send and publication in one list." />
+      <PageHeader title="Executions" subtitle="Every automation run — n8n workflows, video generation, Telegram sends and publishing — in one list." />
       <div className="mb-4 flex flex-wrap gap-3">
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputClass} w-auto`}>
           <option value="">All statuses</option>
@@ -59,6 +59,7 @@ export default function ExecutionsPage() {
         </select>
         <select value={source} onChange={(e) => setSource(e.target.value)} className={`${inputClass} w-auto`}>
           <option value="">All sources</option>
+          <option value="N8N">n8n workflows</option>
           <option value="VIDEO_WORKER">Video worker</option>
         </select>
       </div>

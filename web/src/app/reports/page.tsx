@@ -26,7 +26,7 @@ interface Report {
   publicationsFailed: number;
 }
 
-const SOURCE_LABEL: Record<string, string> = { VIDEO_WORKER: "Video worker", CONTROL_CENTER: "Control Center" };
+const SOURCE_LABEL: Record<string, string> = { N8N: "n8n workflows", VIDEO_WORKER: "Video worker", CONTROL_CENTER: "Control Center" };
 
 export default function ReportsPage() {
   const [period, setPeriod] = useState<"day" | "week" | "month">("week");

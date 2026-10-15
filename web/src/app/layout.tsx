@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Eki AI Automation Control Center",
-  description: "Operator console for the Eki native automation system and AI media pipelines.",
+  description: "Operator console for the Eki n8n automation system and AI video pipeline.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
