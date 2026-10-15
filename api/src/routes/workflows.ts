@@ -13,7 +13,7 @@ function blockers(detail: unknown): string[] {
 
 workflowsRouter.get("/", async (_req, res) => res.json(await prisma.workflowConfig.findMany({ orderBy: { key: "asc" } })));
 
-workflowsRouter.get("/n8n-status", async (_req, res) => {
+workflowsRouter.get("/native-status", async (_req, res) => {
   const workflows = await prisma.workflowConfig.findMany({ select: { enabled: true, readiness: true } });
   res.json({ health: { status: "ONLINE", message: "Native TypeScript automation engine", checkedAt: new Date().toISOString() }, scheduler: schedulerStatus(), native: { total: workflows.length, enabled: workflows.filter((w) => w.enabled).length } });
 });

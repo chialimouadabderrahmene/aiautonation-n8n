@@ -1,6 +1,12 @@
-# Setup instructions — Eki n8n automation
+# Historical setup instructions — superseded
 
-> **Superseded for normal operation.** Configuration is now entered in the AI Automation Control Center (Integrations + Settings) and delivered to n8n automatically; deployment is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and the admin workflow in [CLIENT_SETUP_CHECKLIST.md](CLIENT_SETUP_CHECKLIST.md). Do **not** edit n8n environment variables or n8n credentials by hand. This page remains as background/reference for the workflows' behaviour.
+> Do not follow this n8n setup for current deployments. The supported runtime
+> is native TypeScript API + worker + PostgreSQL + Redis/BullMQ. Use
+> [DEPLOYMENT.md](DEPLOYMENT.md), [NATIVE_AUTOMATION.md](NATIVE_AUTOMATION.md),
+> and [CLIENT_SETUP_CHECKLIST.md](../CLIENT_SETUP_CHECKLIST.md) instead.
+
+> The remainder is retained as historical source material from the original
+> questionnaire/blueprint and is not evidence that these integrations are live.
 
 
 End-to-end runbook for a fresh production (or shared staging) deployment. Items marked **EXTERNAL DEPENDENCY** need an account/approval that this repo cannot create. Rehearse everything locally first with [`staging/`](../staging) (see [testing-checklist.md](testing-checklist.md)).

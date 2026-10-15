@@ -88,7 +88,7 @@ export function createApp() {
   return app;
 }
 
-/** Internal listener: service-to-service only (n8n supervisor). */
+/** Optional internal listener for authenticated service-to-service calls. */
 export function createInternalApp() {
   const app = express();
   app.disable("x-powered-by");

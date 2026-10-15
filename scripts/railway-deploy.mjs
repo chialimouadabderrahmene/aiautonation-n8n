@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Automated, idempotent Railway deployment of the Eki AI Automation Control
- * Center (web, api, worker, n8n + Postgres, Redis, Bucket), followed by live
+ * Center (web, api, worker + Postgres, Redis, Bucket), followed by live
  * verification. Every command and JSON shape used here was checked against
  * the Railway CLI source (railwayapp crate v5.62.1).
  *
@@ -12,7 +12,7 @@
  *   ADMIN_EMAIL=you@company.com BUCKET_REGION=ams node scripts/railway-deploy.mjs
  *
  * Options / environment:
- *   ADMIN_EMAIL        (required on the first run) Control Center admin + n8n owner
+ *   ADMIN_EMAIL        (required on the first run) Control Center admin e-mail
  *                      e-mail; ignored once the deployment is bootstrapped
  *   ADMIN_PASSWORD     current admin password, for verification only — needed
  *                      after the bootstrap password was changed in Settings
@@ -27,20 +27,15 @@
  *                      version, login and linked project/environment, then exit
  *   RAILWAY_CLI        path to the railway executable, if PATH lookup fails
  *                      (see scripts/lib/railway-cli.mjs for the resolution order)
- *   --skip-n8n         deploy api/worker/web only, deferring n8n — for plans
- *                      whose resource limit can't fit all 4 app services +
- *                      Postgres + Redis + a Bucket at once. n8n integration
- *                      is simply NOT_CONFIGURED until you add the n8n service
- *                      and re-run without this flag (nothing else changes;
- *                      re-running is always safe/idempotent per service).
+ *   --skip-n8n         accepted as a backwards-compatible no-op; the native
+ *                      runtime never provisions an orchestrator service.
  *
  * Safety:
  *   - Secret values are generated here (crypto.randomBytes), sent to Railway
  *     only via `railway variable set KEY --stdin` (never on a command line),
  *     never printed. Existing secrets are REUSED — re-running never rotates
- *     AUTOMATION_SECRET_KEY / N8N_ENCRYPTION_KEY (that would orphan stored
- *     credentials).
- *   - The generated admin and n8n-owner passwords are written ONCE to
+ *     AUTOMATION_SECRET_KEY (that would orphan encrypted data).
+ *   - The generated admin password is written ONCE to
  *     ~/.eki-control-center/<project>-credentials.txt (mode 0600).
  *   - Nothing is duplicated: every resource is looked up before creation.
  */
@@ -65,9 +60,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const flagValue = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-// Native TypeScript automation is the only supported runtime. Keep the flag
-// accepted for old operator commands, but never provision an n8n service.
-const SKIP_N8N = true;
+// Native TypeScript automation is the only supported runtime. Keep the old
+// flag accepted for old operator commands, but never provision an orchestrator.
 const APP_SERVICES = ["api", "worker", "web"];
 // `railway environment edit --service-config <svc> configFile <path>` (the
 // documented config-as-code mechanism these railway/*.json files were
@@ -85,13 +79,12 @@ const APP_SERVICES = ["api", "worker", "web"];
 // `numReplicas` have no confirmed variable equivalent (see DEPLOYMENT.md) —
 // Railway's defaults (TCP-only health check, ON_FAILURE/10 retries, 1
 // replica) apply instead until that gap is closed.
-const DOCKERFILE_PATHS = { api: "docker/Dockerfile.api", worker: "docker/Dockerfile.worker", n8n: "docker/Dockerfile.n8n", web: "docker/Dockerfile.web" };
-const SECRET_KEYS = ["AUTOMATION_SECRET_KEY", "JWT_SECRET", "INTERNAL_API_TOKEN", "N8N_ENCRYPTION_KEY"];
+const DOCKERFILE_PATHS = { api: "docker/Dockerfile.api", worker: "docker/Dockerfile.worker", web: "docker/Dockerfile.web" };
+const SECRET_KEYS = ["AUTOMATION_SECRET_KEY", "JWT_SECRET", "INTERNAL_API_TOKEN"];
 const secretTargets = {
   AUTOMATION_SECRET_KEY: ["api", "worker"],
   JWT_SECRET: ["api"],
-  INTERNAL_API_TOKEN: ["api", "n8n"],
-  N8N_ENCRYPTION_KEY: ["n8n"],
+  INTERNAL_API_TOKEN: ["api"],
 };
 const report = { startedAt: new Date().toISOString(), steps: [], services: {}, verification: {} };
 
@@ -179,7 +172,6 @@ function rwJson(cliArgs, opts = {}) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const secret = () => crypto.randomBytes(32).toString("hex");
 function password() {
-  // n8n policy: 8–64 chars incl. an uppercase letter and a digit.
   return `Eki-${crypto.randomBytes(18).toString("base64url").replace(/[-_]/g, "x")}9Z`;
 }
 
@@ -334,34 +326,18 @@ async function provision() {
   }
   step("Dockerfile path", APP_SERVICES.map((n) => `${n}→${DOCKERFILE_PATHS[n]}`).join(", "));
 
-  // ---- public domains (web + n8n only), created before variables reference them
+  // ---- public web domain, created before variables reference it
   const domainOf = (svc) => domainUrls(svc)[0] ?? null;
-  for (const [svc, port] of [["web", "3200"], ["n8n", "5678"]]) {
-    if (SKIP_N8N && svc === "n8n") continue;
+  for (const [svc, port] of [["web", "3200"]]) {
     if (!domainOf(svc)) rwJson(["domain", "--service", svc, "--port", port]);
     report.services[svc] = { ...(report.services[svc] ?? {}), url: domainOf(svc) };
     step(`Public domain ${svc}`, `${report.services[svc].url} → port ${port}`);
-  }
-
-  // ---- n8n volume (skipped entirely with --skip-n8n: no n8n service exists yet)
-  if (!SKIP_N8N) {
-    const volumes = rwJson(["volume", "list"])?.volumes ?? [];
-    const n8nSvc = byName(services, "n8n");
-    if (!volumes.some((v) => v.serviceName === "n8n" && v.mountPath === "/home/node/.n8n" && !v.isPendingDeletion)) {
-      rw(["volume", "--service", n8nSvc.id, "add", "--mount-path", "/home/node/.n8n"]);
-      step("Volume", "n8n → /home/node/.n8n (created)");
-    } else step("Volume", "n8n → /home/node/.n8n (exists)");
-  } else {
-    step("Volume", "n8n skipped (--skip-n8n)");
   }
 
   // ---- secrets: reuse existing values, generate only what is missing
   const current = Object.fromEntries(APP_SERVICES.map((s) => [s, getVars(s)]));
   const existsAnywhere = (key) => APP_SERVICES.some((s) => has(current[s], key));
   const pick = (key) => APP_SERVICES.map((s) => current[s][key]).find((v) => v) || null;
-  // With --skip-n8n, N8N_ENCRYPTION_KEY has no target service yet (n8n doesn't
-  // exist) — generating/tracking it now would be discarded work; it is
-  // created for real the next time this script runs without the flag.
   const activeSecretKeys = SECRET_KEYS.filter((k) => secretTargets[k].some((s) => APP_SERVICES.includes(s)));
   for (const k of activeSecretKeys) {
     // A sealed secret cannot be read back, so it cannot be copied to a service that lacks it.
@@ -377,15 +353,14 @@ async function provision() {
   }
   const generated = activeSecretKeys.filter((k) => !existsAnywhere(k));
 
-  // Owner/admin e-mail: once bootstrapped it must not change (n8n's owner already exists with it).
-  const existingEmail = current.api.ADMIN_BOOTSTRAP_EMAIL || current.api.N8N_OWNER_EMAIL;
+  // Admin e-mail: once bootstrapped it must not change.
+  const existingEmail = current.api.ADMIN_BOOTSTRAP_EMAIL;
   if (existingEmail && adminEmail && existingEmail.toLowerCase() !== adminEmail.toLowerCase()) warn(`ADMIN_EMAIL ignored: the deployment is already bootstrapped with ${existingEmail}`);
   adminEmail = existingEmail || adminEmail;
   if (!adminEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(adminEmail)) fail("set ADMIN_EMAIL=<admin email>");
 
   const adminPassword = has(current.api, "ADMIN_BOOTSTRAP_PASSWORD") ? current.api.ADMIN_BOOTSTRAP_PASSWORD : password();
-  const ownerPassword = has(current.api, "N8N_OWNER_PASSWORD") ? current.api.N8N_OWNER_PASSWORD : password();
-  if (!has(current.api, "ADMIN_BOOTSTRAP_PASSWORD") || !has(current.api, "N8N_OWNER_PASSWORD")) {
+  if (!has(current.api, "ADMIN_BOOTSTRAP_PASSWORD")) {
     const dir = path.join(os.homedir(), ".eki-control-center");
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, `${project.name.replace(/[^\w.-]+/g, "_")}-credentials.txt`);
@@ -394,14 +369,13 @@ async function provision() {
       [
         `Railway project: ${project.name}`,
         `Control Center login: ${adminEmail} / ${adminPassword ?? "(unchanged: existing value kept)"}`,
-        `n8n owner login:      ${adminEmail} / ${ownerPassword ?? "(unchanged: existing value kept)"}`,
         "Change the Control Center password in Settings after the first login.",
         "",
       ].join("\n"),
       { mode: 0o600 },
     );
     report.credentialsFile = file;
-    step("Admin + n8n owner passwords", `written to ${file} (0600) — not printed`);
+    step("Admin password", `written to ${file} (0600) — not printed`);
   }
   step("Secrets", generated.length ? `generated ${generated.join(", ")}; reused the rest` : "all reused (never rotated)");
 
@@ -425,17 +399,8 @@ async function provision() {
       DATABASE_URL: `\${{${PG}.DATABASE_URL}}`,
       REDIS_URL: `\${{${RD}.REDIS_URL}}`,
       ADMIN_BOOTSTRAP_EMAIL: adminEmail,
-      N8N_OWNER_EMAIL: adminEmail,
       PUBLIC_WEB_URL: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
       WEB_ORIGIN: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
-      // Omitted entirely (not just left empty) with --skip-n8n: a `${{n8n...}}`
-      // reference to a service that does not exist yet would not resolve, and
-      // the api/web code already treats a missing N8N_* URL as NOT_CONFIGURED.
-      ...(SKIP_N8N ? {} : {
-        N8N_INTERNAL_URL: "http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5678",
-        N8N_PUBLIC_URL: "https://${{n8n.RAILWAY_PUBLIC_DOMAIN}}",
-        N8N_SUPERVISOR_URL: "http://${{n8n.RAILWAY_PRIVATE_DOMAIN}}:5690",
-      }),
       ...s3,
     },
     worker: {
@@ -449,25 +414,6 @@ async function provision() {
       PORT: "3200",
       API_INTERNAL_URL: "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4100",
     },
-    n8n: {
-      PORT: "5678",
-      RAILWAY_RUN_UID: "0",
-      N8N_USER_FOLDER: "/home/node",
-      DB_TYPE: "postgresdb",
-      DB_POSTGRESDB_HOST: `\${{${PG}.PGHOST}}`,
-      DB_POSTGRESDB_PORT: `\${{${PG}.PGPORT}}`,
-      DB_POSTGRESDB_DATABASE: `\${{${PG}.PGDATABASE}}`,
-      DB_POSTGRESDB_USER: `\${{${PG}.PGUSER}}`,
-      DB_POSTGRESDB_PASSWORD: `\${{${PG}.PGPASSWORD}}`,
-      DB_POSTGRESDB_SCHEMA: "n8n",
-      N8N_HOST: "${{RAILWAY_PUBLIC_DOMAIN}}",
-      N8N_PROTOCOL: "https",
-      N8N_PROXY_HOPS: "1",
-      N8N_EDITOR_BASE_URL: "https://${{RAILWAY_PUBLIC_DOMAIN}}/",
-      N8N_WEBHOOK_URL: "https://${{RAILWAY_PUBLIC_DOMAIN}}/",
-      WEBHOOK_URL: "https://${{RAILWAY_PUBLIC_DOMAIN}}/",
-      CONTROL_CENTER_INTERNAL_URL: "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4110",
-    },
   };
   const secretVars = {
     api: {
@@ -475,12 +421,10 @@ async function provision() {
       JWT_SECRET: secrets.JWT_SECRET,
       INTERNAL_API_TOKEN: secrets.INTERNAL_API_TOKEN,
       ADMIN_BOOTSTRAP_PASSWORD: adminPassword,
-      N8N_OWNER_PASSWORD: ownerPassword,
       ...s3Secret,
     },
     worker: { AUTOMATION_SECRET_KEY: secrets.AUTOMATION_SECRET_KEY, ...s3Secret },
     web: {},
-    n8n: { N8N_ENCRYPTION_KEY: secrets.N8N_ENCRYPTION_KEY, INTERNAL_API_TOKEN: secrets.INTERNAL_API_TOKEN },
   };
 
   const changed = {};
@@ -602,10 +546,8 @@ async function verify() {
   const v = report.verification;
   const domain = (svc) => domainUrls(svc);
   const web = domain("web")[0];
-  const n8n = domain("n8n")[0];
   if (!web) fail("web has no public domain");
   report.services.web = { ...(report.services.web ?? {}), url: web };
-  report.services.n8n = { ...(report.services.n8n ?? {}), url: n8n };
 
   // Private services must have no public domain and databases no TCP proxy.
   const services = listServices();
@@ -639,17 +581,13 @@ async function verify() {
   step("Control Center login", "OK");
   const auth = { authorization: `Bearer ${token}` };
 
-  // Health: wait for every component to be ONLINE (n8n bootstrap + import take a minute on first boot).
-  // With --skip-n8n there is no n8n service at all: it is expected to report
-  // NOT_CONFIGURED forever, so it is excluded from the ONLINE/imported gate
-  // instead of burning the full 8-minute timeout waiting for it.
+  // Health: wait for every native component to be ONLINE.
   let health;
-  const hDeadline = Date.now() + (SKIP_N8N ? 3 : 8) * 60_000;
+  const hDeadline = Date.now() + 3 * 60_000;
   for (;;) {
     health = (await http(`${web}/api/system/health`, { headers: auth })).json;
-    const allOnline = health && Object.entries(health).every(([k, c]) => (SKIP_N8N && k === "n8n") || c.status === "ONLINE");
-    const imported = SKIP_N8N || health?.n8n?.details?.present === 22;
-    if (allOnline && imported) break;
+    const allOnline = health && Object.values(health).every((c) => c.status === "ONLINE");
+    if (allOnline) break;
     if (Date.now() > hDeadline) break;
     await sleep(15_000);
   }
@@ -657,30 +595,8 @@ async function verify() {
   step("Health", Object.entries(health ?? {}).map(([k, c]) => `${k}=${c.status}`).join(" "));
 
   const workflows = (await http(`${web}/api/workflows`, { headers: auth })).json ?? [];
-  v.workflows = { total: workflows.length, presentInN8n: workflows.filter((w) => w.n8nPresent).length, activeInN8n: workflows.filter((w) => w.n8nActive).length };
+  v.workflows = { total: workflows.length, enabled: workflows.filter((w) => w.enabled).length, ready: workflows.filter((w) => w.readiness === "READY").length };
   step("Workflows (Control Center view)", JSON.stringify(v.workflows));
-
-  // Directly against n8n's public API, from inside the api container.
-  if (SKIP_N8N) {
-    v.n8nDirect = "SKIPPED (--skip-n8n: no n8n service deployed this run)";
-    step("n8n API (direct)", v.n8nDirect);
-  } else {
-    const n8nCheck = rw(["ssh", "--service", "api", "node", "dist/tools/n8n-verify.js"], { allowFail: true, interactive: true });
-    try {
-      v.n8nDirect = JSON.parse(n8nCheck.stdout.slice(n8nCheck.stdout.indexOf("{")));
-    } catch {
-      v.n8nDirect = `could not run n8n-verify over railway ssh: ${n8nCheck.stdout.slice(-300)}`;
-    }
-    step("n8n API (direct)", typeof v.n8nDirect === "string" ? v.n8nDirect : `${v.n8nDirect.controlCenterWorkflowsPresent} present, ${v.n8nDirect.active} active, duplicates ${v.n8nDirect.duplicates.length}, owner ${v.n8nDirect.owner.length ? "yes" : "NO"}`);
-  }
-
-  // n8n must require authentication.
-  if (n8n) {
-    const pub = await http(`${n8n}/api/v1/workflows`).catch(() => ({ status: 0 }));
-    const rest = await http(`${n8n}/rest/workflows`).catch(() => ({ status: 0 }));
-    v.n8nAuthentication = { "public API without key": pub.status, "internal API without session": rest.status };
-    step("n8n requires auth", JSON.stringify(v.n8nAuthentication));
-  }
 
   // FFmpeg on the deployed worker.
   const st = rw(["ssh", "--service", "worker", "node", "dist/tools/selftest.js"], { allowFail: true, interactive: true });
@@ -700,7 +616,7 @@ async function verify() {
   for (const c of chunks) bundle += (await http(`${web}${c}`).catch(() => ({ text: "" }))).text;
   // Generic key shapes + this deployment's REAL secret values (held in memory only).
   const keyShapes = /(sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|re_[A-Za-z0-9]{20,}|\d{8,10}:AA[A-Za-z0-9_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
-  const realSecrets = ["AUTOMATION_SECRET_KEY", "JWT_SECRET", "INTERNAL_API_TOKEN", "ADMIN_BOOTSTRAP_PASSWORD", "N8N_OWNER_PASSWORD", "S3_SECRET_ACCESS_KEY"]
+  const realSecrets = ["AUTOMATION_SECRET_KEY", "JWT_SECRET", "INTERNAL_API_TOKEN", "ADMIN_BOOTSTRAP_PASSWORD", "S3_SECRET_ACCESS_KEY"]
     .map((k) => apiVars[k])
     .filter((x) => typeof x === "string" && x.length >= 12);
   const containsSecret = (text) => keyShapes.test(text) || realSecrets.some((x) => text.includes(x));
@@ -710,18 +626,12 @@ async function verify() {
     integrationsResponse: integrations.status !== 200 ? `CHECK (${integrations.status})` : containsSecret(integrations.text) ? "FOUND SECRET VALUE" : "masked (no secret values)",
     unauthenticatedApi: (await http(`${web}/api/integrations`)).status,
     forgedTelegramWebhook: (await http(`${web}/api/telegram/webhook`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status,
-    internalRoutesViaWeb: (await http(`${web}/internal/n8n/runtime-env`)).status,
+    internalRoutesViaWeb: (await http(`${web}/internal/automation-runtime`)).status,
   };
   step("Security", JSON.stringify(v.security));
 
-  // Smoke test (the repository's 20-step checklist). It hard-asserts n8n
-  // ONLINE + 22/22 workflows present (steps 4, 9), which cannot pass with
-  // --skip-n8n, so it is skipped rather than reported as a false failure;
-  // re-run it manually once n8n is deployed.
-  if (SKIP_N8N) {
-    v.smokeTest = "SKIPPED (--skip-n8n: smoke-test.mjs asserts n8n is ONLINE with 22 workflows)";
-    step("Smoke test", v.smokeTest);
-  } else if (!flag("--no-smoke")) {
+  // Native smoke test is safe: it never enables workflows or sends messages.
+  if (!flag("--no-smoke")) {
     const smoke = spawnSync("node", ["scripts/smoke-test.mjs"], {
       cwd: ROOT,
       encoding: "utf8",
@@ -730,7 +640,7 @@ async function verify() {
     });
     const lines = (smoke.stdout ?? "").split("\n").filter((l) => /^\s?\d+\.\s|passed/.test(l));
     console.log(lines.join("\n"));
-    v.smokeTest = { exitCode: smoke.status, summary: lines.find((l) => /passed/.test(l)) ?? null, steps: lines.filter((l) => /^\s?\d+\./.test(l)) };
+    v.smokeTest = { exitCode: smoke.status, summary: lines.find((l) => /passed/.test(l)) ?? null, steps: lines };
   }
 }
 
@@ -770,5 +680,5 @@ async function checkCli() {
   for (const [name, s] of Object.entries(report.services)) console.log(`${name.padEnd(9)} ${s.status ?? ""} ${s.url ?? ""}`);
   console.log(`Health:   ${Object.entries(report.verification.health ?? {}).map(([k, v]) => `${k}=${v.split(" ")[0]}`).join("  ")}`);
   console.log(`Workflows: ${JSON.stringify(report.verification.workflows)}`);
-  if (report.credentialsFile) console.log(`Admin + n8n owner passwords: ${report.credentialsFile}`);
+  if (report.credentialsFile) console.log(`Admin credentials file: ${report.credentialsFile}`);
 })().catch((err) => fail(err instanceof Error ? err.stack ?? err.message : String(err)));

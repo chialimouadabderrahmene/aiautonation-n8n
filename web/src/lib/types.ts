@@ -197,7 +197,7 @@ export interface VideoJob {
 
 export interface AutomationExecution {
   id: string;
-  source: "N8N" | "VIDEO_WORKER" | "CONTROL_CENTER";
+  source: "VIDEO_WORKER" | "CONTROL_CENTER";
   workflowConfig?: { key: string; name: string } | null;
   externalId: string | null;
   trigger: string | null;
@@ -270,7 +270,6 @@ export interface SettingDefinition {
   default: string | number | boolean;
   help?: string;
   options?: { value: string; label: string }[];
-  n8nEnv?: string;
 }
 
 export interface MediaFile {

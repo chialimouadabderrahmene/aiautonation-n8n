@@ -209,7 +209,6 @@ export async function listIntegrationsMasked() {
         lastTestMessage: integration.lastTestMessage,
         lastTestLatencyMs: integration.lastTestLatencyMs,
         updatedAt: integration.updatedAt,
-        n8nCredentialIds: integration.n8nCredentialIds,
         config: integration.config as Prisma.JsonObject,
         fields: schema.fields.map((f) => ({
           ...f,

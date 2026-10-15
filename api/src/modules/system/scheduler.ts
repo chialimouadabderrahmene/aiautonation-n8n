@@ -7,7 +7,7 @@ import { recomputeAllReadiness } from "../workflows/readiness";
 /**
  * Background maintenance that makes the deployment self-configuring and
  * self-healing after every restart/redeploy — no human steps:
- *   - refresh expiring OAuth tokens (and push X's into n8n)
+ *   - refresh expiring OAuth tokens
  *   - keep the Telegram webhook registered
  *   - recompute readiness so the Dashboard reflects reality
  * Each task is guarded so it never overlaps itself and never crashes the API.

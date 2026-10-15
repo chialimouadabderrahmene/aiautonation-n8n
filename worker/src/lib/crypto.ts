@@ -5,7 +5,7 @@
  * that must be generated once (`openssl rand -hex 32`), stored only as a
  * server-side environment variable, and never committed to git or logged.
  * Losing it makes every stored credential permanently unreadable (same
- * trade-off n8n itself makes with N8N_ENCRYPTION_KEY) — back it up.
+ * trade-off common encrypted credential stores make) — back it up.
  *
  * Plaintext leaves this module in exactly two places: `encrypt()` (input)
  * and `decrypt()` (output, called only by the code that is about to make the

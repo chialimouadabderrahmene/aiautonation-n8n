@@ -1,5 +1,10 @@
 # Environment variables
 
+> Current production uses the native API/worker runtime. The n8n variable table
+> below is historical workflow-source documentation only; it is not a Railway
+> deployment contract. Use the service examples and Control Center Integrations
+> for the supported configuration.
+
 > These variables are **computed by the Control Center** from Integrations and Settings and delivered to n8n by its supervisor (`api/src/modules/n8n/runtimeEnv.ts`). The table remains the reference for what each workflow reads.
 
 Generated from the workflows by reading every `$env.X` they use (plus the WhatsApp template keys). Source of truth for the example values is [`.env.railway.example`](../.env.railway.example); `node tools/validate-workflows.js` fails when a workflow reads a variable that is not listed there.

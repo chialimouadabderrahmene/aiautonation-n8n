@@ -126,7 +126,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     category: "ORCHESTRATION",
     authType: "API_KEY",
     description:
-      "The workflows' database (leads, content calendar, analytics). Uses a Google Cloud service account — the right mechanism for a server: no browser consent that expires. The same key is pushed into n8n automatically.",
+      "The optional Google Sheets integration for reporting and operational exports. Uses a Google Cloud service account — the right mechanism for a server: no browser consent that expires.",
     docsUrl: "https://console.cloud.google.com/iam-admin/serviceaccounts",
     caveat: "Share the spreadsheet with the service account's client_email as an Editor, otherwise the test fails with 'access denied'.",
     fields: [
@@ -179,7 +179,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     async testConnection(v) {
       const len = (v.sharedSecret ?? "").length;
       if (len < 24) return { ok: false, message: "Secret missing or shorter than 24 characters", latencyMs: 0 };
-      return { ok: true, message: `Secret set (${len} characters). It is pushed into n8n's header-auth credential on sync.`, latencyMs: 0 };
+      return { ok: true, message: `Secret set (${len} characters).`, latencyMs: 0 };
     },
   },
 

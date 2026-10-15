@@ -13,8 +13,8 @@ export type IntegrationCategory = "AI" | "ORCHESTRATION" | "MESSAGING" | "EMAIL"
  * API_KEY  – admin pastes keys/IDs, clicks Test.
  * OAUTH    – admin enters the OAuth app's client id/secret once, then clicks
  *            "Connect account"; tokens are obtained and refreshed server-side.
- * INFRA    – provisioned automatically by the deployment (n8n, inbound
- *            webhook secrets); still testable, editable only as a fallback.
+ * INFRA    – provisioned automatically by the deployment (inbound webhook
+ *            secrets); still testable, editable only as a fallback.
  */
 export type AuthType = "API_KEY" | "OAUTH" | "INFRA";
 

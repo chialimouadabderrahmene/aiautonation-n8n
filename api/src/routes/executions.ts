@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma";
 export const executionsRouter = Router();
 
 const STATUSES = ["RUNNING", "SUCCESS", "FAILED", "CANCELLED"] as const;
-const SOURCES = ["N8N", "VIDEO_WORKER", "CONTROL_CENTER"] as const;
+const SOURCES = ["VIDEO_WORKER", "CONTROL_CENTER"] as const;
 
 executionsRouter.get("/", async (req, res) => {
   const { status, source, workflowKey, cursor } = req.query as Record<string, string | undefined>;

@@ -10,9 +10,9 @@
 #   ADMIN_EMAIL=you@company.com BUCKET_REGION=ams bash scripts/railway-setup.sh
 #
 # Creates what is missing (never duplicates): Postgres, Redis, a Bucket, and the
-# services api, worker, n8n, web; wires every variable; deploys in order
-# (api → worker → n8n → web) stopping with logs on any failure; then verifies
-# health, the 22 workflows in n8n, FFmpeg on the worker, security and runs the
+# services api, worker, web; wires every variable; deploys in order
+# (api → worker → web) stopping with logs on any failure; then verifies
+# native health, FFmpeg on the worker, security and runs the
 # smoke test. Secrets are generated locally and sent via stdin, never printed.
 # Safe to re-run: existing secrets are reused, never rotated.
 set -euo pipefail

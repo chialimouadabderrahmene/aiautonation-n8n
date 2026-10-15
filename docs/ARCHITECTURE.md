@@ -4,14 +4,12 @@ Standalone system inside this repository only — it shares no code, database or
 deployment with the Eki marketplace backend, mobile app or admin web.
 
 ```
-browser ──https──► web (Next.js 14, public)
+browser ──https──► web (Next.js, public)
                     └─ /api/* proxy (request time) ─► api (Express, private)
 Telegram ─► web /api/telegram/webhook ─┘                │
 OAuth providers ─► web /api/oauth/callback/* ─┘         ├─ Postgres (public schema)
                                                         ├─ Redis / BullMQ ─► worker (FFmpeg)
-                                                        ├─ S3 bucket (media)       │
-                                                        ├─ n8n public API :5678    ├─ Postgres
-                                                        └─ internal :4110 ◄─ n8n supervisor
+                                                        └─ S3 bucket (media)
                                                                                    └─ S3, providers
 ```
 
@@ -20,26 +18,24 @@ OAuth providers ─► web /api/oauth/callback/* ─┘         ├─ Postgres 
 | Service | Code | Responsibilities |
 |---|---|---|
 | web | `web/` | UI (9 sections + login), same-origin proxy to the API. Holds no secrets; no `NEXT_PUBLIC_*` variables. |
-| api | `api/` | Auth, encrypted vault, provider registry + tests, OAuth, readiness engine, n8n provisioning/sync/test runs, execution mirroring, Telegram webhook router, video/approval/publishing orchestration, health, audit. |
+| api | `api/` | Auth, encrypted vault, provider registry + tests, OAuth, native readiness/workflow state, Telegram webhook router, video/carousel/approval/publishing orchestration, health, audit. |
 | worker | `worker/` | Video generation (script → voice → Runway → FFmpeg → QA → storage), Telegram approval upload, publishing. Heartbeat with capabilities. |
-| n8n | `docker/Dockerfile.n8n` | The 22 workflows. Supervisor delivers configuration and runs test executions. |
 
 ## Key design decisions
 
 - **Single source of configuration: the Control Center.** Credentials live
-  encrypted in the Control Center; n8n receives them as managed n8n credentials
-  (public API) and a computed runtime environment (supervisor). Nobody edits
-  n8n env vars or credential screens.
+  encrypted in the Control Center and are consumed directly by native API and
+  worker adapters. No external orchestration service is required.
 - **Data-driven providers.** `api/src/modules/providers/definitions.ts` declares
   every provider's fields (type, secret, validation, group), auth type, test,
   and OAuth flow; the UI renders forms from it.
 - **Readiness is computed, never asserted.** `modules/workflows/readiness.ts`
-  checks tested providers, settings, confirmations, n8n presence, synced n8n
-  credentials, worker FFmpeg and storage. Activation always recalculates first.
+  checks tested providers, settings, confirmations, worker FFmpeg and storage.
+  Activation always recalculates first.
 - **Asynchronous, resumable video jobs.** HTTP returns immediately; BullMQ
   carries the job; every stage is checkpointed in Postgres so retries resume.
-- **Private by default.** Only web and the n8n editor/webhooks are public; the
-  API's internal endpoints are on a separate listener the proxy never reaches.
+- **Private by default.** Only web is public; the API has no external runtime
+  orchestrator and its optional internal listener is not exposed by the proxy.
 
 ## Security model
 
@@ -57,9 +53,9 @@ OAuth providers ─► web /api/oauth/callback/* ─┘         ├─ Postgres 
 
 ## Data model (Prisma, `api/prisma/schema.prisma`)
 
-AdminUser · Integration (+ authType, connected account, token expiry, synced
-n8n credential ids) · EncryptedCredential · WorkflowConfig (+ n8n presence,
-active state, definition hash, trigger kind, last test run) ·
+AdminUser · Integration (+ authType, connected account, token expiry) ·
+EncryptedCredential · WorkflowConfig (native readiness, active state, trigger
+kind, last test run) ·
 AutomationExecution (unique per source+external id) · VideoProject (+ music,
 publish targets) · VideoJob (+ progress) · VideoScene (+ voice key/duration) ·
 VideoAsset (+ mime, dimensions, metadata) · Approval (+ rejection reason) ·

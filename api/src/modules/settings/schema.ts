@@ -3,9 +3,7 @@ import { prisma } from "../../lib/prisma";
 
 /**
  * Every admin-editable setting, declared once. The Settings page renders
- * from this list, the API validates against it, and settings with `n8nEnv`
- * are delivered to n8n automatically (see modules/n8n/runtimeEnv.ts) — this
- * is what replaced hand-editing n8n's environment variables.
+ * from this list and the API validates against it.
  */
 export type SettingType = "boolean" | "text" | "url" | "date" | "number" | "select";
 
@@ -17,8 +15,6 @@ export interface SettingDefinition {
   default: string | number | boolean;
   help?: string;
   options?: { value: string; label: string }[];
-  /** n8n environment variable this setting is delivered as. */
-  n8nEnv?: string;
 }
 
 export const SETTINGS: SettingDefinition[] = [
@@ -47,19 +43,19 @@ export const SETTINGS: SettingDefinition[] = [
   { key: "contentFormats", label: "Priority content formats", type: "text", group: "Business", default: "" },
   { key: "postsPerDay", label: "Target posts per day", type: "number", group: "Business", default: 0 },
   { key: "contentTimezone", label: "Content scheduling timezone", type: "text", group: "Business", default: "" },
-  { key: "aiProvider", label: "AI provider for the n8n workflows", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }], help: "The connected provider whose key and model every AI step in n8n uses." },
-  { key: "launchDate", label: "Launch date (day 1 of the 30-day content calendar)", type: "date", group: "Business", default: "", n8nEnv: "LAUNCH_DATE" },
-  { key: "appDownloadLink", label: "App download / public link", type: "url", group: "Business", default: "https://culinarytales.app", n8nEnv: "APP_DOWNLOAD_LINK" },
-  { key: "appVendorLink", label: "Vendor sign-up link", type: "url", group: "Business", default: "https://culinarytales.app/sell", n8nEnv: "APP_VENDOR_LINK" },
-  { key: "whatsappCtaLink", label: "WhatsApp click-to-chat link (wa.me/...)", type: "url", group: "Business", default: "", n8nEnv: "WHATSAPP_CTA_LINK" },
-  { key: "feedbackFormUrl", label: "Feedback survey URL", type: "url", group: "Business", default: "", n8nEnv: "FEEDBACK_FORM_URL" },
-  { key: "feedbackRewardText", label: "Feedback reward sentence (leave empty unless a reward exists)", type: "text", group: "Business", default: "", n8nEnv: "FEEDBACK_REWARD_TEXT" },
-  { key: "appStoreReviewUrl", label: "App Store review URL", type: "url", group: "Business", default: "", n8nEnv: "APP_STORE_REVIEW_URL" },
-  { key: "playStoreReviewUrl", label: "Google Play review URL", type: "url", group: "Business", default: "", n8nEnv: "PLAY_STORE_REVIEW_URL" },
+  { key: "aiProvider", label: "AI provider for native workflows", type: "select", group: "Business", default: "groq", options: [{ value: "groq", label: "Groq" }, { value: "openai", label: "OpenAI" }], help: "The connected provider whose key and model native AI steps use." },
+  { key: "launchDate", label: "Launch date (day 1 of the 30-day content calendar)", type: "date", group: "Business", default: "" },
+  { key: "appDownloadLink", label: "App download / public link", type: "url", group: "Business", default: "https://culinarytales.app" },
+  { key: "appVendorLink", label: "Vendor sign-up link", type: "url", group: "Business", default: "https://culinarytales.app/sell" },
+  { key: "whatsappCtaLink", label: "WhatsApp click-to-chat link (wa.me/...)", type: "url", group: "Business", default: "" },
+  { key: "feedbackFormUrl", label: "Feedback survey URL", type: "url", group: "Business", default: "" },
+  { key: "feedbackRewardText", label: "Feedback reward sentence (leave empty unless a reward exists)", type: "text", group: "Business", default: "" },
+  { key: "appStoreReviewUrl", label: "App Store review URL", type: "url", group: "Business", default: "" },
+  { key: "playStoreReviewUrl", label: "Google Play review URL", type: "url", group: "Business", default: "" },
 
-  { key: "autopilotSocialPosting", label: "Allow automatic social posting (Buffer/X)", type: "boolean", group: "Automation safety", default: false, n8nEnv: "AUTOPILOT_SOCIAL_POSTING", help: "Off = drafts go to Telegram for manual posting. Turn on only after a week of reviewed output." },
-  { key: "twitterPostingEnabled", label: "Allow workflow 10 to post to X", type: "boolean", group: "Automation safety", default: false, n8nEnv: "TWITTER_POSTING_ENABLED" },
-  { key: "autopilotStop", label: "EMERGENCY STOP social autopilot", type: "boolean", group: "Automation safety", default: false, n8nEnv: "AUTOPILOT_STOP" },
+  { key: "autopilotSocialPosting", label: "Allow automatic social posting (Buffer/X)", type: "boolean", group: "Automation safety", default: false, help: "Off = drafts go to Telegram for manual posting. Turn on only after a week of reviewed output." },
+  { key: "twitterPostingEnabled", label: "Allow automatic posting to X", type: "boolean", group: "Automation safety", default: false },
+  { key: "autopilotStop", label: "EMERGENCY STOP social autopilot", type: "boolean", group: "Automation safety", default: false },
   { key: "emergencyStop", label: "EMERGENCY STOP API and worker execution", type: "boolean", group: "Automation safety", default: false, help: "Blocks new generation, approval and publishing work at enqueue and again in the worker before provider calls." },
 
   { key: "whatsappTemplatesApproved", label: "I confirm Meta approved the WhatsApp templates entered in Integrations", type: "boolean", group: "Confirmations", default: false, help: "Meta's approval cannot be checked by API; this confirmation unblocks the WhatsApp sequences." },

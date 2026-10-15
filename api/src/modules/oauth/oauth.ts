@@ -99,8 +99,7 @@ export async function completeOAuth(provider: string, state: string, code: strin
   }
 }
 
-/** Refreshes OAuth access tokens that expire within 15 minutes. Returns the
- * providers that were refreshed (so the caller can re-sync n8n credentials). */
+/** Refreshes OAuth access tokens that expire within 15 minutes. */
 export async function refreshExpiringTokens(): Promise<string[]> {
   const soon = new Date(Date.now() + 15 * 60 * 1000);
   const rows = await prisma.integration.findMany({ where: { authType: "OAUTH", tokenExpiresAt: { not: null, lt: soon } } });

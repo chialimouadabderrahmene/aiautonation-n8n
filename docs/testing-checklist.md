@@ -1,4 +1,8 @@
-# Testing checklist — Eki n8n automation
+# Historical testing checklist — superseded
+
+> The supported acceptance tests use the native API/worker runtime and simulated
+> providers. This document records the retired n8n staging harness only; do not
+> use it as a production or Railway smoke-test procedure.
 
 Three levels. Level 1 needs no accounts and is what produced [staging-test-report.md](staging-test-report.md); level 3 needs real accounts and dedicated test data.
 

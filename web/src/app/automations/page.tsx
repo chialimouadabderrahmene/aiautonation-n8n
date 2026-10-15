@@ -104,7 +104,7 @@ export default function AutomationsPage() {
 
   async function load() {
     try {
-      const [w, s] = await Promise.all([api.get<WorkflowConfig[]>("/api/workflows"), api.get<NativeStatus>("/api/workflows/n8n-status")]);
+      const [w, s] = await Promise.all([api.get<WorkflowConfig[]>("/api/workflows"), api.get<NativeStatus>("/api/workflows/native-status")]);
       setWorkflows(w);
       setNative(s);
       setError("");

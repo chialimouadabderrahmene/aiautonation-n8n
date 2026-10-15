@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Logical backup of the whole Control Center database — both schemas:
-#   public  = Control Center (integrations, encrypted credentials, jobs, audit log)
-#   n8n     = n8n (workflows, n8n credentials, execution history)
+# Logical backup of the whole native Control Center database (public schema:
+# integrations, encrypted credentials, jobs, audit log, workflows and usage).
 #
 #   DATABASE_URL=postgresql://user:pass@host:port/db bash scripts/backup-db.sh [output-dir]
 #
@@ -9,9 +8,8 @@
 # public URL while its TCP proxy is temporarily enabled, or from `railway run`.
 # Produces a compressed custom-format dump restorable with scripts/restore-db.sh.
 #
-# The dump contains credentials ENCRYPTED with AUTOMATION_SECRET_KEY (Control
-# Center) and N8N_ENCRYPTION_KEY (n8n). Keep those two keys backed up
-# separately — a restore is only useful with the same keys.
+# The dump contains credentials encrypted with AUTOMATION_SECRET_KEY. Keep
+# that key backed up separately — a restore is only useful with the same key.
 set -euo pipefail
 : "${DATABASE_URL:?set DATABASE_URL}"
 OUT_DIR="${1:-./backups}"

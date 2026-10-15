@@ -1,7 +1,8 @@
 /**
- * Declared requirements of each of the 22 workflow files in
- * ../../../../n8n-workflows/*.json, derived from docs/env-vars.md (which
- * `$env` value each workflow reads) and the credentials each file references.
+ * Declared requirements of the native automation workflows. The original
+ * questionnaire described 22 external workflow automations; this manifest
+ * preserves their business requirement inventory while runtime execution is
+ * owned by the TypeScript API and BullMQ worker.
  *
  * Requirement DSL, interpreted by readiness.ts:
  *   "openai|groq"            any of these integrations is CONNECTED
@@ -13,8 +14,6 @@
  *   "worker:ffmpeg"          a live video worker reports ffmpeg/ffprobe
  *   "storage"                object storage for media is configured and reachable
  *
- * The engine ALSO checks, for every workflow, that n8n is connected, the
- * workflow exists in n8n, and every n8n credential it uses has been synced.
  */
 export interface WorkflowManifestEntry {
   key: string;

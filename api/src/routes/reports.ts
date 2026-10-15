@@ -32,7 +32,7 @@ reportsRouter.get("/", async (req, res) => {
     .filter((w) => w.runs > 0)
     .sort((a, b) => b.runs - a.runs);
 
-  const bySource = ["N8N", "VIDEO_WORKER", "CONTROL_CENTER"].map((source) => {
+  const bySource = ["VIDEO_WORKER", "CONTROL_CENTER"].map((source) => {
     const runs = executions.filter((e) => e.source === source);
     return { source, runs: runs.length, success: runs.filter((r) => r.status === "SUCCESS").length, failed: runs.filter((r) => r.status === "FAILED").length };
   });

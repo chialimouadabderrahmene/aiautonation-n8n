@@ -9,10 +9,8 @@ import { logger } from "../../lib/logger";
 
 /**
  * One Telegram bot can have exactly one webhook. The Control Center owns it:
- * it handles the video APPROVE/REJECT buttons itself and forwards every other
- * update (the /approve, /reject, /edit text commands of n8n workflow 02) to
- * n8n's content-approval webhook over the private network, with the same
- * secret header workflow 02 already verifies.
+ * it handles the video APPROVE/REJECT buttons itself. Unsupported commands
+ * are acknowledged and logged; no external orchestrator is involved.
  */
 
 export const WEBHOOK_PATH = "/api/telegram/webhook";
