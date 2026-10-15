@@ -10,13 +10,14 @@ export const dashboardRouter = Router();
 
 dashboardRouter.get("/", async (_req, res) => {
   const startOfDay = new Date(new Date().setHours(0, 0, 0, 0));
-  const [integrations, workflows, todayExecutions, videoJobs, health, pendingApprovals] = await Promise.all([
+  const [integrations, workflows, todayExecutions, videoJobs, health, pendingApprovals, usage] = await Promise.all([
     prisma.integration.findMany(),
     prisma.workflowConfig.findMany({ orderBy: { key: "asc" } }),
     prisma.automationExecution.findMany({ where: { startedAt: { gte: startOfDay } } }),
     prisma.videoJob.groupBy({ by: ["state"], _count: true }),
     systemHealth(),
     prisma.approval.count({ where: { status: "PENDING" } }),
+    prisma.usageLedger.findMany({ where: { occurredAt: { gte: startOfDay } }, select: { costMicros: true, costStatus: true } }),
   ]);
   const snap = await takeSnapshot({ includeInfra: true });
   const video = await evaluateRequirements(VIDEO_PIPELINE_REQUIREMENTS, snap);
@@ -78,6 +79,12 @@ dashboardRouter.get("/", async (_req, res) => {
       successful: todayExecutions.filter((e) => e.status === "SUCCESS").length,
       failed: todayExecutions.filter((e) => e.status === "FAILED").length,
       running: todayExecutions.filter((e) => e.status === "RUNNING").length,
+    },
+    usage: {
+      calls: usage.length,
+      providerReportedMicros: usage.filter((u) => u.costStatus === "PROVIDER_REPORTED").reduce((n, u) => n + (u.costMicros ?? 0), 0),
+      estimatedMicros: usage.filter((u) => u.costStatus === "ESTIMATE").reduce((n, u) => n + (u.costMicros ?? 0), 0),
+      unknownCalls: usage.filter((u) => u.costStatus === "UNKNOWN").length,
     },
     actionRequired,
     // Non-null ONLY in an explicitly configured test environment (see lib/http.ts).

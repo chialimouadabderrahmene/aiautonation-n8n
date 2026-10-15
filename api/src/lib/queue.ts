@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
+import { getSetting } from "../modules/settings/schema";
 
 // NOTE: queue names and payload shapes are duplicated in
 // worker/src/lib/queue.ts (separately deployed services) — keep in sync.
@@ -49,6 +50,7 @@ export function getDeliveryQueue(): Queue<DeliveryJobPayload> {
  * enqueue the same run twice.
  */
 export async function enqueueVideoJob(videoJobId: string, run: number, attempts: number): Promise<void> {
+  if (await getSetting<boolean>("emergencyStop")) throw new Error("Emergency stop is enabled; generation was not enqueued");
   await getVideoQueue().add(
     "generate",
     { videoJobId },
@@ -63,6 +65,7 @@ export async function enqueueVideoJob(videoJobId: string, run: number, attempts:
 }
 
 export async function enqueueDelivery(payload: DeliveryJobPayload): Promise<void> {
+  if (await getSetting<boolean>("emergencyStop")) throw new Error("Emergency stop is enabled; delivery was not enqueued");
   await getDeliveryQueue().add(payload.kind, payload, {
     attempts: 3,
     backoff: { type: "exponential", delay: 20_000 },

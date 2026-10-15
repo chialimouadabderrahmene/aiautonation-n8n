@@ -23,6 +23,7 @@ Status legend: **REQUIRED** = workflows fail without it · **EXTERNAL** = needs 
 | `APP_VENDOR_LINK` | recommended | 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 | Vendor call-to-action URL (`https://culinarytales.app/sell`). Falls back to `APP_DOWNLOAD_LINK`. |
 | `AUTOPILOT_SOCIAL_POSTING` | safety | 10, 12, 14 | `false` (default): content only goes to Telegram for manual posting. `true` enables Buffer/X API posting. Keep `false` until a week of human-reviewed output has passed. |
 | `AUTOPILOT_STOP` | safety | 10, 12, 14 | `true` = emergency stop: 10 and 12 do nothing, 14 sends the stop alert. |
+| `emergencyStop` setting | safety | API + worker | Dashboard Settings control; blocks new generation, approval delivery and publishing at enqueue and immediately before worker execution. |
 | `BUFFER_API_KEY` | EXTERNAL | 10, 12, 14 | Buffer access token (request shape NOT verified against the live Buffer API). |
 | `BUFFER_PROFILE_ID_FACEBOOK` | EXTERNAL | 10, 12, 14 | Buffer profile id for facebook (one id per platform; the old single `BUFFER_PROFILE_ID` was removed because it posted every platform to one profile). |
 | `BUFFER_PROFILE_ID_INSTAGRAM` | EXTERNAL | 10, 12, 14 | Buffer profile id for instagram (one id per platform; the old single `BUFFER_PROFILE_ID` was removed because it posted every platform to one profile). |

@@ -256,6 +256,7 @@ export interface DashboardSummary {
     pendingApprovals: number;
   };
   today: { executions: number; successful: number; failed: number; running: number };
+  usage: { calls: number; providerReportedMicros: number; estimatedMicros: number; unknownCalls: number };
   actionRequired: { label: string; detail: string; link: string }[];
   testModeOverrides: string[] | null;
   generatedAt: string;

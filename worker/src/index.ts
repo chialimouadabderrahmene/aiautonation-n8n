@@ -12,6 +12,7 @@ import { ProviderError, scrubSecrets } from "./lib/http";
 import { processVideoJob, audit } from "./pipeline/orchestrator";
 import { sendVideoForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
+import { emergencyStopEnabled } from "./lib/safety";
 
 /**
  * Eki video worker: consumes two BullMQ queues.
@@ -47,6 +48,10 @@ async function cleanupStaleTemp(): Promise<void> {
 
 async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
   const payload = job.data;
+  if (await emergencyStopEnabled()) {
+    await audit("delivery.job_blocked_emergency_stop", payload.videoJobId, { kind: payload.kind, target: payload.kind === "publish" ? payload.target : undefined });
+    return;
+  }
   const attempt = job.attemptsMade;
   const maxAttempts = job.opts.attempts ?? 1;
   const execution = await prisma.automationExecution.upsert({

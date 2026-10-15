@@ -15,6 +15,7 @@ import { generateSceneClip, CancelledError } from "./video";
 import { assembleVideo, outputSize } from "./assemble";
 import { qualityCheck } from "./qa";
 import { sendVideoForApproval, notifyTeam } from "../delivery/telegram";
+import { emergencyStopEnabled } from "../lib/safety";
 
 /**
  * Asynchronous, resumable video generation. Every stage persists its output
@@ -39,6 +40,10 @@ async function setStage(jobId: string, state: VideoJobState, progress: number, e
 
 export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): Promise<void> {
   const { videoJobId } = bullJob.data;
+  if (await emergencyStopEnabled()) {
+    await audit("video.job_blocked_emergency_stop", videoJobId, { bullJobId: bullJob.id });
+    return;
+  }
   const initial = await prisma.videoJob.findUnique({ where: { id: videoJobId }, include: { project: true } });
   if (!initial || initial.state === "CANCELLED" || initial.state === "READY") return;
   const project = initial.project;
@@ -56,6 +61,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
       provider: "openai/groq + elevenlabs + runway + ffmpeg",
       relatedEntityType: "VideoJob",
       relatedEntityId: videoJobId,
+      campaignId: project.campaignId,
       retryCount: initial.retryCount + attempt,
       mode: "QUEUED",
     },
@@ -83,6 +89,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
         visualStyle: project.visualStyle,
         brand: project.brand,
         cta: project.cta,
+        usageContext: { executionId: execution.id, videoJobId, campaignId: project.campaignId ?? undefined },
       });
       await prisma.$transaction([
         prisma.videoScene.deleteMany({ where: { jobId: videoJobId } }),
@@ -111,7 +118,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
     await setStage(videoJobId, stage, 18);
     for (const scene of scenes) {
       if (scene.voiceKey || !scene.voiceoverText) continue;
-      const out = await voiceProvider.synthesize(scene.voiceoverText, project.voicePreset ?? undefined, project.language);
+      const out = await voiceProvider.synthesize(scene.voiceoverText, project.voicePreset ?? undefined, project.language, { idempotencyKey: `${execution.id}:voice:${scene.id}`, executionId: execution.id, videoJobId, campaignId: project.campaignId ?? undefined });
       const file = path.join(workDir, `voice-${scene.index}.mp3`);
       await fs.writeFile(file, out.audio);
       const p = await probe(file);
@@ -147,6 +154,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
           },
           isCancelled: () => isCancelled(videoJobId),
           destPath: clipPath,
+          usageContext: { idempotencyKey: `${execution.id}:runway:${scene.id}`, executionId: execution.id, videoJobId, campaignId: project.campaignId ?? undefined },
         });
         const p = await probe(clipPath);
         if (!p.video) throw new ProviderError(`Runway clip for scene ${scene.index} has no video stream`, null, true);

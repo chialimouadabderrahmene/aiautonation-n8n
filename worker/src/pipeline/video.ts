@@ -3,6 +3,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { requireConnected } from "../lib/credentials";
 import { timedFetch, readErrorDetail, withRetry, ProviderError, scrubSecrets } from "../lib/http";
+import { recordUsage } from "../lib/usage";
 
 /**
  * Runway adapter — real API, request/response shapes taken from Runway's
@@ -116,11 +117,13 @@ export async function generateSceneClip(opts: {
   onTaskCreated: (taskId: string, meta: { model: string; ratio: string; duration: number; estimatedCredits?: number }) => Promise<void>;
   isCancelled: () => Promise<boolean>;
   destPath: string;
+  usageContext?: { executionId?: string; videoJobId?: string; campaignId?: string; idempotencyKey: string };
 }): Promise<{ taskId: string }> {
   let taskId = opts.existingTaskId ?? null;
   if (!taskId) {
     const created = await videoProvider.createGeneration(opts.input);
     taskId = created.taskId;
+    await recordUsage({ idempotencyKey: opts.usageContext?.idempotencyKey ?? `runway:generation:${taskId}`, provider: "runway", operation: "text-to-video", model: created.model, totalUnits: created.estimatedCredits, unitType: "credits", executionId: opts.usageContext?.executionId, videoJobId: opts.usageContext?.videoJobId, campaignId: opts.usageContext?.campaignId, metadata: { taskId, duration: created.duration, ratio: created.ratio } });
     await opts.onTaskCreated(taskId, created);
   }
   const deadline = Date.now() + POLL_TIMEOUT_MS;

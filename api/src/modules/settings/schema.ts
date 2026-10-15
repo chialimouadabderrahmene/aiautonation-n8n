@@ -35,6 +35,7 @@ export const SETTINGS: SettingDefinition[] = [
   { key: "autopilotSocialPosting", label: "Allow automatic social posting (Buffer/X)", type: "boolean", group: "Automation safety", default: false, n8nEnv: "AUTOPILOT_SOCIAL_POSTING", help: "Off = drafts go to Telegram for manual posting. Turn on only after a week of reviewed output." },
   { key: "twitterPostingEnabled", label: "Allow workflow 10 to post to X", type: "boolean", group: "Automation safety", default: false, n8nEnv: "TWITTER_POSTING_ENABLED" },
   { key: "autopilotStop", label: "EMERGENCY STOP social autopilot", type: "boolean", group: "Automation safety", default: false, n8nEnv: "AUTOPILOT_STOP" },
+  { key: "emergencyStop", label: "EMERGENCY STOP API and worker execution", type: "boolean", group: "Automation safety", default: false, help: "Blocks new generation, approval and publishing work at enqueue and again in the worker before provider calls." },
 
   { key: "whatsappTemplatesApproved", label: "I confirm Meta approved the WhatsApp templates entered in Integrations", type: "boolean", group: "Confirmations", default: false, help: "Meta's approval cannot be checked by API; this confirmation unblocks the WhatsApp sequences." },
 

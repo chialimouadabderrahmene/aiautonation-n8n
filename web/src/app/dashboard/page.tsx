@@ -129,6 +129,21 @@ export default function DashboardPage() {
             <MetricTile label="Runs today" value={data.today.executions} />
             <MetricTile label="Failed today" value={data.today.failed} tone={data.today.failed ? "red" : "slate"} />
           </section>
+          <Card>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold text-slate-900">Usage and cost today</p>
+                <p className="mt-1 text-xs text-slate-500">Provider-reported and estimated costs are separated; unknown costs are never shown as zero.</p>
+              </div>
+              <Link href="/reports" className="text-sm font-semibold text-brand-600">Open reports →</Link>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+              <MetricTile label="Provider reported" value={`$${(data.usage.providerReportedMicros / 1_000_000).toFixed(4)}`} tone="green" />
+              <MetricTile label="Estimated" value={`$${(data.usage.estimatedMicros / 1_000_000).toFixed(4)}`} tone="amber" />
+              <MetricTile label="Provider calls" value={data.usage.calls} />
+              <MetricTile label="Unknown cost" value={data.usage.unknownCalls} tone={data.usage.unknownCalls ? "red" : "slate"} />
+            </div>
+          </Card>
 
           {data.automations.readyNotEnabled > 0 ? (
             <Card className="border-emerald-200 bg-emerald-50">

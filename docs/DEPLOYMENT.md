@@ -284,3 +284,11 @@ E2E_EMAIL=... E2E_PASSWORD=... node scripts/local-e2e-test-mode.mjs
 `N8N_ENCRYPTION_KEY` (all n8n credentials). Losing either makes the matching
 stored credentials unreadable (the admin would have to re-enter them). Backups
 and restore: `docs/BACKUP_RESTORE.md`.
+
+## Usage ledger and safety deployment gate
+
+Before starting workers, run the API migration
+`20261015090000_usage_ledger_production_controls`. Configure a `ProviderPrice`
+row for each billable provider/model; missing prices intentionally produce
+`UNKNOWN`, never zero. In staging, enable the `emergencyStop` setting and
+verify both enqueue rejection and worker blocking for an already-queued job.

@@ -38,6 +38,7 @@ const createProjectSchema = z.object({
   brand: z.string().trim().max(60).default("Eki"),
   cta: z.string().trim().max(200).optional(),
   publishTargets: z.array(z.enum(PUBLISH_TARGETS)).max(4).default([]),
+  campaignId: z.string().cuid().optional(),
 });
 
 async function attempts(): Promise<number> {
@@ -57,6 +58,7 @@ videoRouter.post("/projects", async (req: AuthedRequest, res) => {
   if (musicFileId && !(await prisma.mediaFile.findUnique({ where: { id: musicFileId } }))) {
     return res.status(400).json({ message: "Selected music track no longer exists" });
   }
+  if (parsed.data.campaignId && !(await prisma.campaign.findUnique({ where: { id: parsed.data.campaignId } }))) return res.status(400).json({ message: "Campaign not found" });
 
   const project = await prisma.videoProject.create({
     data: { ...data, musicFileId: musicFileId ?? null, music: musicFileId ? "track" : "none", testMode: false },

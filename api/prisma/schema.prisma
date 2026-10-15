@@ -179,10 +179,73 @@ model AutomationExecution {
   retryCount       Int              @default(0)
   /// n8n execution mode (trigger, webhook, cli, error, ...) or worker stage.
   mode             String?
+  campaignId       String?
+  campaign         Campaign? @relation(fields: [campaignId], references: [id])
+  usage            UsageLedger[]
 
   @@unique([source, externalId])
   @@index([source, status])
   @@index([startedAt])
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  projects    VideoProject[]
+  executions  AutomationExecution[]
+  usage       UsageLedger[]
+}
+
+enum UsageCostStatus {
+  PROVIDER_REPORTED
+  ESTIMATE
+  UNKNOWN
+}
+
+model UsageLedger {
+  id              String          @id @default(cuid())
+  idempotencyKey  String          @unique
+  provider        String
+  operation       String
+  model           String?
+  inputUnits      Int?
+  outputUnits     Int?
+  totalUnits      Int?
+  unitType        String?
+  costMicros      Int?
+  costCurrency    String          @default("USD")
+  costStatus      UsageCostStatus
+  executionId     String?
+  execution       AutomationExecution? @relation(fields: [executionId], references: [id])
+  campaignId      String?
+  campaign        Campaign?       @relation(fields: [campaignId], references: [id])
+  videoJobId      String?
+  metadata        Json             @default("{}")
+  occurredAt      DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+
+  @@index([provider, occurredAt])
+  @@index([campaignId, occurredAt])
+  @@index([executionId])
+}
+
+model ProviderPrice {
+  id             String   @id @default(cuid())
+  provider       String
+  model          String
+  inputMicros    Int?
+  outputMicros   Int?
+  unitMicros     Int?
+  unitType       String?
+  currency       String   @default("USD")
+  effectiveFrom  DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([provider, model])
 }
 
 // ------------------------------------------------------------ Video studio
@@ -237,6 +300,8 @@ model VideoProject {
   /// Where an approved video is published: any of "instagram", "facebook",
   /// "x", "linkedin". Empty = approval only, publish manually.
   publishTargets String[] @default([])
+  campaignId     String?
+  campaign       Campaign? @relation(fields: [campaignId], references: [id])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

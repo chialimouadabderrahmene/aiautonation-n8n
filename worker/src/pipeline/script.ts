@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getDecryptedCredentials } from "../lib/credentials";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../lib/http";
+import { recordUsage } from "../lib/usage";
 
 const sceneSchema = z.object({
   index: z.number().int().min(0),
@@ -31,6 +32,7 @@ export interface ScriptRequest {
   visualStyle: string;
   brand: string;
   cta?: string | null;
+  usageContext?: { executionId?: string; videoJobId?: string; campaignId?: string };
 }
 
 async function chooseProvider() {
@@ -98,7 +100,9 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
       90_000,
     );
     if (!res.ok) throw describeHttpFailure(ai.key === "openai" ? "OpenAI" : "Groq", res.status, await readErrorDetail(res));
-    return (await res.json()) as { choices: { message: { content: string } }[] };
+    const response = (await res.json()) as { model?: string; choices: { message: { content: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } };
+    await recordUsage({ idempotencyKey: `${request.usageContext?.executionId ?? "unknown"}:script:${ai.key}:${ai.model}`, provider: ai.key, operation: "chat.completions", model: ai.model, inputUnits: response.usage?.prompt_tokens, outputUnits: response.usage?.completion_tokens, totalUnits: response.usage?.total_tokens, unitType: "tokens", executionId: request.usageContext?.executionId, videoJobId: request.usageContext?.videoJobId, campaignId: request.usageContext?.campaignId, metadata: { responseModel: response.model ?? ai.model } });
+    return response;
   });
 
   const raw = data.choices[0]?.message.content;

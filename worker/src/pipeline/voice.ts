@@ -1,5 +1,6 @@
 import { requireConnected } from "../lib/credentials";
 import { timedFetch, readErrorDetail, withRetry, ProviderError, scrubSecrets } from "../lib/http";
+import { recordUsage } from "../lib/usage";
 
 /**
  * ElevenLabs text-to-speech (POST /v1/text-to-speech/{voice_id}, verified
@@ -10,7 +11,7 @@ import { timedFetch, readErrorDetail, withRetry, ProviderError, scrubSecrets } f
 
 export interface VoiceProvider {
   readonly name: string;
-  synthesize(text: string, voiceId: string | undefined, languageCode?: string): Promise<{ audio: Buffer; requestId: string | null; voiceId: string; model: string }>;
+  synthesize(text: string, voiceId: string | undefined, languageCode?: string, usageContext?: { idempotencyKey: string; executionId?: string; videoJobId?: string; campaignId?: string }): Promise<{ audio: Buffer; requestId: string | null; voiceId: string; model: string }>;
 }
 
 function elevenError(status: number, detail: string | undefined): ProviderError {
@@ -27,7 +28,7 @@ function elevenError(status: number, detail: string | undefined): ProviderError 
 class ElevenLabsVoiceProvider implements VoiceProvider {
   readonly name = "elevenlabs";
 
-  async synthesize(text: string, voiceOverride: string | undefined, languageCode?: string) {
+  async synthesize(text: string, voiceOverride: string | undefined, languageCode?: string, usageContext?: { idempotencyKey: string; executionId?: string; videoJobId?: string; campaignId?: string }) {
     const v = await requireConnected("elevenlabs", "ElevenLabs");
     const voiceId = voiceOverride || v.voiceId;
     if (!voiceId) throw new ProviderError("No ElevenLabs voice selected — set a default voice ID in Integrations → ElevenLabs", null, false);
@@ -50,6 +51,7 @@ class ElevenLabsVoiceProvider implements VoiceProvider {
       if (!res.ok) throw elevenError(res.status, scrubSecrets((await readErrorDetail(res)) ?? "", [v.apiKey]));
       const audio = Buffer.from(await res.arrayBuffer());
       if (audio.length < 1000) throw new ProviderError("ElevenLabs returned an empty audio file", null, true);
+      await recordUsage({ idempotencyKey: usageContext?.idempotencyKey ?? `elevenlabs:tts:${voiceId}:${text}`, provider: "elevenlabs", operation: "text-to-speech", model, totalUnits: text.length, unitType: "characters", executionId: usageContext?.executionId, videoJobId: usageContext?.videoJobId, campaignId: usageContext?.campaignId, metadata: { voiceId } });
       return { audio, requestId: res.headers.get("request-id") ?? res.headers.get("x-request-id"), voiceId, model };
     });
   }
