@@ -64,9 +64,10 @@ export async function enqueueVideoJob(videoJobId: string, run: number, attempts:
   );
 }
 
-export async function enqueueDelivery(payload: DeliveryJobPayload): Promise<void> {
+export async function enqueueDelivery(payload: DeliveryJobPayload, dedupeSuffix?: string): Promise<void> {
   if (await getSetting<boolean>("emergencyStop")) throw new Error("Emergency stop is enabled; delivery was not enqueued");
   await getDeliveryQueue().add(payload.kind, payload, {
+    jobId: `${payload.kind}:${payload.videoJobId}:${payload.kind === "publish" ? payload.target : "approval"}:${dedupeSuffix ?? "current"}`,
     attempts: 3,
     backoff: { type: "exponential", delay: 20_000 },
     removeOnComplete: { age: 7 * 86400 },

@@ -90,7 +90,7 @@ approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRe
   if (!pub) return res.status(404).json({ message: "Not found" });
   if (pub.status !== "FAILED") return res.status(409).json({ message: "Only a FAILED publication can be retried" });
   await prisma.publication.update({ where: { id: pub.id }, data: { status: "PENDING", error: null } });
-  await enqueueDelivery({ kind: "publish", videoJobId: jobId, target, requestedBy: req.admin?.email ?? "unknown" });
+  await enqueueDelivery({ kind: "publish", videoJobId: jobId, target, requestedBy: req.admin?.email ?? "unknown" }, `retry-${pub.attempts + 1}`);
   res.json({ ok: true });
 });
 
