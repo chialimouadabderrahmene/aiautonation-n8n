@@ -7,6 +7,7 @@ import { Badge, Card, Checklist, ErrorState, LoadingState, MetricTile, PageHeade
 import { api, APIError } from "@/lib/api";
 import { ComponentHealth, DashboardSummary } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
+import { formatMicros } from "@/lib/usageDisplay";
 
 const COMPONENTS: { key: keyof DashboardSummary["health"]; label: string }[] = [
   { key: "api", label: "API" },
@@ -138,8 +139,8 @@ export default function DashboardPage() {
               <Link href="/reports" className="text-sm font-semibold text-brand-600">Open reports →</Link>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-              <MetricTile label="Provider reported" value={`$${(data.usage.providerReportedMicros / 1_000_000).toFixed(4)}`} tone="green" />
-              <MetricTile label="Estimated" value={`$${(data.usage.estimatedMicros / 1_000_000).toFixed(4)}`} tone="amber" />
+              <MetricTile label="Provider reported" value={formatMicros(data.usage.providerReportedMicros)} tone="green" />
+              <MetricTile label="Estimated" value={formatMicros(data.usage.estimatedMicros)} tone="amber" />
               <MetricTile label="Provider calls" value={data.usage.calls} />
               <MetricTile label="Unknown cost" value={data.usage.unknownCalls} tone={data.usage.unknownCalls ? "red" : "slate"} />
             </div>

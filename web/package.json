@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev -p 3200",
     "build": "next build",
+    "test": "vitest run",
     "start": "next start -p 3200",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
@@ -25,5 +26,6 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2"
+    ,"vitest": "^2.1.9"
   }
 }
