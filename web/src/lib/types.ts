@@ -230,6 +230,7 @@ export interface SystemHealth {
   database: ComponentHealth;
   redis: ComponentHealth;
   n8n: ComponentHealth;
+  nativeAutomation: ComponentHealth;
   storage: ComponentHealth;
 }
 
@@ -244,7 +245,7 @@ export interface DashboardSummary {
     actionRequired: number;
     list: { provider: string; label: string; status: IntegrationStatus; lastTestedAt: string | null }[];
   };
-  automations: { total: number; enabled: number; activeInN8n: number; presentInN8n: number; ready: number; blocked: number; actionRequired: number; readyNotEnabled: number };
+  automations: { total: number; enabled: number; activeInN8n: number; presentInN8n: number; activeNative: number; presentNative: number; ready: number; blocked: number; actionRequired: number; readyNotEnabled: number };
   video: {
     readiness: Readiness;
     detail: ReadinessDetail[];

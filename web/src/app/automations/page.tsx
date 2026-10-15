@@ -14,9 +14,10 @@ interface ActivateResult {
   summary: { activated: number; alreadyActive: number; skipped: number };
 }
 
-interface N8nStatus {
+interface NativeStatus {
   health: ComponentHealth;
-  lastReconcile: { at: string; imported: string[]; updated: string[]; failed: { key: string; error: string }[]; present: number; active: number } | null;
+  scheduler: { running: boolean; lastTickAt: string | null };
+  native: { total: number; enabled: number };
 }
 
 function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => Promise<void> }) {
@@ -49,7 +50,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
           </p>
           <p className="text-xs text-slate-500">
             {failing.length ? `${failing.length} blocker(s): ${failing[0]?.note ?? failing[0]?.label}${failing.length > 1 ? " …" : ""}` : "All requirements met"}
-            {" · "}n8n: {wf.n8nPresent ? (wf.n8nActive ? "active" : "imported, inactive") : "not imported"}
+            {" · "}native: {wf.enabled ? "active" : "inactive"}
             {wf.lastExecutionAt ? ` · last run ${timeAgo(wf.lastExecutionAt)} ${wf.lastExecutionOk ? "✓" : "✕"}` : ""}
           </p>
         </button>
@@ -95,7 +96,7 @@ function WorkflowRow({ wf, onChanged }: { wf: WorkflowConfig; onChanged: () => P
 
 export default function AutomationsPage() {
   const [workflows, setWorkflows] = useState<WorkflowConfig[]>([]);
-  const [n8n, setN8n] = useState<N8nStatus | null>(null);
+  const [native, setNative] = useState<NativeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -104,9 +105,9 @@ export default function AutomationsPage() {
 
   async function load() {
     try {
-      const [w, s] = await Promise.all([api.get<WorkflowConfig[]>("/api/workflows"), api.get<N8nStatus>("/api/workflows/n8n-status")]);
+      const [w, s] = await Promise.all([api.get<WorkflowConfig[]>("/api/workflows"), api.get<NativeStatus>("/api/workflows/native-status")]);
       setWorkflows(w);
-      setN8n(s);
+      setNative(s);
       setError("");
     } catch (err) {
       setError(err instanceof APIError ? err.message : "Failed to load automations");
@@ -163,7 +164,7 @@ export default function AutomationsPage() {
     <ControlCenterLayout>
       <PageHeader
         title="Automations"
-        subtitle={`${workflows.length} workflows · ${ready} ready · ${workflows.filter((w) => w.enabled).length} enabled · ${workflows.filter((w) => w.n8nPresent).length} present in n8n`}
+        subtitle={`${workflows.length} workflows · ${ready} ready · ${workflows.filter((w) => w.enabled).length} enabled · native runtime`}
         action={
           <div className="flex flex-wrap gap-2">
             <Button onClick={activateReady} disabled={Boolean(busy)}>
@@ -176,13 +177,13 @@ export default function AutomationsPage() {
         }
       />
 
-      {n8n ? (
+      {native ? (
         <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-          <StatusBadge status={n8n.health.status} />
-          <span>{n8n.health.message}</span>
-          {n8n.lastReconcile ? <span>· last sync {timeAgo(n8n.lastReconcile.at)}</span> : null}
+          <StatusBadge status={native.health.status} />
+          <span>{native.health.message}</span>
+          <span>· scheduler {native.scheduler.running ? "running" : "stopped"}</span>
           <button onClick={sync} disabled={Boolean(busy)} className="font-semibold text-brand-600 underline">
-            {busy === "sync" ? "Syncing…" : "Sync with n8n now"}
+            {busy === "sync" ? "Refreshing…" : "Refresh native readiness"}
           </button>
         </div>
       ) : null}
