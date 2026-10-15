@@ -23,19 +23,16 @@
  *   --init "<name>"    create a new Railway project first
  *   --verify-only      skip provisioning/deploys, only run the verification
  *   --no-smoke         skip scripts/smoke-test.mjs
-<<<<<<< Updated upstream
  *   --check-cli        read-only: show which Railway executable is used, its
  *                      version, login and linked project/environment, then exit
  *   RAILWAY_CLI        path to the railway executable, if PATH lookup fails
  *                      (see scripts/lib/railway-cli.mjs for the resolution order)
-=======
  *   --skip-n8n         deploy api/worker/web only, deferring n8n — for plans
  *                      whose resource limit can't fit all 4 app services +
  *                      Postgres + Redis + a Bucket at once. n8n integration
  *                      is simply NOT_CONFIGURED until you add the n8n service
  *                      and re-run without this flag (nothing else changes;
  *                      re-running is always safe/idempotent per service).
->>>>>>> Stashed changes
  *
  * Safety:
  *   - Secret values are generated here (crypto.randomBytes), sent to Railway
@@ -53,14 +50,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-<<<<<<< Updated upstream
 import { resolveRailwayCli } from "./lib/railway-cli.mjs";
 
 // fileURLToPath, not URL.pathname: the latter keeps %20 for spaces and yields
 // "/C:/..." on Windows — an invalid cwd, which Node reports as "spawnSync railway ENOENT".
-=======
-
-// `new URL(import.meta.url).pathname` is wrong on Windows: it leaves a
 // leading "/" before the drive letter and never decodes %-escapes (e.g. a
 // space in a directory name), producing a mangled path like
 // "C:\C:\Users\...%20..." once `path.resolve` "fixes" the leading slash by
@@ -68,7 +61,6 @@ import { resolveRailwayCli } from "./lib/railway-cli.mjs";
 // call then fails outright with ENOENT on the shell itself, not on ROOT —
 // reproduced exactly this way. `fileURLToPath` is the API Node ships
 // specifically to convert a `file://` URL to a correct, platform-native path.
->>>>>>> Stashed changes
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -118,7 +110,6 @@ function step(name, detail) {
   log(`${name}${detail ? ` — ${detail}` : ""}`);
 }
 
-<<<<<<< Updated upstream
 let cli;
 /** The Railway executable, resolved once from PATH without a shell (Windows: .exe or npm .cmd shim target). */
 function railwayCli() {
@@ -130,9 +121,8 @@ function railwayCli() {
     }
   }
   return cli;
-=======
-// On Windows, npm installs global CLIs as a `<name>.cmd` shim. Node's own
-// docs are explicit that .bat/.cmd files "cannot be executed directly" by
+}
+/*
 // child_process without `shell: true` — spawning the bare name fails with
 // ENOENT (Node can't resolve the PATHEXT-implied .cmd extension itself), and
 // spawning "railway.cmd" directly fails with EINVAL (a .cmd is not a real
@@ -154,26 +144,17 @@ function winShellQuote(arg) {
   const s = String(arg);
   if (s !== "" && !/[\s"&|<>^()%!]/.test(s)) return s;
   return `"${s.replace(/"/g, '\\"')}"`;
->>>>>>> Stashed changes
-}
+} */
 
 /** Runs the Railway CLI. `secret: true` = output may contain secrets: never echoed. */
 function rw(cliArgs, { input, allowFail = false, secret = false, interactive = false } = {}) {
-<<<<<<< Updated upstream
   const { command, args: prefix } = railwayCli();
   const res = spawnSync(command, [...prefix, ...cliArgs], {
-=======
-  const res = spawnSync("railway", WINDOWS_SHELL ? cliArgs.map(winShellQuote) : cliArgs, {
->>>>>>> Stashed changes
     cwd: ROOT,
     input,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
-<<<<<<< Updated upstream
     windowsHide: true,
-=======
-    shell: WINDOWS_SHELL,
->>>>>>> Stashed changes
     stdio: interactive ? ["inherit", "pipe", "inherit"] : ["pipe", "pipe", "pipe"],
   });
   if (res.error) fail(`could not run railway ${cliArgs[0]} (${command}): ${res.error.message}`);
@@ -204,8 +185,15 @@ function writeReport(status, error) {
   report.finishedAt = new Date().toISOString();
   report.status = status;
   if (error) report.error = error;
-  const dir = path.join(os.homedir(), ".eki-control-center");
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const preferred = process.env.DEPLOY_REPORT_DIR || path.join(os.homedir(), ".eki-control-center");
+  let dir = preferred;
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch {
+    dir = path.join(ROOT, "reports");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
   const file = path.join(dir, `deploy-report-${Date.now()}.json`);
   fs.writeFileSync(file, JSON.stringify(report, null, 2), { mode: 0o600 });
   console.log(`\nReport (no secrets): ${file}`);

@@ -54,6 +54,7 @@ videoRouter.post("/projects", async (req: AuthedRequest, res) => {
   if (readiness.readiness !== "READY") {
     return res.status(409).json({ message: "Video pipeline is not READY", ...readiness });
   }
+  if (await getSetting<boolean>("emergencyStop")) return res.status(409).json({ message: "Emergency stop is enabled; generation was not enqueued" });
   const { musicFileId, ...data } = parsed.data;
   if (musicFileId && !(await prisma.mediaFile.findUnique({ where: { id: musicFileId } }))) {
     return res.status(400).json({ message: "Selected music track no longer exists" });

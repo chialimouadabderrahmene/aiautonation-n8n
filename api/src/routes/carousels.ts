@@ -22,6 +22,7 @@ const attempts = async () => Number((await getSetting<number>("videoMaxAttempts"
 carouselsRouter.post("/projects", async (req: AuthedRequest, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
+  if (await getSetting<boolean>("emergencyStop")) return res.status(409).json({ message: "Emergency stop is enabled; carousel was not enqueued" });
   if (parsed.data.campaignId && !(await prisma.campaign.findUnique({ where: { id: parsed.data.campaignId } }))) return res.status(400).json({ message: "Campaign not found" });
   const project = await prisma.carouselProject.create({ data: { ...parsed.data, audience: parsed.data.audience ?? null, cta: parsed.data.cta ?? null, campaignId: parsed.data.campaignId ?? null } });
   const job = await prisma.carouselJob.create({ data: { projectId: project.id, state: "QUEUED" } });

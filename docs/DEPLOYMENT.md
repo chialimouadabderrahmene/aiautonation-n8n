@@ -279,6 +279,12 @@ Before enabling content generation or publication:
    Next.js/Tailwind/Vitest major-version plan; do not use `npm audit fix --force`
    as an unreviewed production change.
 
+The local carousel flow can be exercised with `E2E_EMAIL=... E2E_PASSWORD=...`
+and `node scripts/local-carousel-e2e.mjs` while the test overlay is running
+and the worker has `CAROUSEL_PUBLISH_TEST_MODE=true`. Its publication result is
+synthetic and is not evidence of a real Instagram, Facebook, LinkedIn, or
+WhatsApp account connection.
+
 # FFmpeg/ffprobe + real assembly + storage round-trip on the deployed worker
 railway ssh --service worker -- node dist/tools/selftest.js
 ```

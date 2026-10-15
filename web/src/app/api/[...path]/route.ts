@@ -19,8 +19,9 @@ function apiBase(): string {
   return (process.env.API_INTERNAL_URL || "http://localhost:4100").replace(/\/+$/, "");
 }
 
-async function proxy(req: NextRequest, ctx: { params: { path: string[] } }): Promise<Response> {
-  const target = `${apiBase()}/api/${ctx.params.path.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
+async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
+  const params = await ctx.params;
+  const target = `${apiBase()}/api/${params.path.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
   const headers = new Headers();
   req.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
