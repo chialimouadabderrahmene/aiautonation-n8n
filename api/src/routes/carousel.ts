@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { enqueueCarouselJob, enqueueDelivery } from "../lib/queue";
@@ -11,6 +11,7 @@ import { checkAutopilot } from "../modules/automation/autopilot";
 import { getProviderValues } from "../modules/integrations/vault";
 import { getStorage } from "../lib/storage";
 import { logger } from "../lib/logger";
+import { cancelSchedules, parseScheduledFor, scheduleCarousel, SchedulingError } from "../modules/scheduling/schedule";
 
 export const carouselRouter = Router();
 
@@ -104,11 +105,13 @@ export async function decideCarousel(carouselJobId: string, decision: "APPROVED"
     create: { carouselJobId, status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
   });
   await recordAudit(decidedBy, decision === "APPROVED" ? "carousel.approved" : "carousel.rejected", "CarouselJob", carouselJobId, { reason });
+  if (decision === "REJECTED") await cancelSchedules("carousel", carouselJobId, "Approval was rejected", decidedBy);
 
   if (decision === "APPROVED") {
     const job = await prisma.carouselJob.findUniqueOrThrow({ where: { id: carouselJobId }, include: { project: true } });
     const manual: string[] = [];
     for (const target of job.project.publishTargets) {
+      if ((await prisma.carouselPublication.findUnique({ where: { carouselJobId_target: { carouselJobId, target } } }))?.status === "SCHEDULED") continue;
       const autopilot = await checkAutopilot(target);
       if (!autopilot.allowed) {
         await prisma.carouselPublication.upsert({
@@ -132,6 +135,7 @@ export async function decideCarousel(carouselJobId: string, decision: "APPROVED"
     if (job.project.publishAccountIds.length) {
       const connectedAccounts = await prisma.connectedAccount.findMany({ where: { id: { in: job.project.publishAccountIds } } });
       for (const account of connectedAccounts) {
+        if ((await prisma.carouselPublication.findUnique({ where: { carouselJobId_connectedAccountId: { carouselJobId, connectedAccountId: account.id } } }))?.status === "SCHEDULED") continue;
         const autopilot = await checkAutopilot(account.provider);
         if (!autopilot.allowed) {
           await prisma.carouselPublication.upsert({
@@ -207,3 +211,40 @@ export async function handleCarouselCallback(cb: { id: string; data?: string; fr
   if (cb.message?.message_id) await editDecisionMarkup(chatId, cb.message.message_id, action === "approve" ? `✅ Approved by ${who}` : `❌ Rejected by ${who}`);
   return true;
 }
+
+const scheduleSchema = z.object({
+  scheduledFor: z.string().trim().min(1).max(40),
+  timezone: z.string().trim().min(1).max(64),
+});
+
+function validTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sendScheduleError(res: Response, err: unknown) {
+  if (err instanceof SchedulingError) return res.status(err.status).json({ message: err.message });
+  throw err;
+}
+
+carouselRouter.post("/jobs/:id/schedule", async (req: AuthedRequest, res) => {
+  const parsed = scheduleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "Provide scheduledFor (ISO 8601 with offset) and a timezone" });
+  if (!validTimezone(parsed.data.timezone)) return res.status(400).json({ message: `Unknown timezone "${parsed.data.timezone}" (use an IANA name such as Africa/Lagos)` });
+  try {
+    const when = parseScheduledFor(parsed.data.scheduledFor);
+    const outcome = await scheduleCarousel(String(req.params.id), when, parsed.data.timezone, req.admin?.email ?? "unknown");
+    res.status(outcome.scheduled.length ? 200 : 409).json({ ...outcome, message: outcome.scheduled.length ? "Scheduled" : "Nothing could be scheduled" });
+  } catch (err) {
+    sendScheduleError(res, err);
+  }
+});
+
+carouselRouter.post("/jobs/:id/schedule/cancel", async (req: AuthedRequest, res) => {
+  const cancelled = await cancelSchedules("carousel", String(req.params.id), "Cancelled by admin", req.admin?.email ?? "unknown");
+  res.json({ ok: true, cancelled });
+});

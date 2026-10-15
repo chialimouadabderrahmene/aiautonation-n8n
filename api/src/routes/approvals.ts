@@ -15,6 +15,7 @@ import { handleCarouselCallback } from "./carousel";
 import { getN8nConnection } from "../modules/n8n/client";
 import { timedFetch } from "../lib/http";
 import { logger } from "../lib/logger";
+import { cancelSchedules } from "../modules/scheduling/schedule";
 
 /** Authenticated actions (send to Telegram, decide from the UI, list). */
 export const approvalsRouter = Router();
@@ -62,11 +63,14 @@ export async function decide(videoJobId: string, decision: "APPROVED" | "REJECTE
     create: { videoJobId, status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
   });
   await recordAudit(decidedBy, decision === "APPROVED" ? "video.approved" : "video.rejected", "VideoJob", videoJobId, { reason });
+  if (decision === "REJECTED") await cancelSchedules("video", videoJobId, "Approval was rejected", decidedBy);
 
   if (decision === "APPROVED") {
     const job = await prisma.videoJob.findUniqueOrThrow({ where: { id: videoJobId }, include: { project: true } });
     const manual: string[] = [];
     for (const target of job.project.publishTargets) {
+      // A scheduled destination keeps its timer: approval does not publish it now.
+      if ((await prisma.publication.findUnique({ where: { videoJobId_target: { videoJobId, target } } }))?.status === "SCHEDULED") continue;
       const autopilot = await checkAutopilot(target);
       if (!autopilot.allowed) {
         await prisma.publication.upsert({
@@ -90,6 +94,7 @@ export async function decide(videoJobId: string, decision: "APPROVED" | "REJECTE
     if (job.project.publishAccountIds.length) {
       const connectedAccounts = await prisma.connectedAccount.findMany({ where: { id: { in: job.project.publishAccountIds } } });
       for (const account of connectedAccounts) {
+        if ((await prisma.publication.findUnique({ where: { videoJobId_connectedAccountId: { videoJobId, connectedAccountId: account.id } } }))?.status === "SCHEDULED") continue;
         const autopilot = await checkAutopilot(account.provider);
         if (!autopilot.allowed) {
           await prisma.publication.upsert({

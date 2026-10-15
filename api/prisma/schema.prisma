@@ -348,6 +348,10 @@ enum PublicationStatus {
   PUBLISHED
   FAILED
   SKIPPED
+  /// Persisted, delayed until `scheduledFor`. Re-checked at publish time (approval, stop, state).
+  SCHEDULED
+  /// Scheduled, then cancelled by an admin or by a rejected approval. Never publishes.
+  CANCELLED
 }
 
 /// One row per (approved video, target platform) — or, once `connectedAccountId`
@@ -371,7 +375,14 @@ model Publication {
   attempts           Int               @default(0)
   createdAt          DateTime          @default(now())
   publishedAt        DateTime?
+  /// Scheduled publish time (UTC instant). Null for immediate publishes.
+  scheduledFor       DateTime?
+  /// IANA zone the schedule was entered in, for display only (the instant is always UTC).
+  scheduleTimezone   String?
+  /// Bumped on every reschedule/cancel so a stale delayed job can never publish.
+  scheduleVersion    Int               @default(0)
 
+  @@index([status, scheduledFor])
   @@unique([videoJobId, target])
   @@unique([videoJobId, connectedAccountId])
   @@index([connectedAccountId])
@@ -1114,7 +1125,11 @@ model CarouselPublication {
   attempts           Int               @default(0)
   createdAt          DateTime          @default(now())
   publishedAt        DateTime?
+  scheduledFor       DateTime?
+  scheduleTimezone   String?
+  scheduleVersion    Int               @default(0)
 
+  @@index([status, scheduledFor])
   @@unique([carouselJobId, target])
   @@unique([carouselJobId, connectedAccountId])
   @@index([connectedAccountId])

@@ -40,7 +40,19 @@ export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
   | { kind: "publish"; videoJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
   | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string }
-  | { kind: "publish-carousel"; carouselJobId: string; target: string; connectedAccountId?: string; requestedBy: string };
+  | { kind: "publish-carousel"; carouselJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
+  | ({ kind: "scheduled-publish" } & ScheduledPublishPayload);
+
+export type ScheduledModel = "video" | "carousel";
+
+/** Identifies one scheduled publication row at one version. The worker publishes only if the row
+ * still carries this version, so a rescheduled or cancelled row can never be published by old timer. */
+export interface ScheduledPublishPayload {
+  model: ScheduledModel;
+  publicationId: string;
+  scheduleVersion: number;
+  requestedBy: string;
+}
 
 export function getRedisConnection(): IORedis {
   const url = process.env.REDIS_URL;

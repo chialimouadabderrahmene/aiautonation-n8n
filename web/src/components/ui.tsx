@@ -31,7 +31,8 @@ export function Badge({ tone = "slate", children }: { tone?: keyof typeof badgeT
 export function statusTone(status: string): keyof typeof badgeTones {
   if (["CONNECTED", "READY", "SUCCESS", "SUCCEEDED", "APPROVED"].includes(status)) return "green";
   if (["TEST_FAILED", "BLOCKED", "FAILED", "REJECTED"].includes(status)) return "red";
-  if (["ACTION_REQUIRED", "CONFIGURED", "PENDING", "RUNNING", "RETRYING", "WAITING", "QUEUED"].includes(status)) return "amber";
+  if (["ACTION_REQUIRED", "CONFIGURED", "PENDING", "RUNNING", "RETRYING", "WAITING", "QUEUED", "SCHEDULED"].includes(status)) return "amber";
+  if (["SKIPPED"].includes(status)) return "slate";
   if (["CANCELLED"].includes(status)) return "slate";
   return "blue";
 }

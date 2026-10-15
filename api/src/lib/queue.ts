@@ -53,7 +53,19 @@ export type DeliveryJobPayload =
   | { kind: "send-approval"; videoJobId: string; requestedBy: string }
   | { kind: "publish"; videoJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
   | { kind: "send-carousel-approval"; carouselJobId: string; requestedBy: string }
-  | { kind: "publish-carousel"; carouselJobId: string; target: string; connectedAccountId?: string; requestedBy: string };
+  | { kind: "publish-carousel"; carouselJobId: string; target: string; connectedAccountId?: string; requestedBy: string }
+  | ({ kind: "scheduled-publish" } & ScheduledPublishPayload);
+
+export type ScheduledModel = "video" | "carousel";
+
+/** Identifies one scheduled publication row at one version. The worker publishes only if the row
+ * still carries this version, so a rescheduled or cancelled row can never be published by old timer. */
+export interface ScheduledPublishPayload {
+  model: ScheduledModel;
+  publicationId: string;
+  scheduleVersion: number;
+  requestedBy: string;
+}
 
 let connection: IORedis | null = null;
 let videoQueue: Queue<VideoGenerationJobPayload> | null = null;
@@ -203,4 +215,31 @@ export async function enqueueDelivery(payload: DeliveryJobPayload): Promise<void
     removeOnComplete: { age: 7 * 86400 },
     removeOnFail: { age: 30 * 86400 },
   });
+}
+
+/** Deterministic timer id: BullMQ ignores a second add with the same id, so sweeps are idempotent. */
+export function scheduledPublishJobId(model: ScheduledModel, publicationId: string, scheduleVersion: number): string {
+  return `sched-${model}-${publicationId}-v${scheduleVersion}`;
+}
+
+/** Enqueues the delayed timer for one scheduled row. Refused while the emergency stop is on. */
+export async function enqueueScheduledPublish(payload: ScheduledPublishPayload, delayMs: number): Promise<void> {
+  await assertOutboundAllowed(payload.model === "video" ? "video_publish" : "carousel_publish", "enqueue");
+  await getDeliveryQueue().add(
+    "scheduled-publish",
+    { kind: "scheduled-publish", ...payload },
+    {
+      jobId: scheduledPublishJobId(payload.model, payload.publicationId, payload.scheduleVersion),
+      delay: Math.max(0, Math.round(delayMs)),
+      attempts: 3,
+      backoff: { type: "exponential", delay: 30_000 },
+      removeOnComplete: { age: 7 * 86400 },
+      removeOnFail: { age: 30 * 86400 },
+    },
+  );
+}
+
+export async function removeScheduledPublishJob(model: ScheduledModel, publicationId: string, scheduleVersion: number): Promise<void> {
+  const job = await getDeliveryQueue().getJob(scheduledPublishJobId(model, publicationId, scheduleVersion)).catch(() => undefined);
+  if (job) await job.remove().catch(() => undefined);
 }

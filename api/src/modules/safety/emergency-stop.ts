@@ -15,7 +15,7 @@ export async function quarantineQueuedOutbound(): Promise<{ removedJobs: number;
     const jobs = await getDeliveryQueue().getJobs(["waiting", "delayed", "paused"]);
     for (const job of jobs) {
       const data = job.data as DeliveryJobPayload;
-      if (data.kind !== "publish" && data.kind !== "publish-carousel") continue;
+      if (data.kind !== "publish" && data.kind !== "publish-carousel" && data.kind !== "scheduled-publish") continue;
       try {
         await job.remove();
         removedJobs += 1;
@@ -26,9 +26,11 @@ export async function quarantineQueuedOutbound(): Promise<{ removedJobs: number;
   } catch (err) {
     redisError = err instanceof Error ? err.message : String(err);
   }
+  // Scheduled rows are cancelled too (not paused): once the stop is lifted they must be scheduled again deliberately.
+  const pending = { in: ["PENDING", "SCHEDULED"] as ("PENDING" | "SCHEDULED")[] };
   const [video, carousel] = await Promise.all([
-    prisma.publication.updateMany({ where: { status: "PENDING" }, data: { status: "SKIPPED", error: CANCELLED_NOTE } }),
-    prisma.carouselPublication.updateMany({ where: { status: "PENDING" }, data: { status: "SKIPPED", error: CANCELLED_NOTE } }),
+    prisma.publication.updateMany({ where: { status: pending }, data: { status: "SKIPPED", error: CANCELLED_NOTE } }),
+    prisma.carouselPublication.updateMany({ where: { status: pending }, data: { status: "SKIPPED", error: CANCELLED_NOTE } }),
   ]);
   return { removedJobs, markedPublications: video.count + carousel.count, redisError };
 }

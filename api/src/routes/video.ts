@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { enqueueVideoJob, getVideoQueue } from "../lib/queue";
@@ -8,6 +8,7 @@ import { AuthedRequest } from "../modules/auth/auth";
 import { evaluateRequirements, takeSnapshot } from "../modules/workflows/readiness";
 import { VIDEO_PIPELINE_REQUIREMENTS, VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
 import { getSetting } from "../modules/settings/schema";
+import { cancelSchedules, parseScheduledFor, scheduleVideo, SchedulingError } from "../modules/scheduling/schedule";
 
 export const videoRouter = Router();
 
@@ -162,4 +163,43 @@ videoRouter.post("/projects/:id/regenerate", async (req: AuthedRequest, res) => 
   await enqueueVideoJob(job.id, 0, await attempts());
   await recordAudit(req.admin?.email ?? "unknown", "video.regenerated", "VideoProject", id, { jobId: job.id });
   res.status(201).json({ job });
+});
+
+const scheduleSchema = z.object({
+  scheduledFor: z.string().trim().min(1).max(40),
+  timezone: z.string().trim().min(1).max(64),
+});
+
+function validTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sendScheduleError(res: Response, err: unknown) {
+  if (err instanceof SchedulingError) return res.status(err.status).json({ message: err.message });
+  throw err;
+}
+
+/** Schedule every publish destination of a READY video for a future instant. Approval is required
+ * when the time comes, and is re-checked then — scheduling itself sends nothing. */
+videoRouter.post("/jobs/:id/schedule", async (req: AuthedRequest, res) => {
+  const parsed = scheduleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "Provide scheduledFor (ISO 8601 with offset) and a timezone" });
+  if (!validTimezone(parsed.data.timezone)) return res.status(400).json({ message: `Unknown timezone "${parsed.data.timezone}" (use an IANA name such as Africa/Lagos)` });
+  try {
+    const when = parseScheduledFor(parsed.data.scheduledFor);
+    const outcome = await scheduleVideo(String(req.params.id), when, parsed.data.timezone, req.admin?.email ?? "unknown");
+    res.status(outcome.scheduled.length ? 200 : 409).json({ ...outcome, message: outcome.scheduled.length ? "Scheduled" : "Nothing could be scheduled" });
+  } catch (err) {
+    sendScheduleError(res, err);
+  }
+});
+
+videoRouter.post("/jobs/:id/schedule/cancel", async (req: AuthedRequest, res) => {
+  const cancelled = await cancelSchedules("video", String(req.params.id), "Cancelled by admin", req.admin?.email ?? "unknown");
+  res.json({ ok: true, cancelled });
 });

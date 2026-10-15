@@ -6,6 +6,7 @@ import path from "node:path";
 import { Worker, Queue, Job, UnrecoverableError } from "bullmq";
 import { prisma } from "./lib/prisma";
 import { isOutboundBlocked } from "./lib/outbound-guard";
+import { processScheduledPublish } from "./delivery/scheduled-publish";
 import { logger } from "./lib/logger";
 import {
   getRedisConnection,
@@ -87,6 +88,16 @@ function carouselPublicationWhere(payload: { carouselJobId: string; target: stri
     : { carouselJobId_target: { carouselJobId: payload.carouselJobId, target: payload.target } };
 }
 
+async function processScheduledPublishJob(job: Job<Extract<DeliveryJobPayload, { kind: "scheduled-publish" }>>): Promise<void> {
+  const { kind: _kind, ...payload } = job.data;
+  const outcome = await processScheduledPublish(payload, {
+    attemptsMade: job.attemptsMade,
+    maxAttempts: job.opts.attempts ?? 1,
+    audit: (action, entityId, metadata) => (payload.model === "video" ? audit(action, entityId, metadata) : carouselAudit(action, entityId, metadata)),
+  });
+  logger.info({ publicationId: payload.publicationId, model: payload.model, outcome }, "[worker] scheduled publish processed");
+}
+
 async function processCarouselPublish(payload: Extract<DeliveryJobPayload, { kind: "publish-carousel" }>, job: Job<DeliveryJobPayload>): Promise<void> {
   const attempt = job.attemptsMade;
   const maxAttempts = job.opts.attempts ?? 1;
@@ -154,6 +165,7 @@ async function processCarouselDelivery(payload: Extract<DeliveryJobPayload, { ki
 }
 
 async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
+  if (job.data.kind === "scheduled-publish") return processScheduledPublishJob(job as Job<Extract<DeliveryJobPayload, { kind: "scheduled-publish" }>>);
   if (job.data.kind === "send-carousel-approval") return processCarouselDelivery(job.data, job);
   if (job.data.kind === "publish-carousel") return processCarouselPublish(job.data, job);
   const payload = job.data;

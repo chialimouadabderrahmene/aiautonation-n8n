@@ -14,6 +14,7 @@ export default defineConfig({
       "test/engine-content-calendar-integration.test.ts",
       "test/engine-autopilot-controller-integration.test.ts",
       "test/outbound-guard-integration.test.ts",
+      "test/scheduling-integration.test.ts",
     ],
     environment: "node",
     testTimeout: 30_000,

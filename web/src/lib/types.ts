@@ -107,12 +107,14 @@ export interface Approval {
 export interface Publication {
   id: string;
   target: string;
-  status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "SKIPPED";
+  status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" | "SKIPPED" | "SCHEDULED" | "CANCELLED";
   externalId: string | null;
   externalUrl: string | null;
   error: string | null;
   attempts: number;
   publishedAt: string | null;
+  scheduledFor: string | null;
+  scheduleTimezone: string | null;
 }
 
 export interface VideoProject {

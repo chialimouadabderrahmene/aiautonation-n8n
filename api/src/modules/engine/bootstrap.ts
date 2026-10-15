@@ -2,6 +2,7 @@ import { logger } from "../../lib/logger";
 import { outboxRelayTick } from "./outbox";
 import { cronSchedulerTick, recoverStalledExecutions } from "./scheduler";
 import { startEngineWorkers, stopEngineWorkers } from "./queue";
+import { sweepScheduledPublications } from "../scheduling/schedule";
 import { matchTrigger } from "./matcher";
 import { runExecution, reconcileAfterRun } from "./executor";
 
@@ -61,6 +62,10 @@ export function startWorkflowEngine(): void {
     const r = await cronSchedulerTick();
     return r.fired ? `${r.fired}/${r.rescheduled} fired` : undefined;
   }, 5_000);
+  every(60_000, "scheduled-publish-sweep", async () => {
+    const r = await sweepScheduledPublications();
+    return r.enqueued || r.missed ? `${r.enqueued} enqueued, ${r.missed} missed${r.stopped ? " (emergency stop on)" : ""}` : undefined;
+  }, 25_000);
   every(60_000, "engine-stalled-sweep", async () => {
     const r = await recoverStalledExecutions();
     return r.recovered ? `${r.recovered} recovered` : undefined;

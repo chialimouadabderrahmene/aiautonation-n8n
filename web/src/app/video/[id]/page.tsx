@@ -8,6 +8,7 @@ import { Button, Card, ErrorState, LoadingState, Notice, PageHeader, StatusBadge
 import { api, APIError } from "@/lib/api";
 import { ACTIVE_VIDEO_STATES, VideoJob, VideoJobState } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
+import ScheduleControl from "@/components/ScheduleControl";
 
 const STAGES: { state: VideoJobState; label: string }[] = [
   { state: "QUEUED", label: "Queued" },
@@ -240,6 +241,16 @@ export default function VideoJobPage() {
             ) : (
               <p className="mt-1 text-xs text-slate-500">No automatic publishing selected — download the MP4 and post it manually once approved.</p>
             )}
+            {job.project?.publishTargets.length ? (
+              <ScheduleControl
+                endpointBase={`/api/video/jobs/${job.id}`}
+                rows={job.project.publishTargets.map((t) => {
+                  const p = job.publications.find((x) => x.target === t);
+                  return { target: t, status: p?.status ?? "PENDING", scheduledFor: p?.scheduledFor ?? null, scheduleTimezone: p?.scheduleTimezone ?? null, error: p?.error ?? null };
+                }).filter((r) => r.status === "SCHEDULED" || r.scheduledFor)}
+                onChanged={load}
+              />
+            ) : null}
             {job.caption ? (
               <div className="mt-6">
                 <p className="text-xs font-semibold uppercase text-slate-400">Caption</p>
