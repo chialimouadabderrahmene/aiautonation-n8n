@@ -11,7 +11,7 @@
 | Product truth / E2E | Video and carousel models, SVG rendering, validation, approval fingerprints, scheduling and delivery queues | Carousel local path is implemented/tested with a simulated adapter; live platform publishing contract and full DB-backed E2E remain blocked |
 | Failure/retry | Provider retry classification, bounded BullMQ retries, persisted errors | Implemented; live fault injection remains external |
 | Campaign attribution | `Campaign` linked to projects, executions, and usage; contract in `docs/MARKETPLACE_ACTIVATION_CONTRACT.md` | Campaign cost attribution implemented; lead/vendor activation E2E blocked by EKI contract |
-| Security | Encrypted credentials, auth, helmet, secret scrubbing, webhook checks; npm audit run in all services | API non-breaking audit fix applied; web still has findings requiring reviewed major upgrades; external penetration test absent |
+| Security | Encrypted credentials, auth, helmet, secret scrubbing, webhook checks; npm audit run in all services | Local production dependency audits now report 0 vulnerabilities in API, worker, and web after reviewed upgrades; external penetration test absent |
 | Frontend tests | `web/test/usageDisplay.test.ts`, Vitest, typecheck, and Next production build | Usage/dashboard display covered; broader page/E2E coverage remains |
 | Docs/deployment | Deployment, migration, backup/restore and staging emergency-stop steps documented | Target infrastructure, backup/restore execution, customer credentials and migration execution remain |
 

@@ -277,7 +277,10 @@ Before enabling content generation or publication:
 4. Run `npm audit --omit=dev` in `api`, `worker`, and `web`. Non-breaking fixes
    are applied where available. The remaining web findings require a reviewed
    Next.js/Tailwind/Vitest major-version plan; do not use `npm audit fix --force`
-   as an unreviewed production change.
+   as an unreviewed production change. The current reviewed web versions are
+   Next.js 16.4.2, eslint-config-next 16.4.2, ESLint 9.39.1 and PostCSS 8.5.28;
+   the web build emits only a React 18 deprecation warning, so React 19 remains
+   a separate compatibility project.
 
 The local carousel flow can be exercised with `E2E_EMAIL=... E2E_PASSWORD=...`
 and `node scripts/local-carousel-e2e.mjs` while the test overlay is running
