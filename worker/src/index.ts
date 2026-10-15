@@ -14,7 +14,7 @@ import { sendVideoForApproval, notifyTeam } from "./delivery/telegram";
 import { publishVideo } from "./delivery/publish";
 import { publishCarousel } from "./delivery/carousel";
 import { processCarouselJob } from "./pipeline/carousel";
-import { emergencyStopEnabled } from "./lib/safety";
+import { emergencyStopEnabled, shouldBlockOutboundJob } from "./lib/safety";
 
 /**
  * Eki video worker: consumes two BullMQ queues.
@@ -51,7 +51,7 @@ async function cleanupStaleTemp(): Promise<void> {
 async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
   const payload = job.data;
   const target = "target" in payload ? payload.target : undefined;
-  if (await emergencyStopEnabled()) {
+  if (shouldBlockOutboundJob(await emergencyStopEnabled())) {
     const entityId = "videoJobId" in payload ? payload.videoJobId : payload.carouselJobId;
     await audit("delivery.job_blocked_emergency_stop", entityId, { kind: payload.kind, target });
     return;

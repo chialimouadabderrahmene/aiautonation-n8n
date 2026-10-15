@@ -502,6 +502,7 @@ model Approval {
   telegramMessageId String?
   note              String?
   rejectionReason   String?
+  contentHash       String?
   decidedBy         String?
   decidedAt         DateTime?
   createdAt         DateTime       @default(now())

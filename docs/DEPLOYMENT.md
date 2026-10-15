@@ -258,6 +258,27 @@ manual step; full restart of every service → back ONLINE in ~60 s with the sam
 SMOKE_BASE_URL=https://<web domain> SMOKE_EMAIL=... SMOKE_PASSWORD=... \
 SMOKE_EXPECT_ALL_INACTIVE=1 node scripts/smoke-test.mjs
 
+## Release gate additions for production readiness
+
+Before enabling content generation or publication:
+
+1. Run `npx prisma migrate status` against the target database and retain the
+   output. The API entrypoint runs `prisma migrate deploy`; verify the new
+   usage, carousel, and video-approval-fingerprint migrations are applied.
+2. Take a PostgreSQL backup, run the migrations, then restore the backup into
+   an isolated database and run the API/worker schema and smoke checks. This
+   restore exercise has not been run from the current workspace and remains a
+   staging/infrastructure task.
+3. In staging only, enqueue a delivery job, delay it, activate `emergencyStop`,
+   and confirm queued, delayed, retried and replayed jobs are blocked at worker
+   execution time. Deactivate the stop, then verify a deliberately approved
+   test-mode job can proceed. Never use real WhatsApp or publishing credentials
+   for this exercise.
+4. Run `npm audit --omit=dev` in `api`, `worker`, and `web`. Non-breaking fixes
+   are applied where available. The remaining web findings require a reviewed
+   Next.js/Tailwind/Vitest major-version plan; do not use `npm audit fix --force`
+   as an unreviewed production change.
+
 # FFmpeg/ffprobe + real assembly + storage round-trip on the deployed worker
 railway ssh --service worker -- node dist/tools/selftest.js
 ```

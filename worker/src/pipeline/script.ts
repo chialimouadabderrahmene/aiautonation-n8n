@@ -32,6 +32,8 @@ export interface ScriptRequest {
   visualStyle: string;
   brand: string;
   cta?: string | null;
+  approvedFacts?: string;
+  forbiddenTopics?: string[];
   usageContext?: { executionId?: string; videoJobId?: string; campaignId?: string };
 }
 
@@ -63,6 +65,8 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
     "voiceoverText: what the narrator says during that scene; it must be speakable in the scene's duration (about 2.3 words per second).",
     "subtitleText: the on-screen caption for the scene (short, can be a trimmed voiceoverText).",
     "The last scene delivers the call to action. Never invent statistics, prices, dates, awards or testimonials that are not in the brief.",
+    request.approvedFacts ? `Use only these client-approved marketplace facts; do not add unsupported product claims: ${request.approvedFacts}` : "No client-approved marketplace facts were supplied; do not make factual product claims.",
+    request.forbiddenTopics?.length ? `Do not mention these forbidden topics: ${request.forbiddenTopics.join(", ")}.` : "",
     `Write voiceoverText, subtitleText and caption in this language: ${request.language}.`,
   ].join(" ");
 
@@ -117,6 +121,10 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
   if (!parsed.success) {
     throw new ProviderError(`AI script failed validation: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`, null, true);
   }
+  const combined = JSON.stringify(parsed.data).toLowerCase();
+  const forbidden = (request.forbiddenTopics ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean);
+  const forbiddenHit = forbidden.find((value) => combined.includes(value));
+  if (forbiddenHit) throw new ProviderError(`AI script contains forbidden topic: ${forbiddenHit}`, null, false);
   const scenes = parsed.data.scenes
     .sort((a, b) => a.index - b.index)
     .map((s, i) => ({ ...s, index: i, durationSec: Math.max(2, Math.min(10, Math.round(s.durationSec))) }));

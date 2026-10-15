@@ -11,6 +11,7 @@ import { getProviderValues } from "../modules/integrations/vault";
 import { getN8nConnection } from "../modules/n8n/client";
 import { timedFetch } from "../lib/http";
 import { logger } from "../lib/logger";
+import crypto from "node:crypto";
 
 /** Authenticated actions (send to Telegram, decide from the UI, list). */
 export const approvalsRouter = Router();
@@ -52,10 +53,17 @@ const decideSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]), reas
 
 /** Record an approval decision (from Telegram or from the Control Center UI). */
 export async function decide(videoJobId: string, decision: "APPROVED" | "REJECTED", decidedBy: string, reason?: string) {
+  const current = await prisma.videoJob.findUniqueOrThrow({ where: { id: videoJobId }, select: { script: true, caption: true, hashtags: true } });
+  const contentHash = crypto.createHash("sha256").update(JSON.stringify(current)).digest("hex");
+  const existing = await prisma.approval.findUnique({ where: { videoJobId } });
+  if (decision === "APPROVED" && existing?.contentHash && existing.contentHash !== contentHash) {
+    await prisma.approval.update({ where: { videoJobId }, data: { status: "PENDING", contentHash, note: "Approval invalidated because video content changed", decidedAt: null, decidedBy: null } });
+    throw new Error("Approval is stale; review the changed video again");
+  }
   const approval = await prisma.approval.upsert({
     where: { videoJobId },
-    update: { status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
-    create: { videoJobId, status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
+    update: { status: decision, contentHash, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
+    create: { videoJobId, contentHash, status: decision, decidedAt: new Date(), decidedBy, rejectionReason: decision === "REJECTED" ? reason ?? "Rejected" : null },
   });
   await recordAudit(decidedBy, decision === "APPROVED" ? "video.approved" : "video.rejected", "VideoJob", videoJobId, { reason });
 
@@ -79,7 +87,13 @@ approvalsRouter.post("/video/:jobId/decision", async (req: AuthedRequest, res) =
   if (!parsed.success) return res.status(400).json({ message: "decision must be APPROVED or REJECTED" });
   const job = await prisma.videoJob.findUnique({ where: { id: jobId } });
   if (!job || job.state !== "READY") return res.status(409).json({ message: "Only a READY video can be approved or rejected" });
-  const approval = await decide(jobId, parsed.data.decision, req.admin?.email ?? "unknown", parsed.data.reason);
+  let approval;
+  try {
+    approval = await decide(jobId, parsed.data.decision, req.admin?.email ?? "unknown", parsed.data.reason);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Approval is stale")) return res.status(409).json({ message: error.message });
+    throw error;
+  }
   res.json(approval);
 });
 

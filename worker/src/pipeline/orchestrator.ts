@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { Job, UnrecoverableError } from "bullmq";
 import { Prisma, VideoJobState } from "@prisma/client";
 import { prisma } from "../lib/prisma";
@@ -77,6 +78,11 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
     if (!initial.script || scenes.length === 0) {
       stage = "SCRIPT_GENERATING";
       await setStage(videoJobId, stage, 5, { error: null });
+      const approvedSettings = await prisma.setting.findMany({ where: { key: { in: ["marketplaceTruth", "contentForbiddenTopics"] } } });
+      const approvedValues = Object.fromEntries(approvedSettings.map((setting) => [setting.key, typeof setting.value === "string" ? setting.value.trim() : ""]));
+      if (!approvedValues.marketplaceTruth) throw new UnrecoverableError("Approved marketplace facts are required before video generation");
+      const forbiddenTopics = (approvedValues.contentForbiddenTopics ?? "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
+      if (forbiddenTopics.some((value) => `${project.topic} ${project.prompt}`.toLowerCase().includes(value.toLowerCase()))) throw new UnrecoverableError("Video brief contains a forbidden topic");
       const script = await generateScript({
         contentType: project.contentType,
         topic: project.topic,
@@ -89,6 +95,8 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
         visualStyle: project.visualStyle,
         brand: project.brand,
         cta: project.cta,
+        approvedFacts: approvedValues.marketplaceTruth,
+        forbiddenTopics,
         usageContext: { executionId: execution.id, videoJobId, campaignId: project.campaignId ?? undefined },
       });
       await prisma.$transaction([
@@ -231,6 +239,9 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
     });
     if (await isCancelled(videoJobId)) throw new CancelledError();
     await prisma.videoJob.update({ where: { id: videoJobId }, data: { state: "READY", progress: 100, finalVideoUrl: finalKey, completedAt: new Date(), error: null, errorStage: null } });
+    const approvedContent = await prisma.videoJob.findUniqueOrThrow({ where: { id: videoJobId }, select: { script: true, caption: true, hashtags: true } });
+    const contentHash = crypto.createHash("sha256").update(JSON.stringify(approvedContent)).digest("hex");
+    await prisma.approval.upsert({ where: { videoJobId }, update: { status: "PENDING", contentHash, decidedAt: null, decidedBy: null, rejectionReason: null }, create: { videoJobId, contentHash } });
     await prisma.automationExecution.update({
       where: { id: execution.id },
       data: { status: "SUCCESS", finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), mode: "READY" },
