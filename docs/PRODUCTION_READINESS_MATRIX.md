@@ -11,7 +11,7 @@ This repository does not include the client's full original scope document in th
 | Product truth / E2E | Existing readiness gates and local video/approval/publishing evidence; requirements brief lists Reels and Carousels as priority formats | Video covered; carousel model/rendering/approval/publishing path is absent and must be implemented before full-scope readiness |
 | Failure/retry | Provider retry classification, bounded BullMQ retries, persisted errors | Implemented; live fault injection remains external |
 | Campaign attribution | `Campaign` linked to projects, executions, and usage | Implemented |
-| Security | Encrypted credentials, auth, helmet, secret scrubbing, webhook checks | Repository review complete; no external penetration test |
+| Security | Encrypted credentials, auth, helmet, secret scrubbing, webhook checks | Application controls reviewed; final gate blocked by `npm audit` findings (web Next/PostCSS and API transitive uuid) and no external penetration test |
 | Frontend tests | `web/test/usageDisplay.test.ts`, Vitest, typecheck, and Next production build | Usage/dashboard display covered; broader page/E2E coverage remains |
 | Docs/deployment | Migration and operational notes documented | External credentials, permissions, and migration execution remain |
 
