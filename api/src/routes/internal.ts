@@ -1,5 +1,4 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { computeN8nRuntimeEnv } from "../modules/n8n/runtimeEnv";
 import { secretsEqual } from "../modules/telegram/telegram";
 
 /**
@@ -20,15 +19,3 @@ function requireInternalToken(req: Request, res: Response, next: NextFunction) {
 }
 
 internalRouter.use(requireInternalToken);
-
-/** Full runtime environment for the n8n supervisor (contains secrets — internal only). */
-internalRouter.get("/n8n/runtime-env", async (_req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-  res.json(await computeN8nRuntimeEnv());
-});
-
-/** Version hash only — polled every ~20 s by the supervisor. */
-internalRouter.get("/n8n/runtime-env/version", async (_req, res) => {
-  const { version } = await computeN8nRuntimeEnv();
-  res.json({ version });
-});

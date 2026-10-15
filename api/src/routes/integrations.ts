@@ -16,7 +16,6 @@ import { recomputeAllReadiness } from "../modules/workflows/readiness";
 import { recordAudit } from "../modules/audit/audit";
 import { AuthedRequest } from "../modules/auth/auth";
 import { startOAuth, completeOAuth, oauthRedirectUri, publicWebUrl } from "../modules/oauth/oauth";
-import { requestN8nSync } from "../modules/system/scheduler";
 import { ensureTelegramWebhook, clearTelegramWebhookState } from "../modules/telegram/telegram";
 import { safeErrorMessage } from "../lib/http";
 
@@ -26,7 +25,6 @@ export const oauthPublicRouter = Router();
 
 async function afterChange(provider: string, tested: boolean) {
   await recomputeAllReadiness();
-  requestN8nSync();
   if (provider === "telegram") {
     if (tested) await ensureTelegramWebhook();
     else await clearTelegramWebhookState();

@@ -66,7 +66,7 @@ async function main() {
   if (process.env.INTERNAL_API_TOKEN) {
     servers.push(createInternalApp().listen(internalPort, () => logger.info(`[eki-automation-api] internal listener on :${internalPort}`)));
   } else {
-    logger.warn("[startup] INTERNAL_API_TOKEN not set — n8n supervisor endpoints disabled");
+    logger.info("[startup] internal listener disabled; no external orchestrator is required");
   }
   startScheduler();
 

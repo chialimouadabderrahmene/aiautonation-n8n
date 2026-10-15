@@ -8,8 +8,6 @@ import { evaluateRequirements } from "../modules/workflows/readiness";
 import { VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
 import { getTelegramWebhookSecret, secretsEqual, answerCallback, editDecisionMarkup } from "../modules/telegram/telegram";
 import { getProviderValues } from "../modules/integrations/vault";
-import { getN8nConnection } from "../modules/n8n/client";
-import { timedFetch } from "../lib/http";
 import { logger } from "../lib/logger";
 import crypto from "node:crypto";
 
@@ -110,8 +108,8 @@ approvalsRouter.post("/video/:jobId/publish/:target/retry", async (req: AuthedRe
 
 /**
  * Telegram webhook. Video approval buttons (callback data `vid:approve:<id>`
- * / `vid:reject:<id>`) are handled here; every other update is forwarded to
- * n8n workflow 02 (content approval commands). Always answers 200 so
+ * / `vid:reject:<id>`) are handled here. Unknown commands are logged rather
+ * than forwarded to an external orchestrator. Always answers 200 so
  * Telegram never retries forever.
  */
 telegramPublicRouter.post("/webhook", async (req, res) => {
@@ -154,15 +152,7 @@ telegramPublicRouter.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Everything else belongs to n8n workflow 02 (/approve, /reject, /edit commands).
-    const conn = await getN8nConnection().catch(() => null);
-    if (!conn) return;
-    const { res: fwd } = await timedFetch(`${conn.baseUrl}/webhook/content-approval`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": expected },
-      body: JSON.stringify(req.body),
-    });
-    if (!fwd.ok && fwd.status !== 404) logger.warn({ status: fwd.status }, "[telegram] forward to n8n workflow 02 failed");
+    logger.info({ callback: cb?.data ?? null }, "[telegram] ignored unsupported callback; native approval routes handle decisions");
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[telegram] webhook handling failed");
   }

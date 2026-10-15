@@ -14,7 +14,7 @@ const COMPONENTS: { key: keyof DashboardSummary["health"]; label: string }[] = [
   { key: "worker", label: "Video worker" },
   { key: "database", label: "Database" },
   { key: "redis", label: "Queue (Redis)" },
-  { key: "n8n", label: "n8n" },
+  { key: "nativeAutomation", label: "Native automation" },
   { key: "storage", label: "Media storage" },
 ];
 
@@ -126,7 +126,7 @@ export default function DashboardPage() {
 
           <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <MetricTile label="Automations ready" value={`${data.automations.ready}/${data.automations.total}`} tone={data.automations.ready ? "green" : "slate"} />
-            <MetricTile label="Active in n8n" value={`${data.automations.activeInN8n}/${data.automations.presentInN8n}`} tone="blue" />
+            <MetricTile label="Active native workflows" value={`${data.automations.activeNative}/${data.automations.presentNative}`} tone="blue" />
             <MetricTile label="Runs today" value={data.today.executions} />
             <MetricTile label="Failed today" value={data.today.failed} tone={data.today.failed ? "red" : "slate"} />
           </section>

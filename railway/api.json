@@ -3,7 +3,7 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "docker/Dockerfile.api",
-    "watchPatterns": ["api/**", "n8n-workflows/**", "docker/Dockerfile.api", "docker/api-entrypoint.sh"]
+    "watchPatterns": ["api/**", "docker/Dockerfile.api", "docker/api-entrypoint.sh"]
   },
   "deploy": {
     "healthcheckPath": "/health",

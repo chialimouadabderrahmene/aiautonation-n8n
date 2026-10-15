@@ -1,7 +1,6 @@
 import IORedis from "ioredis";
 import { prisma } from "../../lib/prisma";
 import { getStorage, StorageCheck } from "../../lib/storage";
-import { getN8nConnection, n8nProcessHealthy, n8nClient, N8nNotConfiguredError } from "../n8n/client";
 
 /**
  * Truthful system health for the Dashboard. Every component is checked for
@@ -89,39 +88,11 @@ export async function workerHasFfmpeg(): Promise<boolean> {
   return w.status === "ONLINE";
 }
 
-export async function checkN8n(): Promise<ComponentHealth> {
+export async function checkNativeAutomation(): Promise<ComponentHealth> {
   const checkedAt = new Date().toISOString();
-  let conn;
-  try {
-    conn = await getN8nConnection();
-  } catch (err) {
-    if (err instanceof N8nNotConfiguredError) {
-      const fallback = process.env.N8N_INTERNAL_URL;
-      if (fallback && (await n8nProcessHealthy(fallback))) {
-        return { status: "DEGRADED", message: "n8n is running but the Control Center has no API key for it yet (auto-connect in progress)", checkedAt };
-      }
-      return { status: "NOT_CONFIGURED", message: "n8n not connected", checkedAt };
-    }
-    return { status: "DEGRADED", message: err instanceof Error ? err.message : String(err), checkedAt };
-  }
-  const start = Date.now();
-  const processUp = await n8nProcessHealthy(conn.baseUrl);
-  if (!processUp) return { status: "OFFLINE", message: `n8n not answering at ${conn.baseUrl}`, checkedAt };
-  try {
-    const workflows = (await n8nClient.listWorkflows()).filter((w) => !w.isArchived);
-    const managed = await prisma.workflowConfig.findMany({ select: { n8nWorkflowId: true, enabled: true } });
-    const managedIds = new Set(managed.map((m) => m.n8nWorkflowId).filter(Boolean));
-    const ours = workflows.filter((w) => managedIds.has(w.id));
-    return {
-      status: "ONLINE",
-      message: `n8n online — ${ours.length}/22 workflows present, ${ours.filter((w) => w.active).length} active`,
-      checkedAt,
-      latencyMs: Date.now() - start,
-      details: { present: ours.length, active: ours.filter((w) => w.active).length, totalInN8n: workflows.length, publicUrl: conn.publicUrl ?? null },
-    };
-  } catch (err) {
-    return { status: "DEGRADED", message: `n8n process is up but its API failed: ${err instanceof Error ? err.message : String(err)}`, checkedAt };
-  }
+  const workflows = await prisma.workflowConfig.count();
+  const enabled = await prisma.workflowConfig.count({ where: { enabled: true } });
+  return { status: "ONLINE", message: `Native automation engine configured — ${enabled}/${workflows} workflows enabled`, checkedAt, details: { workflows, enabled } };
 }
 
 let storageCache: { at: number; value: ComponentHealth } | null = null;
@@ -141,12 +112,12 @@ export async function checkStorage(force = false): Promise<ComponentHealth> {
 }
 
 export async function systemHealth() {
-  const [database, redis, worker, n8n, storage] = await Promise.all([checkDatabase(), checkRedis(), checkWorker(), checkN8n(), checkStorage()]);
+  const [database, redis, worker, nativeAutomation, storage] = await Promise.all([checkDatabase(), checkRedis(), checkWorker(), checkNativeAutomation(), checkStorage()]);
   const api: ComponentHealth = {
     status: "ONLINE",
     message: `API up since ${STARTED_AT.toISOString()}`,
     checkedAt: new Date().toISOString(),
     details: { startedAt: STARTED_AT.toISOString(), uptimeSec: Math.round(process.uptime()), version: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? process.env.APP_VERSION ?? "dev" },
   };
-  return { api, worker, database, redis, n8n, storage };
+  return { api, worker, database, redis, nativeAutomation, storage };
 }

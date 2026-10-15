@@ -1,15 +1,13 @@
 # Eki AI Automation Control Center — full local stack, same topology as the
 # Railway production deployment (see docs/DEPLOYMENT.md):
 #
-#   web (public)  →  api (private)  →  postgres, redis, n8n, object storage
+#   web (public)  →  api (private)  →  postgres, redis, object storage
 #                    worker (private) → postgres, redis, object storage
-#                    n8n (editor/webhooks public) ← supervisor ← api internal port
 #
 # Usage:
 #   cp docker/.env.example docker/.env   # then fill in the generated secrets
 #   docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
-#   Control Center: http://localhost:3200   (only the web port and the n8n
-#   editor are published; api/worker/postgres/redis/storage stay internal,
+#   Control Center: http://localhost:3200 (api/worker/postgres/redis/storage stay internal,
 #   exactly like on Railway)
 
 name: eki-automation
@@ -70,37 +68,6 @@ services:
     entrypoint: ["/bin/sh", "-c", "sleep 3; echo 's3.bucket.create -name eki-media' | weed shell -master=storage:9333 || true"]
     restart: "no"
 
-  n8n:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.n8n
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "5679:5678" # n8n editor + webhooks (public on Railway too)
-    environment:
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_PORT: "5432"
-      DB_POSTGRESDB_DATABASE: eki_automation
-      DB_POSTGRESDB_SCHEMA: n8n
-      DB_POSTGRESDB_USER: automation
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
-      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY}
-      N8N_HOST: localhost
-      N8N_PROTOCOL: http
-      N8N_EDITOR_BASE_URL: http://localhost:5679/
-      N8N_WEBHOOK_URL: http://localhost:5679/
-      N8N_SECURE_COOKIE: "false"
-      N8N_LISTEN_ADDRESS: 0.0.0.0 # Railway: leave unset (n8n listens on :: for private networking)
-      SUPERVISOR_LISTEN_ADDRESS: 0.0.0.0
-      CONTROL_CENTER_INTERNAL_URL: http://api:4110
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN}
-    volumes:
-      - n8n_data:/home/node/.n8n
-
   api:
     build:
       context: ..
@@ -119,15 +86,9 @@ services:
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
       AUTOMATION_SECRET_KEY: ${AUTOMATION_SECRET_KEY:?set AUTOMATION_SECRET_KEY}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:?set ADMIN_BOOTSTRAP_EMAIL}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?set ADMIN_BOOTSTRAP_PASSWORD}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3200}
-      N8N_INTERNAL_URL: http://n8n:5678
-      N8N_PUBLIC_URL: http://localhost:5679
-      N8N_SUPERVISOR_URL: http://n8n:5690
-      N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-${ADMIN_BOOTSTRAP_EMAIL}}
-      N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:?set N8N_OWNER_PASSWORD}
       STORAGE_DRIVER: s3
       S3_ENDPOINT: http://storage:8333
       S3_PUBLIC_ENDPOINT: http://localhost:8333
@@ -179,4 +140,3 @@ volumes:
   postgres_data:
   redis_data:
   storage_data:
-  n8n_data:

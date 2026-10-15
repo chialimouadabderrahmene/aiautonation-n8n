@@ -25,7 +25,7 @@ dashboardRouter.get("/", async (_req, res) => {
 
   const actionRequired: { label: string; detail: string; link: string }[] = [];
   for (const [name, h] of Object.entries(health)) {
-    if (h.status === "OFFLINE" || (h.status === "NOT_CONFIGURED" && name !== "n8n")) actionRequired.push({ label: `System: ${name}`, detail: h.message, link: "/dashboard" });
+    if (h.status === "OFFLINE" || h.status === "NOT_CONFIGURED") actionRequired.push({ label: `System: ${name}`, detail: h.message, link: "/dashboard" });
   }
   for (const i of integrations) {
     if (i.status === "TEST_FAILED" || i.status === "ACTION_REQUIRED") {
@@ -41,12 +41,12 @@ dashboardRouter.get("/", async (_req, res) => {
   const byState = Object.fromEntries(videoJobs.map((g) => [g.state, g._count]));
   const running = ["QUEUED", "SCRIPT_GENERATING", "STORYBOARD_READY", "VOICE_GENERATING", "VISUAL_GENERATING", "ASSEMBLING", "QUALITY_CHECK"].reduce((n, s) => n + (byState[s] ?? 0), 0);
   const ready = workflows.filter((w) => w.readiness === "READY").length;
-  const coreOnline = ["api", "database", "redis", "worker", "n8n"].every((k) => health[k as keyof typeof health].status === "ONLINE");
+  const coreOnline = ["api", "database", "redis", "worker", "nativeAutomation"].every((k) => health[k as keyof typeof health].status === "ONLINE");
 
   res.json({
     system: coreOnline && ready === workflows.length && video.readiness === "READY" ? "READY" : coreOnline ? "PARTIALLY_READY" : "BLOCKED",
     health,
-    n8nStatus: integrations.find((i) => i.provider === "n8n")?.status ?? "NOT_CONFIGURED",
+    nativeAutomationStatus: health.nativeAutomation.status,
     integrations: {
       total: integrations.length,
       connected: integrations.filter((i) => i.status === "CONNECTED").length,
@@ -57,8 +57,8 @@ dashboardRouter.get("/", async (_req, res) => {
     automations: {
       total: workflows.length,
       enabled: workflows.filter((w) => w.enabled).length,
-      activeInN8n: workflows.filter((w) => w.n8nActive).length,
-      presentInN8n: workflows.filter((w) => w.n8nPresent).length,
+      activeNative: workflows.filter((w) => w.enabled).length,
+      presentNative: workflows.length,
       ready,
       blocked: workflows.filter((w) => w.readiness === "BLOCKED").length,
       actionRequired: workflows.filter((w) => w.readiness === "ACTION_REQUIRED").length,

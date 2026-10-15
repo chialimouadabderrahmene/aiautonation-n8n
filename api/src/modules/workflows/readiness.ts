@@ -4,8 +4,6 @@ import { WORKFLOW_MANIFEST } from "./manifest";
 import { getProvider } from "../providers/registry";
 import { getAllSettings, getSettingDefinition } from "../settings/schema";
 import { checkWorker, checkStorage } from "../system/health";
-import { loadWorkflowFile, requiredCredentialNames, workflowFilesAvailable } from "../n8n/workflows";
-import { MANAGED_CREDENTIALS } from "../n8n/credentials";
 
 /**
  * The readiness engine. A workflow is READY only when every requirement is
@@ -13,8 +11,7 @@ import { MANAGED_CREDENTIALS } from "../n8n/credentials";
  *   - each required provider is CONNECTED (configured AND its last real test passed)
  *   - required business settings / provider fields are filled in
  *   - required human confirmations are ticked
- *   - n8n is connected, the workflow exists in n8n, and every n8n credential
- *     it uses has been synced from the vault
+ *   - the native workflow definition and its providers are available
  *   - (video) a live worker with ffmpeg/ffprobe and reachable storage
  * Anything else is BLOCKED (or ACTION_REQUIRED when the only gaps are human
  * confirmations), with one line per unmet requirement naming the fix.
@@ -33,7 +30,7 @@ export interface ReadinessResult {
 }
 
 interface Snapshot {
-  integrations: Map<string, { status: string; config: Record<string, string>; lastTestMessage: string | null; n8nCredentialIds: Record<string, { id: string }> }>;
+  integrations: Map<string, { status: string; config: Record<string, string>; lastTestMessage: string | null }>;
   settings: Record<string, unknown>;
   workerOk: { ok: boolean; message: string } | null;
   storageOk: { ok: boolean; message: string } | null;
@@ -60,7 +57,6 @@ export async function takeSnapshot(opts: { includeInfra?: boolean } = {}): Promi
         status: r.status,
         config: (r.config as Record<string, string>) ?? {},
         lastTestMessage: r.lastTestMessage,
-        n8nCredentialIds: (r.n8nCredentialIds as Record<string, { id: string }>) ?? {},
       },
     ]),
   );
@@ -133,42 +129,11 @@ export async function evaluateRequirements(required: string[], snap?: Snapshot):
   return { readiness: classify(detail), detail };
 }
 
-function n8nChecks(key: string, wf: { n8nPresent: boolean; n8nWorkflowId: string | null }, snap: Snapshot): ReadinessDetail[] {
-  const out: ReadinessDetail[] = [];
-  const n8n = snap.integrations.get("n8n");
-  const n8nOk = n8n?.status === "CONNECTED";
-  out.push({ requirement: "n8n", label: "n8n connected", ok: n8nOk, note: n8nOk ? undefined : `n8n ${STATUS_TEXT[n8n?.status ?? "NOT_CONFIGURED"] ?? "is not connected"}` });
-  out.push({
-    requirement: "n8n:workflow",
-    label: "Workflow imported into n8n",
-    ok: n8nOk && wf.n8nPresent && Boolean(wf.n8nWorkflowId),
-    note: wf.n8nPresent ? undefined : "Not found in n8n yet — it is imported automatically once n8n is connected",
-  });
-  let credNames: string[] = [];
-  try {
-    credNames = requiredCredentialNames(loadWorkflowFile(key));
-  } catch {
-    out.push({ requirement: "n8n:file", label: "Workflow definition file", ok: false, note: "Workflow file missing from the API image" });
-  }
-  for (const name of credNames) {
-    const spec = MANAGED_CREDENTIALS.find((c) => c.name === name);
-    const synced = spec ? Boolean(snap.integrations.get(spec.source)?.n8nCredentialIds[name]?.id) : false;
-    out.push({
-      requirement: `n8n:credential:${name}`,
-      label: `n8n credential "${name}"`,
-      ok: synced,
-      note: synced ? undefined : spec ? `Created in n8n automatically once ${label(spec.source)} is configured` : "Unmanaged credential",
-    });
-  }
-  return out;
-}
-
 /** Re-seeds WorkflowConfig from the manifest (idempotent) and recomputes
  * every workflow's readiness. Call after any integration/setting change and
  * before any activation. */
 export async function recomputeAllReadiness(): Promise<void> {
   const snap = await takeSnapshot();
-  const files = new Set(workflowFilesAvailable());
   for (const entry of WORKFLOW_MANIFEST) {
     const wf = await prisma.workflowConfig.upsert({
       where: { key: entry.key },
@@ -176,11 +141,10 @@ export async function recomputeAllReadiness(): Promise<void> {
       create: { key: entry.key, name: entry.name, category: entry.category, requiredProviders: entry.required, optionalProviders: entry.optional ?? [] },
     });
     const own = entry.required.map((r) => checkOne(r, snap));
-    const infra = files.has(entry.key) ? n8nChecks(entry.key, wf, snap) : [{ requirement: "n8n:file", label: "Workflow definition file", ok: false, note: "Workflow file missing" }];
-    const detail = [...own, ...infra];
+    const detail = own;
     await prisma.workflowConfig.update({
       where: { key: entry.key },
-      data: { readiness: classify(detail), readinessDetail: detail as unknown as Prisma.InputJsonValue },
+      data: { readiness: classify(detail), readinessDetail: detail as unknown as Prisma.InputJsonValue, n8nPresent: true, n8nActive: wf.enabled },
     });
   }
 }

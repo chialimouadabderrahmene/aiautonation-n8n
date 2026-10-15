@@ -65,8 +65,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const flagValue = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-const SKIP_N8N = flag("--skip-n8n");
-const APP_SERVICES = SKIP_N8N ? ["api", "worker", "web"] : ["api", "worker", "n8n", "web"];
+// Native TypeScript automation is the only supported runtime. Keep the flag
+// accepted for old operator commands, but never provision an n8n service.
+const SKIP_N8N = true;
+const APP_SERVICES = ["api", "worker", "web"];
 // `railway environment edit --service-config <svc> configFile <path>` (the
 // documented config-as-code mechanism these railway/*.json files were
 // written for) was tried against a real Railway account and reproduced as a

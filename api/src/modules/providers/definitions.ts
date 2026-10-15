@@ -91,7 +91,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     label: "OpenAI",
     category: "AI",
     authType: "API_KEY",
-    description: "Video scripts and (when chosen as the AI provider in Settings) every AI step in the n8n workflows.",
+    description: "Video scripts and native automation AI steps.",
     docsUrl: "https://platform.openai.com/api-keys",
     fields: [
       { name: "apiKey", label: "API key", type: "secret", secret: true, required: true, placeholder: "sk-...", pattern: "^sk-[A-Za-z0-9_-]{20,}$", patternMessage: "OpenAI keys start with sk-" },
@@ -110,7 +110,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     label: "Groq",
     category: "AI",
     authType: "API_KEY",
-    description: "Fast, low-cost OpenAI-compatible AI. Default provider for the n8n content workflows.",
+    description: "Fast, low-cost OpenAI-compatible AI for native content workflows.",
     docsUrl: "https://console.groq.com/keys",
     fields: [
       { name: "apiKey", label: "API key", type: "secret", secret: true, required: true, placeholder: "gsk_...", pattern: "^gsk_[A-Za-z0-9]{20,}$", patternMessage: "Groq keys start with gsk_" },
@@ -120,24 +120,6 @@ export const PROVIDERS: ProviderDefinition[] = [
   },
 
   // ------------------------------------------------------- Orchestration
-  {
-    key: "n8n",
-    label: "n8n",
-    category: "ORCHESTRATION",
-    authType: "INFRA",
-    description:
-      "Workflow engine running the 22 automations. Connected automatically by the deployment (private network + an API key the Control Center creates itself). Edit only if you moved n8n elsewhere.",
-    fields: [
-      { name: "baseUrl", label: "n8n URL (internal)", type: "url", secret: false, required: true, placeholder: "http://n8n.railway.internal:5678" },
-      { name: "publicUrl", label: "n8n public URL (editor + webhooks)", type: "url", secret: false, required: false, placeholder: "https://n8n-yourproject.up.railway.app" },
-      { name: "apiKey", label: "n8n API key", type: "secret", secret: true, required: true },
-    ],
-    testConnection: (v) =>
-      probe("n8n", `${(v.baseUrl ?? "").replace(/\/+$/, "")}/api/v1/workflows?limit=250`, { "X-N8N-API-KEY": v.apiKey ?? "" }, (body) => {
-        const count = (body as { data?: unknown[] } | null)?.data?.length ?? 0;
-        return { message: `Connected — ${count} workflow(s) in n8n`, account: v.publicUrl || v.baseUrl };
-      }),
-  },
   {
     key: "google-sheets",
     label: "Google Sheets",

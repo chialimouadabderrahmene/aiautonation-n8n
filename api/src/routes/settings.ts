@@ -7,8 +7,7 @@ import { SETTINGS, getAllSettings, getSettingDefinition, setSetting, validateSet
 
 export const settingsRouter = Router();
 
-/** Schema (for rendering) + current values. Settings with `n8nEnv` reach n8n
- * automatically via the supervisor — no environment editing. */
+/** Schema (for rendering) + current values. */
 settingsRouter.get("/", async (_req, res) => {
   res.json({ schema: SETTINGS, values: await getAllSettings() });
 });
@@ -28,5 +27,5 @@ settingsRouter.put("/:key", async (req: AuthedRequest, res) => {
   await setSetting(key, value);
   await recomputeAllReadiness();
   await recordAudit(req.admin?.email ?? "unknown", "setting.updated", "Setting", key, { value });
-  res.json({ ok: true, appliesToN8n: Boolean(def.n8nEnv) });
+  res.json({ ok: true, appliesToNativeAutomation: true });
 });
