@@ -156,6 +156,8 @@ model WorkflowConfig {
 
 enum ExecutionSource {
   N8N
+  /// Legacy value retained so existing production execution rows remain readable.
+  AUTOMATION_ENGINE
   VIDEO_WORKER
   CONTROL_CENTER
 }
