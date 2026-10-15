@@ -20,6 +20,7 @@ import { reportsRouter } from "./routes/reports";
 import { settingsRouter } from "./routes/settings";
 import { auditRouter } from "./routes/audit";
 import { dashboardRouter } from "./routes/dashboard";
+import { usageRouter } from "./routes/usage";
 import { mediaRouter, mediaPublicRouter } from "./routes/media";
 import { leadsPublicRouter } from "./routes/leads";
 import { contentRouter } from "./routes/content";
@@ -99,6 +100,7 @@ export function createApp() {
   app.use("/api/settings", requireAdmin, requireWrite, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);
+  app.use("/api/usage", requireAdmin, requireWrite, usageRouter);
   app.use("/api/engine", requireAdmin, engineRouter);
   app.use("/api/media", requireAdmin, requireWrite, mediaRouter);
 

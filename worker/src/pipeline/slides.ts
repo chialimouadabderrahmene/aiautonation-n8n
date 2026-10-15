@@ -75,7 +75,7 @@ export async function generateCarouselScript(request: CarouselScriptRequest): Pr
     .filter(Boolean)
     .join("\n");
 
-  const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.7 });
+  const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.7, usageContext: { workflowKey: "carousel-script" } });
   if (!raw) throw new ProviderError("AI provider returned no content", null, true);
   let json: unknown;
   try {

@@ -10,6 +10,8 @@ export interface ChatJSONRequest {
   user: string;
   temperature?: number;
   timeoutMs?: number;
+  /** Which workflow this call serves, recorded with its usage. Optional: an unlabelled call is still recorded. */
+  usageContext?: { workflowKey?: string; executionRef?: string };
 }
 
 export interface ChatJSONResult {

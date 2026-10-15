@@ -3,11 +3,21 @@ import { createOpenAICompatible } from "../src/lib/providers/openai-compatible";
 import { createAnthropic } from "../src/lib/providers/anthropic";
 import { ProviderError } from "../src/lib/http";
 
+// Usage recording is a database write; these adapter tests must not touch the database.
+const usageRecords = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock("../src/lib/usage-ledger", () => ({
+  recordUsage: vi.fn(async (r: Record<string, unknown>) => {
+    usageRecords.push(r);
+    return "recorded";
+  }),
+}));
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
 afterEach(() => {
+  usageRecords.length = 0;
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -76,6 +86,31 @@ describe("OpenAI-compatible adapter (OpenAI, Groq)", () => {
       name: "ProviderError",
       retryable: true,
     });
+  });
+});
+
+describe("provider usage capture (every attempt, including retries)", () => {
+  it("records a failed attempt and then the successful retry with its provider-reported tokens", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(500, { error: { message: "upstream" } }))
+        .mockResolvedValueOnce(jsonResponse(200, { id: "chatcmpl_42", choices: [{ message: { content: "{}" } }], usage: { prompt_tokens: 120, completion_tokens: 30 } })),
+    );
+    const provider = createOpenAICompatible("openai", "OpenAI", "https://api.openai.com/v1", "sk-test", "gpt-4o-mini");
+    await provider.chatJSON({ system: "s", user: "u", usageContext: { workflowKey: "video-script" } });
+
+    expect(usageRecords).toHaveLength(2);
+    expect(usageRecords[0]).toMatchObject({ provider: "openai", operation: "chat", workflowKey: "video-script", attempt: 1, status: "FAILED", errorCode: "http_500" });
+    expect(usageRecords[1]).toMatchObject({ attempt: 2, status: "SUCCEEDED", inputTokens: 120, outputTokens: 30, requestId: "chatcmpl_42" });
+  });
+
+  it("a response without a usage block is recorded with NULL tokens, so the cost stays UNKNOWN rather than zero", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [{ message: { content: "{}" } }] })));
+    const provider = createOpenAICompatible("groq", "Groq", "https://api.groq.com/openai/v1", "gsk", "m");
+    await provider.chatJSON({ system: "s", user: "u" });
+    expect(usageRecords[0]).toMatchObject({ status: "SUCCEEDED", inputTokens: null, outputTokens: null, requestId: null });
   });
 });
 

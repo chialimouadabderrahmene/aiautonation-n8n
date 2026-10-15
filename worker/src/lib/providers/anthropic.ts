@@ -1,4 +1,5 @@
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../http";
+import { recordUsage } from "../usage-ledger";
 import { AIProvider, ChatJSONRequest, ChatJSONResult } from "./types";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
@@ -16,7 +17,11 @@ export function createAnthropic(apiKey: string, model: string): AIProvider {
     key: "anthropic",
     model,
     async chatJSON(req: ChatJSONRequest): Promise<ChatJSONResult> {
-      const data = await withRetry(async () => {
+      const ctx = req.usageContext ?? {};
+      const data = await withRetry(async (attempt) => {
+        const startedAt = Date.now();
+        // Every attempt is recorded, including retries, because each one can be billed.
+        try {
         const { res } = await timedFetch(
           ANTHROPIC_API,
           {
@@ -33,7 +38,21 @@ export function createAnthropic(apiKey: string, model: string): AIProvider {
           req.timeoutMs ?? 90_000,
         );
         if (!res.ok) throw describeHttpFailure("Anthropic", res.status, await readErrorDetail(res));
-        return (await res.json()) as { content: { type: string; text?: string }[] };
+        const body = (await res.json()) as { id?: string; content: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
+        await recordUsage({
+          provider: "anthropic", model, operation: "chat", workflowKey: ctx.workflowKey, executionRef: ctx.executionRef, attempt: attempt + 1,
+          status: "SUCCEEDED", inputTokens: body.usage?.input_tokens ?? null, outputTokens: body.usage?.output_tokens ?? null,
+          requestId: body.id ?? null, latencyMs: Date.now() - startedAt,
+        });
+        return body;
+        } catch (err) {
+          await recordUsage({
+            provider: "anthropic", model, operation: "chat", workflowKey: ctx.workflowKey, executionRef: ctx.executionRef, attempt: attempt + 1,
+            status: "FAILED", errorCode: err instanceof ProviderError && err.status ? `http_${err.status}` : "request_failed",
+            latencyMs: Date.now() - startedAt,
+          });
+          throw err;
+        }
       });
       const raw = data.content.find((c) => c.type === "text")?.text;
       if (!raw) throw new ProviderError("Anthropic returned no text content", null, true);

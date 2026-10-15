@@ -59,7 +59,7 @@ export async function reviewAgainstBrand<T>(content: T, brand: BrandContext, sch
   const userPrompt = [brand.promptBlock, "", `Content to review (${textFieldsHint}):`, JSON.stringify(content, null, 2)].filter(Boolean).join("\n");
 
   try {
-    const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.3, timeoutMs: 60_000 });
+    const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.3, timeoutMs: 60_000, usageContext: { workflowKey: "brand-critic" } });
     const parsed = criticResponseSchema.safeParse(JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")));
     if (!parsed.success) throw new ProviderError("Critic pass did not return valid JSON", null, true);
 

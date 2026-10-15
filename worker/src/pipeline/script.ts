@@ -83,7 +83,7 @@ export async function generateScript(request: ScriptRequest): Promise<GeneratedS
     .filter(Boolean)
     .join("\n");
 
-  const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.7 });
+  const { raw } = await ai.chatJSON({ system: systemPrompt, user: userPrompt, temperature: 0.7, usageContext: { workflowKey: "video-script" } });
   let json: unknown;
   try {
     json = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));

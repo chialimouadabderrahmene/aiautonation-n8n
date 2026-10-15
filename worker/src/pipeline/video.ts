@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { requireConnected } from "../lib/credentials";
+import { recordUsage } from "../lib/usage-ledger";
 import { timedFetch, readErrorDetail, withRetry, ProviderError, scrubSecrets } from "../lib/http";
 
 /**
@@ -67,11 +68,25 @@ class RunwayVideoProvider implements VideoProvider {
     const model = v.model || "gen4.5";
     const { ratio, duration } = runwayParams(model, input.aspectRatio, input.durationSec);
     const body = { model, promptText: input.prompt.slice(0, 1000), ratio, duration, ...(model.startsWith("veo") ? { audio: false } : {}) };
-    return withRetry(async () => {
-      const { res } = await timedFetch(`${RUNWAY_API}/text_to_video`, { method: "POST", headers: this.headers(v.apiKey ?? ""), body: JSON.stringify(body) }, 30_000);
-      if (!res.ok) throw runwayError(res.status, scrubSecrets((await readErrorDetail(res)) ?? "", [v.apiKey]));
-      const data = (await res.json()) as { id: string; estimatedCost?: { credits?: number } };
-      return { taskId: data.id, model, ratio, duration, estimatedCredits: data.estimatedCost?.credits };
+    return withRetry(async (attempt) => {
+      const startedAt = Date.now();
+      // Billed per generated second. Every attempt is recorded; a failed task creation has no usage to price.
+      try {
+        const { res } = await timedFetch(`${RUNWAY_API}/text_to_video`, { method: "POST", headers: this.headers(v.apiKey ?? ""), body: JSON.stringify(body) }, 30_000);
+        if (!res.ok) throw runwayError(res.status, scrubSecrets((await readErrorDetail(res)) ?? "", [v.apiKey]));
+        const data = (await res.json()) as { id: string; estimatedCost?: { credits?: number } };
+        await recordUsage({
+          provider: "runway", model, operation: "video_generation", workflowKey: "video-generation", attempt: attempt + 1, status: "SUCCEEDED",
+          mediaUnits: duration, mediaUnitType: "seconds", requestId: data.id, latencyMs: Date.now() - startedAt,
+        });
+        return { taskId: data.id, model, ratio, duration, estimatedCredits: data.estimatedCost?.credits };
+      } catch (err) {
+        await recordUsage({
+          provider: "runway", model, operation: "video_generation", workflowKey: "video-generation", attempt: attempt + 1, status: "FAILED",
+          errorCode: err instanceof ProviderError && err.status ? `http_${err.status}` : "request_failed", latencyMs: Date.now() - startedAt,
+        });
+        throw err;
+      }
     });
   }
 

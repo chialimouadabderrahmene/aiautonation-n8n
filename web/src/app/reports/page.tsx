@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import ControlCenterLayout from "@/components/ControlCenterLayout";
 import { Card, ErrorState, LoadingState, MetricTile, PageHeader } from "@/components/ui";
 import { api, APIError } from "@/lib/api";
+import UsagePanel from "@/components/UsagePanel";
 
 interface Report {
   period: string;
@@ -145,6 +146,7 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+      <UsagePanel />
     </ControlCenterLayout>
   );
 }

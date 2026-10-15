@@ -1,4 +1,5 @@
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../http";
+import { recordUsage } from "../usage-ledger";
 import { AIProvider, ChatJSONRequest, ChatJSONResult } from "./types";
 
 /**
@@ -11,7 +12,11 @@ export function createOpenAICompatible(key: string, label: string, baseUrl: stri
     key,
     model,
     async chatJSON(req: ChatJSONRequest): Promise<ChatJSONResult> {
-      const data = await withRetry(async () => {
+      const ctx = req.usageContext ?? {};
+      const data = await withRetry(async (attempt) => {
+        const startedAt = Date.now();
+        // Every attempt is recorded, including retries, because each one can be billed.
+        try {
         const { res } = await timedFetch(
           `${baseUrl}/chat/completions`,
           {
@@ -30,7 +35,21 @@ export function createOpenAICompatible(key: string, label: string, baseUrl: stri
           req.timeoutMs ?? 90_000,
         );
         if (!res.ok) throw describeHttpFailure(label, res.status, await readErrorDetail(res));
-        return (await res.json()) as { choices: { message: { content: string } }[] };
+        const body = (await res.json()) as { id?: string; choices: { message: { content: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+        await recordUsage({
+          provider: key, model, operation: "chat", workflowKey: ctx.workflowKey, executionRef: ctx.executionRef, attempt: attempt + 1,
+          status: "SUCCEEDED", inputTokens: body.usage?.prompt_tokens ?? null, outputTokens: body.usage?.completion_tokens ?? null,
+          requestId: body.id ?? null, latencyMs: Date.now() - startedAt,
+        });
+        return body;
+        } catch (err) {
+          await recordUsage({
+            provider: key, model, operation: "chat", workflowKey: ctx.workflowKey, executionRef: ctx.executionRef, attempt: attempt + 1,
+            status: "FAILED", errorCode: err instanceof ProviderError && err.status ? `http_${err.status}` : "request_failed",
+            latencyMs: Date.now() - startedAt,
+          });
+          throw err;
+        }
       });
       const raw = data.choices[0]?.message.content;
       if (!raw) throw new ProviderError(`${label} returned no content`, null, true);

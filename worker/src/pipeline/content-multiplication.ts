@@ -63,7 +63,7 @@ export async function multiplyContent(idea: string): Promise<{ variantsCreated: 
     `Idea: ${idea}`,
   ].join(" ");
 
-  const { raw } = await ai.chatJSON({ system, user, temperature: 0.7 });
+  const { raw } = await ai.chatJSON({ system, user, temperature: 0.7, usageContext: { workflowKey: "content-multiplication" } });
   const parsed = parseAiJson(raw);
   const rows = buildContentVariantRows(idea, parsed);
   if (rows.length) await prisma.contentVariant.createMany({ data: rows });

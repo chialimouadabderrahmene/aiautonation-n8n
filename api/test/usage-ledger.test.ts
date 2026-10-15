@@ -89,6 +89,10 @@ describe("usageIdempotencyKey", () => {
     expect(usageIdempotencyKey(call({ executionRef: "e1" }))).not.toBe(usageIdempotencyKey(call({ executionRef: "e2" })));
   });
 
+  it("without a provider request id, two reports are NOT merged (merging real calls would under-count spend)", () => {
+    expect(usageIdempotencyKey(call({ executionRef: "e1" }))).not.toBe(usageIdempotencyKey(call({ executionRef: "e1" })));
+  });
+
   it("is a 64-character hex digest", () => {
     expect(usageIdempotencyKey(call())).toMatch(/^[0-9a-f]{64}$/);
   });

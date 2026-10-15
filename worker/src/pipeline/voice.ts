@@ -1,5 +1,6 @@
 import { requireConnected } from "../lib/credentials";
 import { timedFetch, readErrorDetail, withRetry, ProviderError, scrubSecrets } from "../lib/http";
+import { recordUsage } from "../lib/usage-ledger";
 
 /**
  * ElevenLabs text-to-speech (POST /v1/text-to-speech/{voice_id}, verified
@@ -32,7 +33,10 @@ class ElevenLabsVoiceProvider implements VoiceProvider {
     const voiceId = voiceOverride || v.voiceId;
     if (!voiceId) throw new ProviderError("No ElevenLabs voice selected — set a default voice ID in Integrations → ElevenLabs", null, false);
     const model = v.model || "eleven_multilingual_v2";
-    return withRetry(async () => {
+    return withRetry(async (attempt) => {
+      const startedAt = Date.now();
+      // Billed per character of input text. Every attempt is recorded, including retries.
+      try {
       const { res } = await timedFetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
         {
@@ -50,7 +54,19 @@ class ElevenLabsVoiceProvider implements VoiceProvider {
       if (!res.ok) throw elevenError(res.status, scrubSecrets((await readErrorDetail(res)) ?? "", [v.apiKey]));
       const audio = Buffer.from(await res.arrayBuffer());
       if (audio.length < 1000) throw new ProviderError("ElevenLabs returned an empty audio file", null, true);
-      return { audio, requestId: res.headers.get("request-id") ?? res.headers.get("x-request-id"), voiceId, model };
+      const requestId = res.headers.get("request-id") ?? res.headers.get("x-request-id");
+      await recordUsage({
+        provider: "elevenlabs", model, operation: "tts", workflowKey: "video-voiceover", attempt: attempt + 1, status: "SUCCEEDED",
+        mediaUnits: text.length, mediaUnitType: "characters", requestId, latencyMs: Date.now() - startedAt,
+      });
+      return { audio, requestId, voiceId, model };
+      } catch (err) {
+        await recordUsage({
+          provider: "elevenlabs", model, operation: "tts", workflowKey: "video-voiceover", attempt: attempt + 1, status: "FAILED",
+          errorCode: err instanceof ProviderError && err.status ? `http_${err.status}` : "request_failed", latencyMs: Date.now() - startedAt,
+        });
+        throw err;
+      }
     });
   }
 }

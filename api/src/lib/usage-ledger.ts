@@ -85,9 +85,15 @@ export function computeCost(input: UsageRecordInput, prices: PriceRow[], at: Dat
   return { amount: Math.round(total * 1e6) / 1e6, currency: currency ?? "USD", source: "ESTIMATED_FROM_PRICING" };
 }
 
-/** Stable key for one call attempt. A duplicate report of the same attempt yields the same key. */
+/**
+ * Stable key for one call attempt. A duplicate report of the same attempt yields the same key when
+ * the provider's request id is known. With no request id there is nothing that proves two reports
+ * are the same attempt, so each report gets its own key: a missed dedupe is safer than merging two
+ * real calls and under-counting spend.
+ */
 export function usageIdempotencyKey(input: UsageRecordInput): string {
-  const parts = [input.provider, input.operation, input.executionRef ?? "-", String(input.attempt ?? 1), input.requestId ?? ""];
+  const requestId = input.requestId ?? `local-${crypto.randomUUID()}`;
+  const parts = [input.provider, input.operation, input.executionRef ?? "-", String(input.attempt ?? 1), requestId];
   return crypto.createHash("sha256").update(parts.join("|")).digest("hex");
 }
 

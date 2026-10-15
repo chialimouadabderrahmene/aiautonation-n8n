@@ -15,6 +15,7 @@ export default defineConfig({
       "test/outbound-guard-integration.test.ts",
       "test/scheduling-integration.test.ts",
       "test/usage-integration.test.ts",
+      "test/usage-api-integration.test.ts",
     ],
     environment: "node",
   },
