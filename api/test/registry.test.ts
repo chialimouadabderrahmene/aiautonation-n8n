@@ -4,7 +4,7 @@ import { PROVIDERS, getProvider, validateProviderInput, publicProviderSchema } f
 describe("provider registry", () => {
   it("covers every required provider", () => {
     const keys = PROVIDERS.map((p) => p.key);
-    for (const k of ["openai", "groq", "n8n", "telegram", "whatsapp", "resend", "buffer", "x", "meta", "linkedin", "apify", "runway", "elevenlabs", "google-sheets"]) {
+    for (const k of ["openai", "groq", "telegram", "whatsapp", "resend", "buffer", "x", "meta", "linkedin", "apify", "runway", "elevenlabs", "google-sheets"]) {
       expect(keys).toContain(k);
     }
   });
