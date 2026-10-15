@@ -5,6 +5,7 @@ import { VIDEO_PIPELINE_REQUIREMENTS, VIDEO_APPROVAL_REQUIREMENTS } from "../mod
 import { systemHealth } from "../modules/system/health";
 import { getProvider } from "../modules/providers/registry";
 import { providerOverrides } from "../lib/http";
+import { getEmergencyStopState } from "../lib/outbound-guard";
 
 export const dashboardRouter = Router();
 
@@ -149,6 +150,7 @@ dashboardRouter.get("/", async (_req, res) => {
       running: todayExecutions.filter((e) => e.status === "RUNNING").length,
     },
     actionRequired,
+    emergencyStop: await getEmergencyStopState(),
     metrics: {
       content: { total: contentTotal, ...contentWindow },
       leads: { total: leadsEngineTotal + leadsWaitlistTotal, ...leadsWindow },

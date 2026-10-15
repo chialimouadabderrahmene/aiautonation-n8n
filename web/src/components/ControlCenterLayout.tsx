@@ -86,6 +86,7 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [me, setMe] = useState<{ email: string; role: string } | null>(null);
   const [alerts, setAlerts] = useState(0);
+  const [stop, setStop] = useState<{ active: boolean; changedAt: string | null; changedBy: string | null } | null>(null);
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -103,8 +104,11 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
     void api.get<{ email: string; role: string }>("/api/auth/me").then(setMe).catch(() => undefined);
     const poll = () =>
       void api
-        .get<{ actionRequired: unknown[] }>("/api/dashboard")
-        .then((d) => setAlerts(d.actionRequired?.length ?? 0))
+        .get<{ actionRequired: unknown[]; emergencyStop: { active: boolean; changedAt: string | null; changedBy: string | null } }>("/api/dashboard")
+        .then((d) => {
+          setAlerts(d.actionRequired?.length ?? 0);
+          setStop(d.emergencyStop ?? null);
+        })
         .catch(() => undefined);
     poll();
     const id = setInterval(poll, 30_000);
@@ -286,6 +290,13 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
           </div>
         </header>
 
+        {stop?.active ? (
+          <div role="alert" className="border-b border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white md:px-8">
+            Emergency stop is ON since {stop.changedAt ? new Date(stop.changedAt).toLocaleString() : "an unknown time"}
+            {stop.changedBy ? ` by ${stop.changedBy}` : ""}. Customer-facing publishing, WhatsApp and email are refused and queued sends are cancelled.
+            Internal team alerts still work. Only an Owner can resume, in Settings → Automation safety.
+          </div>
+        ) : null}
         <main className="w-full flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
       </div>
     </div>

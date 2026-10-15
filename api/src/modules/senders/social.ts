@@ -1,8 +1,9 @@
+import { outboundStopResult } from "../../lib/outbound-guard";
 import { prisma } from "../../lib/prisma";
 import { getProviderValues } from "../integrations/vault";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry } from "../../lib/http";
 
-export type SendSocialResult = { ok: true; providerId: string } | { ok: false; reason: "not_configured" | "provider_error"; message: string };
+export type SendSocialResult = { ok: true; providerId: string } | { ok: false; reason: "not_configured" | "provider_error" | "emergency_stop"; message: string };
 
 /**
  * Posts a real tweet via X's documented API v2 endpoint (POST /2/tweets, JSON body {text},
@@ -11,6 +12,8 @@ export type SendSocialResult = { ok: true; providerId: string } | { ok: false; r
  * background job (already scheduled — this file does not duplicate token-refresh logic).
  */
 export async function postTweet(text: string): Promise<SendSocialResult> {
+  const stopped = await outboundStopResult("social_publish");
+  if (stopped) return stopped;
   const integration = await prisma.integration.findUnique({ where: { provider: "x" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "X is not connected." };
   const v = await getProviderValues("x");
@@ -42,6 +45,8 @@ export async function postTweet(text: string): Promise<SendSocialResult> {
  * it does not newly verify it against a real account.
  */
 export async function postToBuffer(text: string, profileId: string): Promise<SendSocialResult> {
+  const stopped = await outboundStopResult("social_publish");
+  if (stopped) return stopped;
   const integration = await prisma.integration.findUnique({ where: { provider: "buffer" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "Buffer is not connected." };
   const v = await getProviderValues("buffer");

@@ -122,8 +122,12 @@ const emailSend = define({
   inputSchema: z.object({ to: z.string().email(), subject: z.string().min(1), html: z.string().min(1) }),
   async handler(input) {
     const result = await sendEmail(input);
-    if (!result.ok) throw new Error(`email.send: ${result.message}`);
-    return { providerId: result.id };
+    if (!result.ok) {
+      // An emergency stop is a deliberate block, not a failure: record it and never retry.
+      if (result.reason === "emergency_stop") return { sent: false, reason: result.reason, message: result.message };
+      throw new Error(`email.send: ${result.message}`);
+    }
+    return { sent: true, providerId: result.id };
   },
 });
 
@@ -321,7 +325,7 @@ const whatsappRunSequence = define({
 
       const result = await sendWhatsAppTemplate({ to: lead.phone, templateKey: nextStage.templateKey });
       if (!result.ok) {
-        if (result.reason === "not_configured" || result.reason === "templates_not_approved") {
+        if (result.reason === "not_configured" || result.reason === "templates_not_approved" || result.reason === "emergency_stop") {
           // A global condition changed mid-run (e.g. disconnected while this was running) — stop
           // rather than keep failing identically for every remaining lead.
           return { sequenceKey: input.sequenceKey, processed: perLead.length, sent, skippedLeads, reason: result.reason, message: result.message, perLead };

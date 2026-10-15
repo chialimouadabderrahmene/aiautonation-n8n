@@ -12,6 +12,7 @@
 import { prisma } from "../lib/prisma";
 import { requireConnected } from "../lib/credentials";
 import { WhatsAppCreds, sendWhatsAppTemplate } from "../lib/whatsapp-template";
+import { isOutboundBlocked } from "../lib/outbound-guard";
 import { WhatsAppContact } from "@prisma/client";
 
 const STEPS: Record<number, string> = { 1: "tplWelcomeD1", 2: "tplWelcomeD2", 3: "tplWelcomeD3" };
@@ -46,6 +47,8 @@ export interface WelcomeRunSummary {
   failed: number;
   missingTemplates: string[];
   firstError?: string;
+  /** Set when the emergency stop ended the run early — remaining leads are untouched. */
+  stoppedByEmergency?: boolean;
 }
 
 export async function runWhatsAppWelcome(): Promise<WelcomeRunSummary> {
@@ -79,6 +82,7 @@ export async function runWhatsAppWelcome(): Promise<WelcomeRunSummary> {
       await prisma.whatsAppMessage.create({ data: { contact: { connect: { phone: contact.phone } }, direction: "out", body: `[${templateName}] welcome day ${next.day}`, templateName } });
       summary.sent += 1;
     } catch (err) {
+      if (isOutboundBlocked(err)) { summary.stoppedByEmergency = true; break; }
       summary.failed += 1;
       summary.firstError ??= err instanceof Error ? err.message : "Unknown error";
     }

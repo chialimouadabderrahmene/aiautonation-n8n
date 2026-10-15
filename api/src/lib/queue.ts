@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
+import { assertOutboundAllowed } from "./outbound-guard";
 
 // NOTE: queue names and payload shapes are duplicated in
 // worker/src/lib/queue.ts (separately deployed services) — keep in sync.
@@ -194,6 +195,8 @@ export async function enqueueCarouselJob(carouselJobId: string, run: number, att
 }
 
 export async function enqueueDelivery(payload: DeliveryJobPayload): Promise<void> {
+  if (payload.kind === "publish") await assertOutboundAllowed("video_publish", "enqueue");
+  if (payload.kind === "publish-carousel") await assertOutboundAllowed("carousel_publish", "enqueue");
   await getDeliveryQueue().add(payload.kind, payload, {
     attempts: 3,
     backoff: { type: "exponential", delay: 20_000 },

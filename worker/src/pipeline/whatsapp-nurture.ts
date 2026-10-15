@@ -16,6 +16,7 @@
 import { prisma } from "../lib/prisma";
 import { requireConnected } from "../lib/credentials";
 import { ProviderError } from "../lib/http";
+import { isOutboundBlocked } from "../lib/outbound-guard";
 import { WhatsAppCreds, sendWhatsAppTemplate } from "../lib/whatsapp-template";
 import { WhatsAppContact } from "@prisma/client";
 
@@ -82,6 +83,8 @@ export interface NurtureRunSummary {
   failed: number;
   missingTemplates: string[];
   firstError?: string;
+  /** Set when the emergency stop ended the run early — remaining leads are untouched. */
+  stoppedByEmergency?: boolean;
 }
 
 /**
@@ -127,6 +130,7 @@ export async function runWhatsAppNurture(): Promise<NurtureRunSummary> {
       });
       summary.sent += 1;
     } catch (err) {
+      if (isOutboundBlocked(err)) { summary.stoppedByEmergency = true; break; }
       const message = err instanceof ProviderError ? err.message : err instanceof Error ? err.message : "Unknown error";
       await prisma.whatsAppContact.update({ where: { phone: contact.phone }, data: { lastNurtureError: message.slice(0, 500) } });
       summary.failed += 1;

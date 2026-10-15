@@ -174,8 +174,11 @@ export const DOC_CONTENT: Record<string, ReactNode> = {
       </P>
       <H2>Emergency stop</H2>
       <P>
-        The <Code>autopilotStop</Code> setting (Settings → Automation safety) halts every outbound social/WhatsApp action
-        immediately, platform-wide, regardless of which individual workflows are enabled.
+        The emergency stop (Settings → Automation safety, <Code>autopilotStop</Code>) refuses every customer-facing send:
+        social and video/carousel publishing, WhatsApp messages and email. It is checked when a send is queued and again
+        immediately before it leaves the platform. Queued and scheduled publishes are cancelled when it is turned on.
+        Team Telegram alerts keep working. Anything that was already inside a provider request when the stop was turned on
+        completes, because it had already passed the check. Only an Owner can resume outbound sending.
       </P>
     </>
   ),

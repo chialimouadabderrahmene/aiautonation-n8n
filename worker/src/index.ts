@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { Worker, Queue, Job, UnrecoverableError } from "bullmq";
 import { prisma } from "./lib/prisma";
+import { isOutboundBlocked } from "./lib/outbound-guard";
 import { logger } from "./lib/logger";
 import {
   getRedisConnection,
@@ -103,7 +104,7 @@ async function processCarouselPublish(payload: Extract<DeliveryJobPayload, { kin
       mode: payload.kind,
     },
   });
-  const finish = (status: "SUCCESS" | "FAILED", error?: string) =>
+  const finish = (status: "SUCCESS" | "FAILED" | "CANCELLED", error?: string) =>
     prisma.automationExecution.update({ where: { id: execution.id }, data: { status, finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error } });
 
   const where = carouselPublicationWhere(payload);
@@ -114,6 +115,12 @@ async function processCarouselPublish(payload: Extract<DeliveryJobPayload, { kin
     await carouselAudit("carousel.published", payload.carouselJobId, { target: payload.target, connectedAccountId: payload.connectedAccountId, externalId: result.externalId });
     await finish("SUCCESS");
   } catch (err) {
+    if (isOutboundBlocked(err)) {
+      await finish("CANCELLED", err.message);
+      await prisma.carouselPublication.update({ where, data: { status: "SKIPPED", error: err.message.slice(0, 800) } });
+      await carouselAudit("carousel.publish_blocked", payload.carouselJobId, { target: payload.target, reason: err.reason, phase: err.phase });
+      return;
+    }
     const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
     const retryable = err instanceof ProviderError ? err.retryable : false;
     const willRetry = retryable && attempt + 1 < maxAttempts;
@@ -166,7 +173,7 @@ async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
       mode: payload.kind,
     },
   });
-  const finish = (status: "SUCCESS" | "FAILED", error?: string) =>
+  const finish = (status: "SUCCESS" | "FAILED" | "CANCELLED", error?: string) =>
     prisma.automationExecution.update({ where: { id: execution.id }, data: { status, finishedAt: new Date(), durationMs: Date.now() - execution.startedAt.getTime(), error } });
 
   try {
@@ -182,6 +189,15 @@ async function processDelivery(job: Job<DeliveryJobPayload>): Promise<void> {
     }
     await finish("SUCCESS");
   } catch (err) {
+    if (isOutboundBlocked(err)) {
+      // Deliberate block (emergency stop): never retried, never reported as a provider failure.
+      await finish("CANCELLED", err.message);
+      if (payload.kind !== "send-approval") {
+        await prisma.publication.update({ where: publicationWhere(payload), data: { status: "SKIPPED", error: err.message.slice(0, 800) } });
+      }
+      await audit("video.publish_blocked", payload.videoJobId, { target: payload.kind === "publish" ? payload.target : undefined, reason: err.reason, phase: err.phase });
+      return;
+    }
     const message = scrubSecrets(err instanceof Error ? err.message : String(err), []).slice(0, 800);
     const retryable = err instanceof ProviderError ? err.retryable : false;
     const willRetry = retryable && attempt + 1 < maxAttempts;

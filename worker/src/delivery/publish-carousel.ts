@@ -6,6 +6,7 @@ import { requireConnected } from "../lib/credentials";
 import { getConnectedAccountCreds } from "../lib/connected-accounts";
 import { getStorage } from "../lib/storage";
 import { timedFetch, describeHttpFailure, readErrorDetail, ProviderError } from "../lib/http";
+import { assertOutboundAllowed } from "../lib/outbound-guard";
 import { PublishResult } from "./publish";
 
 /**
@@ -212,6 +213,7 @@ const CREDS_PROVIDER: Record<string, { provider: string; label: string }> = {
  * exact mirror of publishVideo's account-isolation behavior.
  */
 export async function publishCarousel(carouselJobId: string, target: string, connectedAccountId?: string): Promise<PublishResult> {
+  await assertOutboundAllowed("carousel_publish", "execute");
   const publisher = PUBLISHERS[target];
   if (!publisher) throw new ProviderError(`Unknown publish target ${target}`, null, false);
   const legacy = CREDS_PROVIDER[target] ?? { provider: target, label: target };

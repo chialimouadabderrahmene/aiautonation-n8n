@@ -6,6 +6,7 @@ import { requireConnected } from "../lib/credentials";
 import { getConnectedAccountCreds } from "../lib/connected-accounts";
 import { getStorage } from "../lib/storage";
 import { timedFetch, describeHttpFailure, readErrorDetail, ProviderError } from "../lib/http";
+import { assertOutboundAllowed } from "../lib/outbound-guard";
 
 /**
  * Publishing an APPROVED video to the targets chosen on the project.
@@ -210,6 +211,7 @@ const CREDS_PROVIDER: Record<string, { provider: string; label: string }> = {
  * ConnectedAccount's own tokens instead — the multi-account path.
  */
 export async function publishVideo(videoJobId: string, target: string, connectedAccountId?: string): Promise<PublishResult> {
+  await assertOutboundAllowed("video_publish", "execute");
   const publisher = PUBLISHERS[target];
   if (!publisher) throw new ProviderError(`Unknown publish target ${target}`, null, false);
   const legacy = CREDS_PROVIDER[target] ?? { provider: target, label: target };

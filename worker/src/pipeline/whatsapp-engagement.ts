@@ -11,6 +11,7 @@
 import { prisma } from "../lib/prisma";
 import { requireConnected } from "../lib/credentials";
 import { WhatsAppCreds, sendWhatsAppTemplate } from "../lib/whatsapp-template";
+import { isOutboundBlocked } from "../lib/outbound-guard";
 import { NURTURE_SEQUENCES } from "./whatsapp-nurture";
 import { WhatsAppContact } from "@prisma/client";
 
@@ -53,6 +54,8 @@ export interface EngagementRunSummary {
   failed: number;
   missingTemplates: string[];
   firstError?: string;
+  /** Set when the emergency stop ended the run early — remaining leads are untouched. */
+  stoppedByEmergency?: boolean;
 }
 
 export async function runWhatsAppEngagement(): Promise<EngagementRunSummary> {
@@ -86,6 +89,7 @@ export async function runWhatsAppEngagement(): Promise<EngagementRunSummary> {
       await prisma.whatsAppMessage.create({ data: { contact: { connect: { phone: contact.phone } }, direction: "out", body: `[${templateName}] re-engage step ${next.stepIndex}`, templateName } });
       summary.sent += 1;
     } catch (err) {
+      if (isOutboundBlocked(err)) { summary.stoppedByEmergency = true; break; }
       summary.failed += 1;
       summary.firstError ??= err instanceof Error ? err.message : "Unknown error";
     }

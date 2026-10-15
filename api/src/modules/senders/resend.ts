@@ -1,8 +1,9 @@
+import { outboundStopResult } from "../../lib/outbound-guard";
 import { prisma } from "../../lib/prisma";
 import { getProviderValues } from "../integrations/vault";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry } from "../../lib/http";
 
-export type SendEmailResult = { ok: true; id: string } | { ok: false; reason: "not_configured" | "provider_error"; message: string };
+export type SendEmailResult = { ok: true; id: string } | { ok: false; reason: "not_configured" | "provider_error" | "emergency_stop"; message: string };
 
 /**
  * Sends a transactional email via Resend. Honest result: NOT_CONFIGURED is reported as such
@@ -10,6 +11,8 @@ export type SendEmailResult = { ok: true; id: string } | { ok: false; reason: "n
  * EngineStepExecution.output, so "sent" never means anything but a verified 2xx from Resend.
  */
 export async function sendEmail(input: { to: string; subject: string; html: string }): Promise<SendEmailResult> {
+  const stopped = await outboundStopResult("email_send");
+  if (stopped) return stopped;
   const integration = await prisma.integration.findUnique({ where: { provider: "resend" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "Resend is not connected — configure it in Integrations." };
   const v = await getProviderValues("resend");

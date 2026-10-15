@@ -1,3 +1,4 @@
+import { outboundStopResult } from "../../lib/outbound-guard";
 import { prisma } from "../../lib/prisma";
 import { getProviderValues } from "../integrations/vault";
 import { getSetting } from "../settings/schema";
@@ -6,7 +7,7 @@ import { templateFieldName } from "../providers/definitions";
 
 export type SendTemplateResult =
   | { ok: true; messageId: string }
-  | { ok: false; reason: "not_configured" | "template_not_set" | "templates_not_approved" | "provider_error"; message: string };
+  | { ok: false; reason: "not_configured" | "template_not_set" | "templates_not_approved" | "provider_error" | "emergency_stop"; message: string };
 
 /**
  * Sends a Meta-approved WhatsApp template message. Business-initiated WhatsApp messages
@@ -14,6 +15,8 @@ export type SendTemplateResult =
  * text, mirroring the n8n workflows it replaces (03/04/05/06/13/19).
  */
 export async function sendWhatsAppTemplate(input: { to: string; templateKey: string; params?: string[] }): Promise<SendTemplateResult> {
+  const stopped = await outboundStopResult("whatsapp_send");
+  if (stopped) return stopped;
   const approved = await getSetting<boolean>("whatsappTemplatesApproved").catch(() => false);
   if (!approved) return { ok: false, reason: "templates_not_approved", message: "Settings → WhatsApp templates are not confirmed as Meta-approved." };
   const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
@@ -52,7 +55,7 @@ export async function sendWhatsAppTemplate(input: { to: string; templateKey: str
 
 export type SendSessionTextResult =
   | { ok: true; messageId: string }
-  | { ok: false; reason: "not_configured" | "provider_error"; message: string };
+  | { ok: false; reason: "not_configured" | "provider_error" | "emergency_stop"; message: string };
 
 /**
  * Sends a free-form text reply within the 24h "customer service window" opened by an inbound
@@ -63,6 +66,8 @@ export type SendSessionTextResult =
  * conversation handler (whatsapp.processInboundMessage), never by a business-initiated workflow.
  */
 export async function sendWhatsAppSessionText(input: { to: string; text: string }): Promise<SendSessionTextResult> {
+  const stopped = await outboundStopResult("whatsapp_send");
+  if (stopped) return stopped;
   const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "WhatsApp is not connected." };
   const v = await getProviderValues("whatsapp");
