@@ -8,11 +8,11 @@ This repository does not include the client's full original scope document in th
 | Provider usage / cost truth | OpenAI/Groq tokens, ElevenLabs characters, Runway credits; `PROVIDER_REPORTED`, `ESTIMATE`, `UNKNOWN` | Implemented; unknown values remain possible |
 | Configurable pricing / aggregation | `ProviderPrice`, `/api/usage`, dashboard cards, provider/campaign grouping | Implemented; operator must configure prices |
 | Emergency stop | `emergencyStop` checked at API enqueue and worker execution | Implemented; staging exercise required |
-| Product truth / E2E | Existing readiness gates and local video/approval/publishing evidence | Video covered; carousel model is absent and needs scope decision |
+| Product truth / E2E | Existing readiness gates and local video/approval/publishing evidence; requirements brief lists Reels and Carousels as priority formats | Video covered; carousel model/rendering/approval/publishing path is absent and must be implemented before full-scope readiness |
 | Failure/retry | Provider retry classification, bounded BullMQ retries, persisted errors | Implemented; live fault injection remains external |
 | Campaign attribution | `Campaign` linked to projects, executions, and usage | Implemented |
 | Security | Encrypted credentials, auth, helmet, secret scrubbing, webhook checks | Repository review complete; no external penetration test |
-| Frontend tests | Web production build passes | No frontend test suite exists yet |
+| Frontend tests | `web/test/usageDisplay.test.ts`, Vitest, typecheck, and Next production build | Usage/dashboard display covered; broader page/E2E coverage remains |
 | Docs/deployment | Migration and operational notes documented | External credentials, permissions, and migration execution remain |
 
 ## Final-audit rule
