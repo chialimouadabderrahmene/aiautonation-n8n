@@ -21,6 +21,7 @@ import { internalRouter } from "./routes/internal";
 import { usageRouter } from "./routes/usage";
 import { campaignsRouter } from "./routes/campaigns";
 import { carouselsRouter } from "./routes/carousels";
+import { attributionPublicRouter, attributionRouter } from "./routes/attribution";
 import { requireAdmin } from "./modules/auth/auth";
 import { systemHealth, checkDatabase } from "./modules/system/health";
 import { recordAudit } from "./modules/audit/audit";
@@ -63,6 +64,7 @@ export function createApp() {
   app.use("/api/telegram", telegramPublicRouter); // secret_token header
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
+  app.use("/api/attribution", attributionPublicRouter);
 
   app.use("/api/auth", authRouter);
   app.use("/api/system/health", requireAdmin, async (_req, res) => res.json(await systemHealth()));
@@ -75,6 +77,7 @@ export function createApp() {
   app.use("/api/reports", requireAdmin, reportsRouter);
   app.use("/api/usage", requireAdmin, usageRouter);
   app.use("/api/campaigns", requireAdmin, campaignsRouter);
+  app.use("/api/attribution", requireAdmin, attributionRouter);
   app.use("/api/settings", requireAdmin, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);

@@ -207,6 +207,27 @@ model Campaign {
   carouselProjects CarouselProject[]
   executions  AutomationExecution[]
   usage       UsageLedger[]
+  attributionEvents AttributionEvent[]
+}
+
+model AttributionEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  leadId         String?
+  vendorId       String?
+  campaignId     String?
+  campaign       Campaign? @relation(fields: [campaignId], references: [id])
+  source         String?
+  medium         String?
+  campaignName   String?
+  content        String?
+  term           String?
+  occurredAt     DateTime
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  @@index([eventType, occurredAt])
+  @@index([vendorId, occurredAt])
 }
 
 enum UsageCostStatus {
