@@ -5,116 +5,50 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, hasToken } from "@/lib/api";
 
-const NAV = [
-  { name: "Dashboard", href: "/dashboard" },
-  { name: "Integrations", href: "/integrations" },
-  { name: "AI Content Studio", href: "/content-studio" },
-  { name: "Video Generator", href: "/video" },
-  { name: "Carousel Studio", href: "/carousels" },
-  { name: "Automations", href: "/automations" },
-  { name: "Approvals", href: "/approvals" },
-  { name: "Executions", href: "/executions" },
-  { name: "Reports", href: "/reports" },
-  { name: "Settings", href: "/settings" },
+const GROUPS = [
+  { label: "Command", items: [{ name: "Dashboard", href: "/dashboard", icon: "⌂" }, { name: "Approvals", href: "/approvals", icon: "✓" }] },
+  { label: "Create", items: [{ name: "Content Studio", href: "/content-studio", icon: "✦" }, { name: "Video Generator", href: "/video", icon: "▶" }, { name: "Carousel Studio", href: "/carousels", icon: "▦" }] },
+  { label: "Operate", items: [{ name: "Automations", href: "/automations", icon: "⚙" }, { name: "Integrations", href: "/integrations", icon: "◎" }, { name: "Executions", href: "/executions", icon: "≡" }, { name: "Reports", href: "/reports", icon: "↗" }] },
 ];
 
 export default function ControlCenterLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [checked, setChecked] = useState(false);
-  // Below md (768px) the sidebar is off-canvas by default — confirmed by
-  // actually rendering this at 375px width: a permanently-visible w-64
-  // sidebar left ~50% of a phone viewport unusable and clipped every page's
-  // content (dashboard stat cards, headings, etc. all cut off mid-word).
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!hasToken()) {
-      router.replace("/login");
-    } else {
-      setChecked(true);
-    }
-  }, [router]);
-
-  // Close the mobile drawer on every navigation, so tapping a link doesn't
-  // leave it open over the new page.
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [pathname]);
-
+  useEffect(() => { if (!hasToken()) router.replace("/login"); else setChecked(true); }, [router]);
+  useEffect(() => setOpen(false), [pathname]);
   if (!checked) return null;
 
-  const signOut = () => {
-    clearToken();
-    router.push("/login");
-  };
-
+  const signOut = () => { clearToken(); router.push("/login"); };
   return (
-    <div className="flex min-h-screen">
-      {/* Mobile top bar: hamburger + brand, visible only below md. */}
-      <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-brand-700 px-4 py-3 text-white md:hidden">
-        <div>
-          <p className="text-base font-black leading-tight">Eki AI Automation</p>
-          <p className="text-[11px] text-white/60 leading-tight">Control Center</p>
+    <div className="min-h-screen bg-[#f5f7fb] text-slate-900">
+      <div className="flex min-h-screen">
+        {open ? <button aria-label="Close navigation" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" /> : null}
+        <aside className={`fixed inset-y-0 left-0 z-40 flex w-[272px] flex-col bg-[#0b1f1a] text-white shadow-2xl transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
+          <div className="border-b border-white/10 px-6 py-6">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-400 font-black text-[#0b1f1a]">E</div>
+              <div><p className="font-black tracking-tight">EKI Control Center</p><p className="text-xs text-emerald-200/60">Acquisition operating system</p></div>
+            </div>
+          </div>
+          <nav className="flex-1 space-y-7 overflow-y-auto px-4 py-6">
+            {GROUPS.map((group) => <div key={group.label}><p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200/40">{group.label}</p><div className="space-y-1">{group.items.map((item) => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active ? "bg-emerald-400 text-[#0b1f1a] shadow-lg shadow-emerald-950/20" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><span className="grid w-5 place-items-center text-sm">{item.icon}</span>{item.name}</Link>; })}</div></div>)}
+          </nav>
+          <div className="border-t border-white/10 p-4">
+            <Link href="/settings" className="mb-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-white/65 hover:bg-white/10 hover:text-white"><span>⚙</span> Settings</Link>
+            <button onClick={signOut} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-white/45 hover:bg-white/10 hover:text-white">Sign out</button>
+          </div>
+        </aside>
+        <div className="min-w-0 flex-1">
+          <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-slate-200/80 bg-white/85 px-5 backdrop-blur lg:px-9">
+            <div className="flex items-center gap-3"><button aria-label="Open navigation" onClick={() => setOpen(true)} className="rounded-xl border border-slate-200 p-2 text-slate-600 lg:hidden">☰</button><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Workspace</p><p className="font-bold text-slate-800">Eki / EHIMA GROUP LTD</p></div></div>
+            <div className="flex items-center gap-3"><span className="hidden items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 sm:flex"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Native runtime online</span><Link href="/settings" className="grid h-9 w-9 place-items-center rounded-full bg-[#0b1f1a] text-sm font-black text-emerald-300">EH</Link></div>
+          </header>
+          <main className="mx-auto w-full max-w-[1480px] p-5 lg:p-9">{children}</main>
         </div>
-        <button
-          type="button"
-          aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
-          aria-expanded={mobileNavOpen}
-          onClick={() => setMobileNavOpen((v) => !v)}
-          className="rounded-lg p-2 hover:bg-white/10"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            {mobileNavOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
-          </svg>
-        </button>
       </div>
-
-      {/* Backdrop, mobile only, closes the drawer on tap outside it. */}
-      {mobileNavOpen && (
-        <button
-          type="button"
-          aria-label="Close menu"
-          onClick={() => setMobileNavOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-y-auto bg-brand-700 text-white transition-transform duration-200 ease-in-out md:static md:translate-x-0 ${
-          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="px-5 py-6">
-          <p className="text-lg font-black">Eki AI Automation</p>
-          <p className="text-xs text-white/60">Control Center</p>
-        </div>
-        <nav className="mt-2 space-y-1 px-3">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`block rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                pathname.startsWith(item.href) ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-        <div className="mt-6 px-3">
-          <button
-            onClick={signOut}
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-white/60 hover:bg-white/10 hover:text-white"
-          >
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      {/* pt-16 on mobile clears the fixed top bar; md: removes it since the
-          sidebar goes back to being a normal static flex sibling there. */}
-      <main className="w-full flex-1 overflow-y-auto p-4 pt-20 md:p-8 md:pt-8">{children}</main>
     </div>
   );
 }
