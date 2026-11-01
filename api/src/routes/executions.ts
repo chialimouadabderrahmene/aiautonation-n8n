@@ -7,7 +7,7 @@ const STATUSES = ["RUNNING", "SUCCESS", "FAILED", "CANCELLED"] as const;
 const SOURCES = ["VIDEO_WORKER", "CONTROL_CENTER"] as const;
 
 executionsRouter.get("/", async (req, res) => {
-  const { status, source, workflowKey, cursor } = req.query as Record<string, string | undefined>;
+  const { status, source, workflowKey, trigger, cursor } = req.query as Record<string, string | undefined>;
   const take = Math.min(200, Math.max(1, Number(req.query.limit ?? 100)));
   const workflow = workflowKey ? await prisma.workflowConfig.findUnique({ where: { key: workflowKey } }) : null;
 
@@ -16,6 +16,7 @@ executionsRouter.get("/", async (req, res) => {
       ...(status && (STATUSES as readonly string[]).includes(status) ? { status: status as (typeof STATUSES)[number] } : {}),
       ...(source && (SOURCES as readonly string[]).includes(source) ? { source: source as (typeof SOURCES)[number] } : {}),
       ...(workflow ? { workflowConfigId: workflow.id } : {}),
+      ...(trigger ? { trigger: trigger.slice(0, 80) } : {}),
     },
     include: { workflowConfig: { select: { key: true, name: true } } },
     orderBy: [{ startedAt: "desc" }, { id: "desc" }],

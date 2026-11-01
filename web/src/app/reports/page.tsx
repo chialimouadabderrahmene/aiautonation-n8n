@@ -24,6 +24,7 @@ interface Report {
   approvalsRejected: number;
   publicationsPublished: number;
   publicationsFailed: number;
+  signups?: { users: number; vendorStores: number; testAccounts: number; alertsSent: number; alertsFailed: number };
 }
 
 const SOURCE_LABEL: Record<string, string> = { N8N: "n8n workflows", VIDEO_WORKER: "Video worker", CONTROL_CENTER: "Control Center" };
@@ -79,6 +80,21 @@ export default function ReportsPage() {
             <MetricTile label="Approved / rejected" value={`${data.approvalsApproved} / ${data.approvalsRejected}`} />
             <MetricTile label="Published" value={`${data.publicationsPublished}${data.publicationsFailed ? ` (${data.publicationsFailed} failed)` : ""}`} tone="blue" />
           </div>
+
+          {data.signups ? (
+            <Card>
+              <p className="font-bold text-slate-900">Eki marketplace signups</p>
+              <div className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+                <MetricTile label="New accounts" value={data.signups.users} tone="green" />
+                <MetricTile label="New vendor stores" value={data.signups.vendorStores} tone="blue" />
+                <MetricTile label="Operator alerts sent" value={`${data.signups.alertsSent}${data.signups.alertsFailed ? ` (${data.signups.alertsFailed} failed)` : ""}`} tone={data.signups.alertsFailed ? "amber" : "slate"} />
+                <MetricTile label="Test accounts (skipped)" value={data.signups.testAccounts} />
+              </div>
+              <a href="/executions" className="mt-3 inline-block text-sm font-semibold text-brand-600 underline">
+                See signup alert runs in Executions
+              </a>
+            </Card>
+          ) : null}
 
           <Card>
             <p className="font-bold text-slate-900">Runs per day</p>

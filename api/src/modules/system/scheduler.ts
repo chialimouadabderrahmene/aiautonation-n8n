@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger";
 import { refreshExpiringTokens } from "../oauth/oauth";
 import { ensureTelegramWebhook } from "../telegram/telegram";
 import { recomputeAllReadiness } from "../workflows/readiness";
+import { describeSignupRun, processSignupEvents } from "../signups/processor";
 
 /**
  * Background maintenance that makes the deployment self-configuring and
@@ -10,6 +11,7 @@ import { recomputeAllReadiness } from "../workflows/readiness";
  *   - refresh expiring OAuth tokens
  *   - keep the Telegram webhook registered
  *   - recompute readiness so the Dashboard reflects reality
+ *   - announce Eki signups that were not handled at ingest time
  * Each task is guarded so it never overlaps itself and never crashes the API.
  */
 
@@ -51,4 +53,5 @@ export function startScheduler(): void {
   every(60_000, "readiness", async () => {
     await recomputeAllReadiness();
   }, 5_000);
+  every(60_000, "signup-alerts", async () => describeSignupRun(await processSignupEvents()), 30_000);
 }

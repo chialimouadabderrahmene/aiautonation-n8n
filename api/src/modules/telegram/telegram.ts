@@ -94,6 +94,18 @@ export async function editDecisionMarkup(chatId: string | number, messageId: num
   }).catch(() => undefined);
 }
 
+/**
+ * Sends an informational line to the operator (approval) chat. Unlike
+ * notifyAdmin this throws, so callers can record the run as FAILED.
+ */
+export async function sendOperatorMessage(text: string): Promise<void> {
+  const integration = await prisma.integration.findUnique({ where: { provider: "telegram" } });
+  if (integration?.status !== "CONNECTED") throw new Error("Telegram is not connected");
+  const v = await getProviderValues("telegram");
+  if (!v?.approvalChatId) throw new Error("Telegram approval chat id is not set");
+  await botCall("sendMessage", { chat_id: v.approvalChatId, text: scrubSecrets(text, []).slice(0, 4000), disable_web_page_preview: true });
+}
+
 /** Sends a failure/alert line to the team chat when enabled in Settings. Never throws. */
 export async function notifyAdmin(text: string): Promise<void> {
   try {

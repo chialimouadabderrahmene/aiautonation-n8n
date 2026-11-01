@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
+import { SIGNUP_TRIGGER, summarizeSignups } from "../modules/signups/processor";
 
 export const reportsRouter = Router();
 
@@ -12,12 +13,13 @@ reportsRouter.get("/", async (req, res) => {
   const period = ["day", "week", "month"].includes(String(req.query.period)) ? String(req.query.period) : "week";
   const since = rangeStart(period);
 
-  const [executions, videoJobs, approvals, publications, workflows] = await Promise.all([
-    prisma.automationExecution.findMany({ where: { startedAt: { gte: since } }, select: { status: true, source: true, workflowConfigId: true, durationMs: true, startedAt: true } }),
+  const [executions, videoJobs, approvals, publications, workflows, signupEvents] = await Promise.all([
+    prisma.automationExecution.findMany({ where: { startedAt: { gte: since } }, select: { status: true, source: true, workflowConfigId: true, durationMs: true, startedAt: true, trigger: true } }),
     prisma.videoJob.findMany({ where: { createdAt: { gte: since } }, select: { state: true, startedAt: true, completedAt: true, errorStage: true } }),
     prisma.approval.findMany({ where: { createdAt: { gte: since } }, select: { status: true } }),
     prisma.publication.findMany({ where: { createdAt: { gte: since } }, select: { status: true, target: true } }),
     prisma.workflowConfig.findMany({ select: { id: true, key: true, name: true } }),
+    prisma.attributionEvent.findMany({ where: { eventType: "registration", occurredAt: { gte: since } }, select: { metadata: true } }),
   ]);
 
   const successes = executions.filter((e) => e.status === "SUCCESS").length;
@@ -71,5 +73,6 @@ reportsRouter.get("/", async (req, res) => {
     approvalsRejected: approvals.filter((a) => a.status === "REJECTED").length,
     publicationsPublished: publications.filter((p) => p.status === "PUBLISHED").length,
     publicationsFailed: publications.filter((p) => p.status === "FAILED").length,
+    signups: summarizeSignups(signupEvents, executions.filter((e) => e.trigger === SIGNUP_TRIGGER)),
   });
 });

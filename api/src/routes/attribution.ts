@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { getProviderValues } from "../modules/integrations/vault";
+import { runSignupProcessing } from "../modules/signups/processor";
 
 export const attributionPublicRouter = Router();
 export const attributionRouter = Router();
@@ -18,7 +19,10 @@ attributionPublicRouter.post("/events", async (req, res) => {
   const supplied = req.headers["x-eki-webhook-secret"];
   const configured = (await getProviderValues("webhooks"))?.sharedSecret;
   if (typeof supplied !== "string" || !configured || supplied.length !== configured.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(configured))) return res.status(401).json({ message: "Unauthorized" });
-  try { return res.status(202).json(await ingest(req.body)); } catch (error) { return res.status(400).json({ message: error instanceof Error ? error.message : "Invalid event" }); }
+  let row;
+  try { row = await ingest(req.body); } catch (error) { return res.status(400).json({ message: error instanceof Error ? error.message : "Invalid event" }); }
+  if (row.eventType === "registration") void runSignupProcessing();
+  return res.status(202).json(row);
 });
 
 attributionRouter.get("/events", async (req, res) => res.json(await prisma.attributionEvent.findMany({ where: { eventType: typeof req.query.eventType === "string" ? req.query.eventType : undefined }, orderBy: { occurredAt: "desc" }, take: 200 })));
