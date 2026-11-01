@@ -3,8 +3,7 @@
   "services": {
     "api": {
       "root": "api",
-      "framework": "express",
-      "entrypoint": "src/vercel.ts"
+      "entrypoint": "Dockerfile"
     },
     "web": {
       "root": "web",
