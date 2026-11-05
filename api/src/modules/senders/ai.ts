@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { isPracticeMode, PRACTICE_AI_JSON } from "../../lib/practice";
 import { getProviderValues } from "../integrations/vault";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry, ProviderError } from "../../lib/http";
 import { recordUsage } from "../../lib/usage-ledger";
@@ -35,6 +36,10 @@ async function chooseProvider(): Promise<{ key: string; baseUrl: string; apiKey:
  * never an arbitrary URL), it is the one AI call every content-generation workflow needs.
  */
 export async function aiComplete(input: { system: string; user: string; jsonMode?: boolean; usageContext?: { workflowKey?: string; executionRef?: string } }): Promise<AICompleteResult> {
+  if (await isPracticeMode()) {
+    const raw = JSON.stringify(PRACTICE_AI_JSON);
+    return { ok: true, raw: input.jsonMode === false ? PRACTICE_AI_JSON.caption : raw, json: input.jsonMode === false ? null : PRACTICE_AI_JSON, provider: "practice", model: "practice-sample" };
+  }
   const ai = await chooseProvider();
   if (!ai) return { ok: false, reason: "not_configured", message: "No AI provider is connected (OpenAI, Groq or CodeCraft API) — configure one in Integrations." };
   try {

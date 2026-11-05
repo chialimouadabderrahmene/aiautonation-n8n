@@ -4,6 +4,8 @@ import { ProviderError } from "../http";
 import { AIProvider } from "./types";
 import { createOpenAICompatible } from "./openai-compatible";
 import { createAnthropic } from "./anthropic";
+import { isPracticeMode } from "../practice";
+import { practiceProvider } from "../../pipeline/practice";
 
 export type { AIProvider, ChatJSONRequest, ChatJSONResult } from "./types";
 
@@ -35,6 +37,7 @@ async function tryBuild(c: Candidate): Promise<AIProvider | null> {
  * back either way — script.ts/slides.ts/critic.ts never branch on which.
  */
 export async function chooseProvider(): Promise<AIProvider> {
+  if (await isPracticeMode()) return practiceProvider;
   const preferred = (await prisma.setting.findUnique({ where: { key: "aiProvider" } }))?.value as string | undefined;
   if (preferred) {
     const match = CANDIDATES.find((c) => c.key === preferred);

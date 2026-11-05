@@ -1,3 +1,4 @@
+import { isPracticeMode } from "../lib/practice";
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -40,7 +41,7 @@ carouselRouter.post("/projects", async (req: AuthedRequest, res) => {
   const readiness = await evaluateRequirements(CAROUSEL_PIPELINE_REQUIREMENTS);
   if (readiness.readiness !== "READY") return res.status(409).json({ message: "Carousel pipeline is not READY", ...readiness });
 
-  const project = await prisma.carouselProject.create({ data: parsed.data });
+  const project = await prisma.carouselProject.create({ data: { ...parsed.data, testMode: await isPracticeMode() } });
   const job = await prisma.carouselJob.create({ data: { projectId: project.id, state: "QUEUED" } });
   await enqueueCarouselJob(job.id, 0, 2);
   await recordAudit(req.admin?.email ?? "unknown", "carousel.project_created", "CarouselProject", project.id, { name: project.name, jobId: job.id });
@@ -94,6 +95,20 @@ carouselRouter.post("/projects/:id/regenerate", async (req: AuthedRequest, res) 
   await enqueueCarouselJob(job.id, 0, 2);
   await recordAudit(req.admin?.email ?? "unknown", "carousel.regenerated", "CarouselProject", id, { jobId: job.id });
   res.status(201).json({ job });
+});
+
+const captionSchema = z.object({ caption: z.string().trim().min(1).max(2200) });
+
+/** The team can fix the words before approving, without remaking the slides. */
+carouselRouter.put("/jobs/:id/caption", async (req: AuthedRequest, res) => {
+  const parsed = captionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "A caption cannot be empty." });
+  const id = String(req.params.id);
+  const job = await prisma.carouselJob.findUnique({ where: { id } });
+  if (!job) return res.status(404).json({ message: "Not found" });
+  await prisma.carouselJob.update({ where: { id }, data: { caption: parsed.data.caption } });
+  await recordAudit(req.admin?.email ?? "unknown", "carousel.caption_edited", "CarouselJob", id);
+  res.json({ ok: true });
 });
 
 const decideSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]), reason: z.string().trim().max(500).optional() });

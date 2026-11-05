@@ -1,3 +1,4 @@
+import { isPracticeMode } from "../../lib/practice";
 import crypto from "node:crypto";
 import { prisma } from "../../lib/prisma";
 import { getProviderValues, getDecryptedCredentials, generateSecretValue } from "../integrations/vault";
@@ -103,13 +104,28 @@ export async function editDecisionMarkup(chatId: string | number, messageId: num
  * operator alert) and it throws on failure so the action/step records the real error.
  */
 export async function sendTelegramMessage(chatId: string | number, text: string): Promise<{ messageId: number }> {
+  if (await isPracticeMode()) return { messageId: 0 };
   const result = await botCall<{ message_id: number }>("sendMessage", { chat_id: chatId, text: text.slice(0, 4000), disable_web_page_preview: true });
   return { messageId: result.message_id };
+}
+
+/**
+ * Sends an informational line to the operator (approval) chat. Unlike
+ * notifyAdmin this throws, so callers can record the run as FAILED.
+ */
+export async function sendOperatorMessage(text: string): Promise<void> {
+  if (await isPracticeMode()) return;
+  const integration = await prisma.integration.findUnique({ where: { provider: "telegram" } });
+  if (integration?.status !== "CONNECTED") throw new Error("Telegram is not connected");
+  const v = await getProviderValues("telegram");
+  if (!v?.approvalChatId) throw new Error("Telegram approval chat id is not set");
+  await botCall("sendMessage", { chat_id: v.approvalChatId, text: scrubSecrets(text, []).slice(0, 4000), disable_web_page_preview: true });
 }
 
 /** Sends a failure/alert line to the team chat when enabled in Settings. Never throws. */
 export async function notifyAdmin(text: string): Promise<void> {
   try {
+    if (await isPracticeMode()) return;
     if ((await getSetting<boolean>("notifyAdminOnFailure")) === false) return;
     const integration = await prisma.integration.findUnique({ where: { provider: "telegram" } });
     if (integration?.status !== "CONNECTED") return;

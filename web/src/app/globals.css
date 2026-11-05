@@ -3,6 +3,86 @@
 @tailwind utilities;
 
 body {
-  background-color: #f6f7f9;
-  color: #101820;
+  background-color: #fbf6eb;
+  color: #1c1410;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.02em;
+}
+
+:focus-visible {
+  outline: 2px solid #d9481c;
+  outline-offset: 2px;
+}
+
+/* The band under the header: a woven market-cloth rhythm, Eki's one decorative signature. */
+.weave {
+  height: 8px;
+  background-color: #1c1410;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8'%3E%3Cpath d='M0 8 4 0l4 8z' fill='%23D9481C'/%3E%3Cpath d='M12 8l4-8 4 8z' fill='%23F2A93B'/%3E%3Cpath d='M24 8l4-8 4 8z' fill='%231E6B45'/%3E%3Cpath d='M36 8l4-8 4 8z' fill='%23FBF6EB'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+}
+
+/* Practice mode warning tape. */
+.tape {
+  background-image: repeating-linear-gradient(-45deg, #f2a93b 0 14px, #f7c267 14px 28px);
+}
+
+/* A market ticket: notched left and right edges. */
+.ticket {
+  --notch: 7px;
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at 0 50%, transparent 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% 50%, transparent 98%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle var(--notch) at 0 50%, transparent 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% 50%, transparent 98%, #000) right / 51% 100% no-repeat;
+}
+
+/* The conveyor between stations; it only moves while something is being made. */
+.belt {
+  background-image: repeating-linear-gradient(90deg, #d3c4a9 0 8px, transparent 8px 16px);
+  background-size: 16px 2px;
+  height: 2px;
+}
+.belt-live {
+  background-image: repeating-linear-gradient(90deg, #d9481c 0 8px, transparent 8px 16px);
+  animation: belt 0.8s linear infinite;
+}
+@keyframes belt {
+  to {
+    background-position: 16px 0;
+  }
+}
+
+.rise {
+  animation: rise 0.35s ease-out both;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .belt-live,
+  .rise,
+  .pulse-dot {
+    animation: none;
+  }
 }

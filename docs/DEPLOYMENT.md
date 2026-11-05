@@ -1,5 +1,33 @@
 # Deployment (one-time, technical)
 
+## The simple way: one always-on service
+
+`docker/Dockerfile.studio` packs web, API and worker (with FFmpeg) into one image that shares one disk for media. It needs only Postgres, Redis and a persistent volume at `/data`.
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Postgres connection string. Use a fresh database. |
+| `REDIS_URL` | Redis with `maxmemory-policy noeviction`. |
+| `AUTOMATION_SECRET_KEY`, `JWT_SECRET` | Random, at least 32 characters. Back up the first one: losing it makes saved keys unreadable. |
+| `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` | The first owner account. |
+| `PUBLIC_WEB_URL` | The public address, unless the host is Render or Railway, where it is detected. |
+
+Render: New > Blueprint, pick this repository. `render.yaml` sets everything up.
+
+**Vercel alone cannot run this product.** The worker has to stay running to render video and consume queues, and Vercel services stop when idle. Host the whole image somewhere always-on.
+
+The product starts in Practice mode and works with no provider keys. To check a deployment end to end:
+
+```bash
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... node scripts/practice-e2e.mjs https://your-address
+```
+
+The Eki marketplace backend posts signup events to `/api/attribution/events`. After a move, set its `AUTOMATION_EVENTS_URL` to the new address and its `AUTOMATION_WEBHOOK_SECRET` to the shared secret from Back office > All integrations > Inbound webhook security.
+
+---
+
+## The split way: separate services
+
 This is done **once** by whoever deploys the system. After it, the client
 configures everything in the Control Center (see `CLIENT_SETUP_CHECKLIST.md`)
 — no code, no `.env`, no restarts.

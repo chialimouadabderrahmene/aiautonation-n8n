@@ -27,3 +27,4 @@ staging/mock/certs/
 
 # Local Redis dumps from running the engine against a dev Redis instance
 *.rdb
+.vercel

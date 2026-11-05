@@ -1,0 +1,61 @@
+# Eki Studio in one image: web, API and worker with FFmpeg, sharing one disk for media.
+# The simplest way to run the whole product. Needs only Postgres, Redis and a persistent
+# volume at /data. Build from the repository root:
+#   docker build -f docker/Dockerfile.studio -t eki-studio .
+FROM node:22-bookworm-slim AS base
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates openssl tini wget ffmpeg fontconfig fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/* \
+ && fc-cache -f \
+ && ffmpeg -hide_banner -filters | grep -q " subtitles " \
+ && ffmpeg -hide_banner -filters | grep -q " gradients "
+
+FROM base AS build-api
+WORKDIR /app
+COPY api/package*.json ./
+COPY api/prisma ./prisma
+RUN npm ci
+COPY api ./
+RUN npx prisma generate && npm run build && npm prune --omit=dev
+
+FROM base AS build-worker
+WORKDIR /app
+COPY worker/package*.json ./
+COPY worker/prisma ./prisma
+RUN npm ci
+COPY worker ./
+RUN npx prisma generate && npm run build && npm prune --omit=dev
+
+FROM base AS build-web
+WORKDIR /app
+COPY web/package*.json ./
+RUN npm ci
+COPY web ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM base AS runtime
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    STORAGE_DRIVER=local \
+    STORAGE_LOCAL_DIR=/data/media
+COPY --from=build-api /app/package*.json /app/api/
+COPY --from=build-api /app/node_modules /app/api/node_modules
+COPY --from=build-api /app/dist /app/api/dist
+COPY --from=build-api /app/prisma /app/api/prisma
+COPY --from=build-worker /app/package*.json /app/worker/
+COPY --from=build-worker /app/node_modules /app/worker/node_modules
+COPY --from=build-worker /app/dist /app/worker/dist
+COPY --from=build-worker /app/prisma /app/worker/prisma
+COPY --from=build-web /app/.next/standalone /app/web
+COPY --from=build-web /app/.next/static /app/web/.next/static
+COPY --from=build-web /app/public /app/web/public
+COPY docker/studio-start.sh /usr/local/bin/studio-start
+RUN chmod 0555 /usr/local/bin/studio-start && mkdir -p /data/media && chown -R node:node /data
+USER node
+VOLUME /data
+EXPOSE 3200
+HEALTHCHECK --interval=20s --timeout=5s --start-period=90s --retries=3 \
+  CMD wget -q -O- "http://127.0.0.1:${PORT:-3200}/login" >/dev/null || exit 1
+ENTRYPOINT ["tini", "--", "studio-start"]

@@ -3,7 +3,9 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { login, APIError } from "@/lib/api";
-import { Button } from "@/components/ui";
+import { Banner, Btn } from "@/components/kit";
+
+const field = "mt-1 w-full rounded-xl border border-rule bg-card px-4 py-3 outline-none focus:border-ink";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,46 +20,41 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push("/");
     } catch (err) {
-      setError(err instanceof APIError ? err.message : "Could not sign in");
-    } finally {
+      setError(err instanceof APIError ? err.message : "Could not sign in. Please try again.");
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-black text-slate-900">Eki AI Automation</h1>
-        <p className="mt-1 text-sm text-slate-500">Control Center sign in</p>
-
-        {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-
-        <label className="mt-6 block text-xs font-semibold uppercase text-slate-500">Email</label>
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-500"
-        />
-
-        <label className="mt-4 block text-xs font-semibold uppercase text-slate-500">Password</label>
-        <input
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-500"
-        />
-
-        <div className="mt-6">
-          <Button type="submit" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
-          </Button>
+    <div className="grid min-h-screen bg-paper lg:grid-cols-2">
+      <div className="flex flex-col justify-between bg-ink p-8 text-paper sm:p-12">
+        <p className="font-display text-4xl font-extrabold">eki<span className="text-palm">.</span></p>
+        <div className="my-10">
+          <h1 className="text-5xl font-extrabold leading-[1.02] sm:text-6xl">One idea in.<br />Posted content and answered customers out.</h1>
+          <ol className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-paper/70">
+            {["Make", "Review", "Post", "Answer"].map((s, i) => (
+              <li key={s} className="flex items-center gap-3">
+                {i > 0 ? <span className="belt w-8" aria-hidden /> : null}
+                {s}
+              </li>
+            ))}
+          </ol>
         </div>
-      </form>
+        <div className="weave -mx-8 -mb-8 sm:-mx-12 sm:-mb-12" aria-hidden />
+      </div>
+      <div className="flex items-center justify-center p-8">
+        <form onSubmit={onSubmit} className="w-full max-w-sm">
+          <h2 className="text-3xl font-bold">Sign in</h2>
+          {error ? <div className="mt-4"><Banner tone="berry">{error}</Banner></div> : null}
+          <label htmlFor="email" className="mt-6 block text-sm font-semibold">Email</label>
+          <input id="email" type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className={field} />
+          <label htmlFor="password" className="mt-4 block text-sm font-semibold">Password</label>
+          <input id="password" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className={field} />
+          <div className="mt-6"><Btn type="submit" big disabled={loading} className="w-full">{loading ? "Signing in..." : "Sign in"}</Btn></div>
+        </form>
+      </div>
     </div>
   );
 }

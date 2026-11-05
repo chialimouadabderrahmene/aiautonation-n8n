@@ -27,6 +27,11 @@ import { contentRouter } from "./routes/content";
 import { internalRouter } from "./routes/internal";
 import { engineRouter } from "./routes/engine";
 import { hooksRouter } from "./routes/hooks";
+import { attributionPublicRouter, attributionRouter } from "./routes/attribution";
+import { homeRouter } from "./routes/home";
+import { autopilotsRouter } from "./routes/autopilots";
+import { practiceRouter } from "./routes/practice";
+import { peopleRouter } from "./routes/people";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook";
 import { requireAdmin, requireWrite } from "./modules/auth/auth";
 import { usersRouter } from "./routes/users";
@@ -77,6 +82,7 @@ export function createApp() {
   app.use("/api/telegram", telegramPublicRouter); // secret_token header
   app.use("/api/oauth", oauthPublicRouter); // single-use state
   app.use("/api/media", mediaPublicRouter); // HMAC-signed, expiring links
+  app.use("/api/attribution", attributionPublicRouter); // X-Eki-Webhook-Secret, marketplace events
   app.use("/api/hooks", hooksRouter); // native WEBHOOK-trigger ingestion — rate-limited, Zod-validated per workflow
   app.use("/api/whatsapp", whatsappPublicRouter); // GET challenge + X-Hub-Signature-256
   app.use("/api/leads", leadsPublicRouter); // X-Api-Key header, checked against Settings
@@ -100,6 +106,11 @@ export function createApp() {
   app.use("/api/settings", requireAdmin, requireWrite, settingsRouter);
   app.use("/api/audit", requireAdmin, auditRouter);
   app.use("/api/dashboard", requireAdmin, dashboardRouter);
+  app.use("/api/attribution", requireAdmin, attributionRouter);
+  app.use("/api/home", requireAdmin, homeRouter);
+  app.use("/api/autopilots", requireAdmin, requireWrite, autopilotsRouter);
+  app.use("/api/practice", requireAdmin, requireWrite, practiceRouter);
+  app.use("/api/people", requireAdmin, peopleRouter);
   app.use("/api/usage", requireAdmin, requireWrite, usageRouter);
   app.use("/api/engine", requireAdmin, engineRouter);
   app.use("/api/media", requireAdmin, requireWrite, mediaRouter);

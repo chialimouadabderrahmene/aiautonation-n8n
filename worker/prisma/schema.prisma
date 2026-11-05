@@ -681,6 +681,8 @@ model CarouselProject {
   /// Specific ConnectedAccount ids to publish to, in addition to
   /// publishTargets — mirrors VideoProject.publishAccountIds.
   publishAccountIds String[] @default([])
+  /// Made in Practice mode: simulated content that is removed when the team goes live.
+  testMode          Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -1342,3 +1344,23 @@ model ProviderPrice {
   @@index([provider, unit, effectiveFrom])
 }
 
+/// Marketplace events (signups, vendor activations) posted by the Eki backend; see docs/MARKETPLACE_ACTIVATION_CONTRACT.md.
+model AttributionEvent {
+  id           String   @id @default(cuid())
+  eventId      String   @unique
+  eventType    String
+  leadId       String?
+  vendorId     String?
+  campaignId   String?
+  source       String?
+  medium       String?
+  campaignName String?
+  content      String?
+  term         String?
+  occurredAt   DateTime
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([eventType, occurredAt])
+  @@index([vendorId, occurredAt])
+}

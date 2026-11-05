@@ -1,0 +1,45 @@
+# Render Blueprint: the whole of Eki Studio as one always-on service, plus Postgres and Redis.
+# In Render: New > Blueprint, pick this repo, then fill in the values marked sync: false.
+services:
+  - type: web
+    name: eki-studio
+    runtime: docker
+    plan: standard # FFmpeg renders video; 2 GB of memory is the safe minimum
+    dockerfilePath: ./docker/Dockerfile.studio
+    dockerContext: .
+    healthCheckPath: /login
+    autoDeploy: false
+    disk:
+      name: media
+      mountPath: /data
+      sizeGB: 20
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: eki-studio-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: eki-studio-queue
+          property: connectionString
+      - key: AUTOMATION_SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_BOOTSTRAP_EMAIL
+        sync: false
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+
+  - type: keyvalue
+    name: eki-studio-queue
+    plan: starter
+    # Queued jobs must never be evicted to free memory.
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+databases:
+  - name: eki-studio-db
+    databaseName: eki_automation
+    plan: basic-256mb

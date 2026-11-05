@@ -15,6 +15,7 @@
  *   twitterPostingEnabled    — extra per-platform gate, X only (workflow 10's own distinction)
  */
 import { getSetting } from "../settings/schema";
+import { isPracticeMode } from "../../lib/practice";
 
 export interface AutopilotDecision {
   allowed: boolean;
@@ -37,6 +38,10 @@ export function evaluateAutopilot(settings: AutopilotSettings, target: string): 
 }
 
 export async function checkAutopilot(target: string): Promise<AutopilotDecision> {
+  // Practice posts are simulated by the worker, so only the emergency stop can hold them back.
+  if (await isPracticeMode()) {
+    return (await getSetting<boolean>("autopilotStop")) ? { allowed: false, reason: "Emergency stop is on" } : { allowed: true };
+  }
   const [autopilotStop, autopilotSocialPosting, twitterPostingEnabled] = await Promise.all([
     getSetting<boolean>("autopilotStop"),
     getSetting<boolean>("autopilotSocialPosting"),

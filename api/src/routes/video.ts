@@ -8,6 +8,7 @@ import { AuthedRequest } from "../modules/auth/auth";
 import { evaluateRequirements, takeSnapshot } from "../modules/workflows/readiness";
 import { VIDEO_PIPELINE_REQUIREMENTS, VIDEO_APPROVAL_REQUIREMENTS } from "../modules/workflows/manifest";
 import { getSetting } from "../modules/settings/schema";
+import { isPracticeMode } from "../lib/practice";
 import { cancelSchedules, parseScheduledFor, scheduleVideo, SchedulingError } from "../modules/scheduling/schedule";
 
 export const videoRouter = Router();
@@ -62,7 +63,7 @@ videoRouter.post("/projects", async (req: AuthedRequest, res) => {
   }
 
   const project = await prisma.videoProject.create({
-    data: { ...data, musicFileId: musicFileId ?? null, music: musicFileId ? "track" : "none", testMode: false },
+    data: { ...data, musicFileId: musicFileId ?? null, music: musicFileId ? "track" : "none", testMode: await isPracticeMode() },
   });
   const job = await prisma.videoJob.create({ data: { projectId: project.id, state: "QUEUED" } });
   await enqueueVideoJob(job.id, 0, await attempts());
@@ -142,6 +143,20 @@ videoRouter.post("/jobs/:id/retry", async (req: AuthedRequest, res) => {
   });
   await enqueueVideoJob(id, updated.retryCount, await attempts());
   await recordAudit(req.admin?.email ?? "unknown", "video.job_retried", "VideoJob", id, { retryCount: updated.retryCount });
+  res.json({ ok: true });
+});
+
+const captionSchema = z.object({ caption: z.string().trim().min(1).max(2200) });
+
+/** The team can fix the words before approving, without remaking the video. */
+videoRouter.put("/jobs/:id/caption", async (req: AuthedRequest, res) => {
+  const parsed = captionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "A caption cannot be empty." });
+  const id = String(req.params.id);
+  const job = await prisma.videoJob.findUnique({ where: { id } });
+  if (!job) return res.status(404).json({ message: "Not found" });
+  await prisma.videoJob.update({ where: { id }, data: { caption: parsed.data.caption } });
+  await recordAudit(req.admin?.email ?? "unknown", "video.caption_edited", "VideoJob", id);
   res.json({ ok: true });
 });
 

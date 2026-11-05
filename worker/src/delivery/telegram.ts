@@ -1,3 +1,4 @@
+import { isPracticeMode } from "../lib/practice";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -31,6 +32,7 @@ async function telegram<T>(token: string, method: string, body: FormData | Recor
 }
 
 export async function sendVideoForApproval(videoJobId: string): Promise<void> {
+  if (await isPracticeMode()) return;
   const tg = await requireConnected("telegram", "Telegram");
   if (!tg.approvalChatId) throw new ProviderError("Telegram team chat ID is not set", null, false);
   const job = await prisma.videoJob.findUniqueOrThrow({ where: { id: videoJobId }, include: { project: true, assets: true } });
@@ -84,6 +86,7 @@ export async function sendVideoForApproval(videoJobId: string): Promise<void> {
  * sendMediaGroup does not support reply_markup, unlike sendVideo above.
  */
 export async function sendCarouselForApproval(carouselJobId: string): Promise<void> {
+  if (await isPracticeMode()) return;
   const tg = await requireConnected("telegram", "Telegram");
   if (!tg.approvalChatId) throw new ProviderError("Telegram team chat ID is not set", null, false);
   const job = await prisma.carouselJob.findUniqueOrThrow({ where: { id: carouselJobId }, include: { project: true, slides: { orderBy: { index: "asc" } } } });
@@ -124,6 +127,7 @@ export async function sendCarouselForApproval(carouselJobId: string): Promise<vo
 
 /** Failure alert to the team chat (never throws; respects Settings → notifications). */
 export async function notifyTeam(text: string): Promise<void> {
+  if (await isPracticeMode()) return;
   try {
     const setting = await prisma.setting.findUnique({ where: { key: "notifyAdminOnFailure" } });
     if (setting && setting.value === false) return;

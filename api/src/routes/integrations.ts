@@ -147,7 +147,7 @@ integrationsRouter.delete("/:provider", async (req: AuthedRequest, res) => {
 
 oauthPublicRouter.get("/callback/:provider", async (req, res) => {
   const provider = String(req.params.provider);
-  const back = (params: Record<string, string>) => `${publicWebUrl() ?? ""}/integrations?${new URLSearchParams({ oauth: provider, ...params }).toString()}`;
+  const back = (params: Record<string, string>) => `${publicWebUrl() ?? ""}/setup?${new URLSearchParams({ oauth: provider, ...params }).toString()}`;
   const { code, state, error, error_description } = req.query as Record<string, string | undefined>;
   if (error) return res.redirect(back({ result: "error", message: String(error_description ?? error).slice(0, 200) }));
   if (!code || !state) return res.redirect(back({ result: "error", message: "Missing code/state" }));

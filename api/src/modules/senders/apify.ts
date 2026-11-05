@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { isPracticeMode } from "../../lib/practice";
 import { getProviderValues } from "../integrations/vault";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry } from "../../lib/http";
 
@@ -14,6 +15,7 @@ export type RunActorResult = { ok: true; items: unknown[] } | { ok: false; reaso
  * that config is operator-owned, not business-logic.
  */
 export async function runTrendsActor(): Promise<RunActorResult> {
+  if (await isPracticeMode()) return { ok: true, items: [{ text: "[Practice sample] What did you miss most about home food?", likesCount: 120, commentsCount: 34 }] };
   const integration = await prisma.integration.findUnique({ where: { provider: "apify" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "Apify is not connected." };
   const v = await getProviderValues("apify");

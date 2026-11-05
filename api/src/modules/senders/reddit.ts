@@ -1,3 +1,4 @@
+import { isPracticeMode } from "../../lib/practice";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry } from "../../lib/http";
 
 export interface RedditPost {
@@ -18,6 +19,7 @@ export type RedditSearchResult = { ok: true; posts: RedditPost[] } | { ok: false
  * internal host (the same SSRF constraint every other action in this engine holds to).
  */
 export async function searchRedditPosts(input: { subreddits: string[]; query: string; sort?: string; time?: string; limit?: number }): Promise<RedditSearchResult> {
+  if (await isPracticeMode()) return { ok: true, posts: [{ title: "[Practice sample] Why is it so hard to find fresh ogbono near me?", selftext: "Sample post used in practice mode.", ups: 42 }] };
   const subs = input.subreddits.map((s) => s.replace(/[^A-Za-z0-9_]/g, "")).filter(Boolean).join("+");
   const params = new URLSearchParams({
     q: input.query,

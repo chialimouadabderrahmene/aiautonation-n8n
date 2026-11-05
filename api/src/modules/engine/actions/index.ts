@@ -1,3 +1,4 @@
+import { isPracticeMode } from "../../../lib/practice";
 import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { sendTelegramMessage } from "../../telegram/telegram";
@@ -109,6 +110,7 @@ const notifyTelegram = define({
   // team's configured chat — the same "approvalChatId" the Integrations page already tests.
   inputSchema: z.object({ chatId: z.string().min(1).optional(), text: z.string().min(1).max(4000) }),
   async handler(input) {
+    if (await isPracticeMode()) return { sent: false, reason: "practice_mode", message: input.text };
     const chatId = input.chatId ?? (await getProviderValues("telegram"))?.approvalChatId;
     if (!chatId) return { sent: false, reason: "not_configured", message: "Telegram team chat id is not configured." };
     const result = await sendTelegramMessage(chatId, input.text);
@@ -284,9 +286,10 @@ const whatsappRunSequence = define({
     const stages = [...input.stages].sort((a, b) => a.dayOffset - b.dayOffset) as SequenceStage[];
     const maxDayOffset = stages[stages.length - 1]!.dayOffset;
 
+    const practice = await isPracticeMode();
     const approved = await getSetting<boolean>("whatsappTemplatesApproved").catch(() => false);
     const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
-    if (!approved || integration?.status !== "CONNECTED") {
+    if (!practice && (!approved || integration?.status !== "CONNECTED")) {
       return { sequenceKey: input.sequenceKey, processed: 0, sent: 0, skippedLeads: 0, reason: "not_configured", message: "WhatsApp is not connected or templates are not confirmed Meta-approved — no leads were queried." };
     }
     const v = await getProviderValues("whatsapp");
@@ -461,7 +464,8 @@ const contentPostApprovedDraft = define({
   inputSchema: z.object({}),
   async handler() {
     if (await getSetting<boolean>("autopilotStop").catch(() => false)) return { posted: false, reason: "autopilot_stopped" };
-    if (!(await getSetting<boolean>("autopilotSocialPosting").catch(() => false))) return { posted: false, reason: "autopilot_disabled" };
+    const practice = await isPracticeMode();
+    if (!practice && !(await getSetting<boolean>("autopilotSocialPosting").catch(() => false))) return { posted: false, reason: "autopilot_disabled" };
 
     const draft = await prisma.engineContentDraft.findFirst({ where: { status: ContentDraftStatus.APPROVED }, orderBy: [{ reviewedAt: "asc" }, { createdAt: "asc" }] });
     if (!draft) return { posted: false, reason: "no_approved_drafts" };
@@ -471,7 +475,7 @@ const contentPostApprovedDraft = define({
     let publishedVia: string;
 
     if (platform.includes("twitter") || platform === "x") {
-      if (!(await getSetting<boolean>("twitterPostingEnabled").catch(() => false))) return { posted: false, reason: "twitter_posting_disabled", draftId: draft.id };
+      if (!practice && !(await getSetting<boolean>("twitterPostingEnabled").catch(() => false))) return { posted: false, reason: "twitter_posting_disabled", draftId: draft.id };
       publishedVia = "x";
       result = await postTweet(draft.body);
     } else {
@@ -480,7 +484,7 @@ const contentPostApprovedDraft = define({
       const v = await getProviderValues("buffer");
       const profileId = v?.[field];
       publishedVia = "buffer";
-      result = profileId ? await postToBuffer(draft.body, profileId) : { ok: false, reason: "not_configured", message: `No Buffer profile configured for ${platform}.` };
+      result = profileId || practice ? await postToBuffer(draft.body, profileId ?? "practice") : { ok: false, reason: "not_configured", message: `No Buffer profile configured for ${platform}.` };
     }
 
     if (!result.ok) {

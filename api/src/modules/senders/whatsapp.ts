@@ -1,5 +1,6 @@
 import { outboundStopResult } from "../../lib/outbound-guard";
 import { prisma } from "../../lib/prisma";
+import { isPracticeMode, practiceMessageId } from "../../lib/practice";
 import { getProviderValues } from "../integrations/vault";
 import { getSetting } from "../settings/schema";
 import { timedFetch, describeHttpFailure, readErrorDetail, withRetry } from "../../lib/http";
@@ -17,6 +18,7 @@ export type SendTemplateResult =
 export async function sendWhatsAppTemplate(input: { to: string; templateKey: string; params?: string[] }): Promise<SendTemplateResult> {
   const stopped = await outboundStopResult("whatsapp_send");
   if (stopped) return stopped;
+  if (await isPracticeMode()) return { ok: true, messageId: practiceMessageId("whatsapp") };
   const approved = await getSetting<boolean>("whatsappTemplatesApproved").catch(() => false);
   if (!approved) return { ok: false, reason: "templates_not_approved", message: "Settings → WhatsApp templates are not confirmed as Meta-approved." };
   const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
@@ -68,6 +70,7 @@ export type SendSessionTextResult =
 export async function sendWhatsAppSessionText(input: { to: string; text: string }): Promise<SendSessionTextResult> {
   const stopped = await outboundStopResult("whatsapp_send");
   if (stopped) return stopped;
+  if (await isPracticeMode()) return { ok: true, messageId: practiceMessageId("whatsapp") };
   const integration = await prisma.integration.findUnique({ where: { provider: "whatsapp" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "WhatsApp is not connected." };
   const v = await getProviderValues("whatsapp");

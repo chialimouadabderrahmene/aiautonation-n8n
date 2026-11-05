@@ -1,3 +1,4 @@
+import { isPracticeMode } from "../lib/practice";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -214,6 +215,8 @@ const CREDS_PROVIDER: Record<string, { provider: string; label: string }> = {
  */
 export async function publishCarousel(carouselJobId: string, target: string, connectedAccountId?: string): Promise<PublishResult> {
   await assertOutboundAllowed("carousel_publish", "execute");
+  const made = await prisma.carouselJob.findUnique({ where: { id: carouselJobId }, select: { project: { select: { testMode: true } } } });
+  if (made?.project.testMode || (await isPracticeMode())) return { externalId: `practice-${target}-${carouselJobId}` };
   const publisher = PUBLISHERS[target];
   if (!publisher) throw new ProviderError(`Unknown publish target ${target}`, null, false);
   const legacy = CREDS_PROVIDER[target] ?? { provider: target, label: target };

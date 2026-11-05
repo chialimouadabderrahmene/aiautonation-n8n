@@ -14,6 +14,8 @@ import { voiceProvider } from "./voice";
 import { generateSceneClip, CancelledError } from "./video";
 import { assembleVideo, outputSize } from "./assemble";
 import { qualityCheck } from "./qa";
+import { isPracticeMode } from "../lib/practice";
+import { practiceClip, practiceVoice } from "./practice";
 import { sendVideoForApproval, notifyTeam } from "../delivery/telegram";
 
 /**
@@ -45,6 +47,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
   const attempt = bullJob.attemptsMade;
   const maxAttempts = bullJob.opts.attempts ?? 1;
   const storage = getStorage();
+  const practice = project.testMode || (await isPracticeMode());
 
   const execution = await prisma.automationExecution.upsert({
     where: { source_externalId: { source: "VIDEO_WORKER", externalId: `${bullJob.id}#${attempt}` } },
@@ -111,16 +114,19 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
     await setStage(videoJobId, stage, 18);
     for (const scene of scenes) {
       if (scene.voiceKey || !scene.voiceoverText) continue;
-      const out = await voiceProvider.synthesize(scene.voiceoverText, project.voicePreset ?? undefined, project.language);
       const file = path.join(workDir, `voice-${scene.index}.mp3`);
-      await fs.writeFile(file, out.audio);
+      const out = practice
+        ? { requestId: null, voiceId: "practice", model: "practice-sample" }
+        : await voiceProvider.synthesize(scene.voiceoverText, project.voicePreset ?? undefined, project.language);
+      if ("audio" in out) await fs.writeFile(file, out.audio);
+      else await practiceVoice(scene.voiceoverText, file);
       const p = await probe(file);
       const key = `jobs/${videoJobId}/voice/scene-${scene.index}.mp3`;
       const { sizeBytes } = await storage.putFile(key, file, "audio/mpeg");
       await prisma.videoScene.update({ where: { id: scene.id }, data: { voiceKey: key, voiceDurationSec: p.durationSec } });
       await prisma.videoAsset.create({
         data: {
-          jobId: videoJobId, type: "VOICEOVER", provider: voiceProvider.name, providerJobId: out.requestId, url: key, mimeType: "audio/mpeg", sizeBytes,
+          jobId: videoJobId, type: "VOICEOVER", provider: practice ? "practice" : voiceProvider.name, providerJobId: out.requestId, url: key, mimeType: "audio/mpeg", sizeBytes,
           durationSec: p.durationSec, metadata: { sceneIndex: scene.index, voiceId: out.voiceId, model: out.model, characters: scene.voiceoverText.length },
         },
       });
@@ -134,11 +140,11 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
     for (const scene of scenes) {
       if (scene.status === "READY" && scene.sceneVideoUrl) continue;
       const resumeTask = scene.status === "GENERATING" ? scene.providerJobId : null;
-      await prisma.videoScene.update({ where: { id: scene.id }, data: { status: "GENERATING", error: null, provider: "runway", ...(resumeTask ? {} : { providerJobId: null }) } });
+      await prisma.videoScene.update({ where: { id: scene.id }, data: { status: "GENERATING", error: null, provider: practice ? "practice" : "runway", ...(resumeTask ? {} : { providerJobId: null }) } });
       const clipPath = path.join(workDir, `scene-${scene.index}.mp4`);
       let meta: Record<string, unknown> = {};
       try {
-        const { taskId } = await generateSceneClip({
+        const { taskId } = practice ? await practiceClip(scene.index, scene.durationSec, project.aspectRatio, clipPath).then(() => ({ taskId: `practice-${scene.index}` })) : await generateSceneClip({
           input: { prompt: `${scene.visualPrompt}. Style: ${project.visualStyle}.`, durationSec: scene.durationSec, aspectRatio: project.aspectRatio },
           existingTaskId: resumeTask,
           onTaskCreated: async (id, m) => {
@@ -155,7 +161,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
         await prisma.videoScene.update({ where: { id: scene.id }, data: { status: "READY", sceneVideoUrl: key, completedAt: new Date() } });
         await prisma.videoAsset.create({
           data: {
-            jobId: videoJobId, type: "SCENE", provider: "runway", providerJobId: taskId, url: key, mimeType: "video/mp4", sizeBytes,
+            jobId: videoJobId, type: "SCENE", provider: practice ? "practice" : "runway", providerJobId: taskId, url: key, mimeType: "video/mp4", sizeBytes,
             durationSec: p.durationSec, width: p.video.width, height: p.video.height, metadata: { sceneIndex: scene.index, ...meta } as Prisma.InputJsonValue,
           },
         });
@@ -231,7 +237,7 @@ export async function processVideoJob(bullJob: Job<VideoGenerationJobPayload>): 
 
     // --------------------------------------------- 6. Send for approval (best effort)
     const tg = await prisma.integration.findUnique({ where: { provider: "telegram" } });
-    if (tg?.status === "CONNECTED") {
+    if (tg?.status === "CONNECTED" && !practice) {
       await sendVideoForApproval(videoJobId).catch(async (err) => {
         const message = scrubSecrets(err instanceof Error ? err.message : String(err), []);
         await prisma.approval.upsert({

@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { decrypt } from "./crypto";
+import { isPracticeMode } from "./practice";
 
 /** Read-only mirror of api's vault — the worker never writes credentials,
  * it only decrypts them to make real provider calls. */
@@ -21,6 +22,8 @@ export async function getDecryptedCredentials(
 
 /** Secrets + config for a provider that must be CONNECTED (tested) to be used. */
 export async function requireConnected(provider: string, label: string): Promise<Record<string, string>> {
+  // Practice mode never makes the provider call these would authorise (see pipeline/practice.ts).
+  if (await isPracticeMode()) return { practice: "1", phoneNumberId: "practice", accessToken: "practice" };
   const c = await getDecryptedCredentials(provider);
   if (!c || c.status !== "CONNECTED") throw new Error(`${label} is not connected — configure and test it in Integrations`);
   return { ...c.config, ...c.secrets };

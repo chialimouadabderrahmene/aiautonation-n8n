@@ -4,6 +4,7 @@ import { WORKFLOW_MANIFEST } from "./manifest";
 import { getProvider } from "../providers/registry";
 import { getAllSettings, getSettingDefinition } from "../settings/schema";
 import { checkWorker, checkStorage } from "../system/health";
+import { isPracticeMode } from "../../lib/practice";
 
 /**
  * The readiness engine. A workflow is READY only when every requirement is
@@ -124,7 +125,9 @@ function classify(detail: ReadinessDetail[]): ReadinessResult["readiness"] {
   return failing.every((d) => d.requirement.startsWith("setting:")) ? "ACTION_REQUIRED" : "BLOCKED";
 }
 
-export async function evaluateRequirements(required: string[], snap?: Snapshot): Promise<ReadinessResult> {
+export async function evaluateRequirements(requiredInput: string[], snap?: Snapshot): Promise<ReadinessResult> {
+  // Practice mode simulates every provider, so only the machinery itself has to be running.
+  const required = (await isPracticeMode()) ? requiredInput.filter((r) => r === "worker:ffmpeg" || r === "storage") : requiredInput;
   const needsInfra = required.some((r) => r === "worker:ffmpeg" || r === "storage");
   const s = snap ?? (await takeSnapshot({ includeInfra: needsInfra }));
   const detail = required.map((r) => checkOne(r, s));

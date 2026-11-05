@@ -7,6 +7,7 @@ import { syncN8nCredentials } from "../n8n/credentials";
 import { pollN8nExecutions } from "../n8n/executions";
 import { refreshExpiringTokens } from "../oauth/oauth";
 import { ensureTelegramWebhook } from "../telegram/telegram";
+import { describeSignupRun, processSignupEvents } from "../signups/processor";
 import { recomputeAllReadiness } from "../workflows/readiness";
 import { getN8nConnection, n8nProcessHealthy } from "../n8n/client";
 import { getProvider } from "../providers/registry";
@@ -125,6 +126,7 @@ export function startScheduler(): void {
     if (refreshed.includes("x") && n8nReady) await syncN8nCredentials();
     return refreshed.length ? `refreshed ${refreshed.join(", ")}` : "nothing to refresh";
   }, 20_000);
+  every(60_000, "signup-alerts", async () => describeSignupRun(await processSignupEvents()), 30_000);
   every(10 * 60_000, "telegram-webhook", async () => (await ensureTelegramWebhook()).message, 25_000);
   every(60_000, "readiness", async () => {
     await recomputeAllReadiness();

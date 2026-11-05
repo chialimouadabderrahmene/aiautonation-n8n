@@ -5,6 +5,7 @@
  */
 import { timedFetch, describeHttpFailure, readErrorDetail } from "./http";
 import { assertOutboundAllowed } from "./outbound-guard";
+import { isPracticeMode } from "./practice";
 
 export interface WhatsAppCreds {
   accessToken: string;
@@ -17,6 +18,7 @@ export interface WhatsAppCreds {
 
 export async function sendWhatsAppTemplate(creds: WhatsAppCreds, toPhone: string, templateName: string, bodyParams: string[]): Promise<void> {
   await assertOutboundAllowed("whatsapp_send", "execute");
+  if (await isPracticeMode()) return;
   const ver = creds.graphVersion || "v23.0";
   const lang = creds.templateLang || "en";
   const clean = (s: string) => s.replace(/[\r\n\t]+/g, " ").slice(0, 900) || "-";

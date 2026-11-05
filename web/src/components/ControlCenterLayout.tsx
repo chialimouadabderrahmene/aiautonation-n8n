@@ -1,304 +1,148 @@
 "use client";
 
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, clearToken, hasToken } from "@/lib/api";
-import {
-  BellIcon,
-  BoltIcon,
-  BookIcon,
-  CarouselIcon,
-  ChartIcon,
-  CheckSquareIcon,
-  ChevronDownIcon,
-  DashboardIcon,
-  DocIcon,
-  GearIcon,
-  LayersIcon,
-  PuzzleIcon,
-  SearchIcon,
-  SignOutIcon,
-  SparkleIcon,
-  UsersIcon,
-  VideoIcon,
-  WhatsAppIcon,
-} from "@/components/icons";
+import { HomeProvider, useHome } from "@/lib/home";
+import Coach from "./Coach";
 
-type NavItem = { name: string; href: string; icon: (p: { size?: number; className?: string }) => JSX.Element };
-type NavGroup = { label: string; items: NavItem[] };
-
-const NAV: NavGroup[] = [
-  { label: "Overview", items: [{ name: "Dashboard", href: "/dashboard", icon: DashboardIcon }] },
-  {
-    label: "Automate",
-    items: [
-      { name: "Automations", href: "/automations", icon: BoltIcon },
-      { name: "Workflow Engine", href: "/workflow-engine", icon: LayersIcon },
-      { name: "Approvals", href: "/approvals", icon: CheckSquareIcon },
-    ],
-  },
-  {
-    label: "Create",
-    items: [
-      { name: "Brand Brain", href: "/brand-brain", icon: SparkleIcon },
-      { name: "Content Studio", href: "/content-studio", icon: DocIcon },
-      { name: "Content Drafts", href: "/workflow-engine/content-drafts", icon: DocIcon },
-      { name: "Video Generator", href: "/video", icon: VideoIcon },
-      { name: "Carousels", href: "/carousels", icon: CarouselIcon },
-    ],
-  },
-  {
-    label: "Engage",
-    items: [
-      { name: "WhatsApp", href: "/whatsapp", icon: WhatsAppIcon },
-      { name: "Connected Apps", href: "/connected-apps", icon: PuzzleIcon },
-      { name: "Connected Accounts", href: "/connected-accounts", icon: UsersIcon },
-      { name: "Integrations", href: "/integrations", icon: PuzzleIcon },
-    ],
-  },
-  {
-    label: "Monitor",
-    items: [
-      { name: "Executions", href: "/executions", icon: ChartIcon },
-      { name: "Reports", href: "/reports", icon: ChartIcon },
-    ],
-  },
-  {
-    label: "",
-    items: [
-      { name: "Documentation", href: "/docs", icon: BookIcon },
-      { name: "Settings", href: "/settings", icon: GearIcon },
-    ],
-  },
+const NAV = [
+  { name: "Today", href: "/", icon: "M3 11l9-8 9 8M5 10v10h14V10" },
+  { name: "Make", href: "/make", icon: "M12 5v14M5 12h14" },
+  { name: "Review", href: "/review", icon: "M5 13l4 4L19 7" },
+  { name: "People", href: "/people", icon: "M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a3 3 0 100-6 3 3 0 000 6z" },
+  { name: "Autopilot", href: "/autopilot", icon: "M13 3L4 14h7l-1 7 9-11h-7l1-7z" },
 ];
 
-const FLAT_NAV = NAV.flatMap((g) => g.items);
+function isActive(pathname: string, href: string): boolean {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+}
 
-export default function ControlCenterLayout({ children }: { children: ReactNode }) {
+function Frame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
-  // Below md (768px) the sidebar is off-canvas by default — confirmed by
-  // actually rendering this at 375px width: a permanently-visible w-64
-  // sidebar left ~50% of a phone viewport unusable and clipped every page's
-  // content (dashboard stat cards, headings, etc. all cut off mid-word).
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [me, setMe] = useState<{ email: string; role: string } | null>(null);
-  const [alerts, setAlerts] = useState(0);
-  const [stop, setStop] = useState<{ active: boolean; changedAt: string | null; changedBy: string | null } | null>(null);
-  const [query, setQuery] = useState("");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { data, refresh } = useHome();
+  const [email, setEmail] = useState("");
+  const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!hasToken()) {
-      router.replace("/login");
-    } else {
-      setChecked(true);
-    }
-  }, [router]);
-
-  useEffect(() => {
-    if (!checked) return;
-    void api.get<{ email: string; role: string }>("/api/auth/me").then(setMe).catch(() => undefined);
-    const poll = () =>
-      void api
-        .get<{ actionRequired: unknown[]; emergencyStop: { active: boolean; changedAt: string | null; changedBy: string | null } }>("/api/dashboard")
-        .then((d) => {
-          setAlerts(d.actionRequired?.length ?? 0);
-          setStop(d.emergencyStop ?? null);
-        })
-        .catch(() => undefined);
-    poll();
-    const id = setInterval(poll, 30_000);
-    return () => clearInterval(id);
-  }, [checked]);
-
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    void api.get<{ email: string }>("/api/auth/me").then((m) => setEmail(m.email)).catch(() => undefined);
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return FLAT_NAV.filter((n) => n.name.toLowerCase().includes(q)).slice(0, 6);
-  }, [query]);
+  useEffect(() => setMenu(false), [pathname]);
 
-  if (!checked) return null;
+  const review = data?.counts.review ?? 0;
 
-  const signOut = () => {
-    clearToken();
-    router.push("/login");
-  };
-
-  const goToFirstMatch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (matches[0]) {
-      router.push(matches[0].href);
-      setQuery("");
-    }
-  };
+  async function resume() {
+    await api.put("/api/settings/autopilotStop", { value: false });
+    await refresh();
+  }
 
   return (
-    <div className="flex min-h-screen bg-[#f6f7f9]">
-      {/* Mobile top bar: hamburger + brand, visible only below md. */}
-      <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-brand-700 px-4 py-3 text-white md:hidden">
-        <div className="flex items-center gap-2">
-          <BoltIcon size={20} className="text-brand-50" />
-          <div>
-            <p className="text-base font-black leading-tight">Eki AI Automation</p>
-          </div>
+    <div className="min-h-screen bg-paper pb-24 md:pb-10">
+      {data?.stopped ? (
+        <div className="flex flex-wrap items-center justify-center gap-3 bg-berry px-4 py-2 text-sm font-semibold text-white">
+          Everything is stopped. Nothing will be sent or posted.
+          <button onClick={() => void resume()} className="rounded-full bg-white px-3 py-0.5 text-xs font-bold text-berry">Start again</button>
         </div>
-        <button
-          type="button"
-          aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
-          aria-expanded={mobileNavOpen}
-          onClick={() => setMobileNavOpen((v) => !v)}
-          className="rounded-lg p-2 hover:bg-white/10"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            {mobileNavOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
-          </svg>
-        </button>
-      </div>
-
-      {/* Backdrop, mobile only, closes the drawer on tap outside it. */}
-      {mobileNavOpen && (
-        <button
-          type="button"
-          aria-label="Close menu"
-          onClick={() => setMobileNavOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-y-auto bg-brand-700 text-white transition-transform duration-200 ease-in-out md:static md:translate-x-0 ${
-          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex items-center gap-2.5 px-5 py-6">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-sm">
-            <BoltIcon size={18} />
-          </span>
-          <div>
-            <p className="text-base font-black leading-tight">Eki</p>
-            <p className="text-[11px] font-medium leading-tight text-white/60">AI Automation</p>
-          </div>
+      ) : null}
+      {data?.practice ? (
+        <div className="tape px-4 py-1.5 text-center text-xs font-bold text-ink sm:text-sm">
+          PRACTICE MODE. <span className="hidden sm:inline">Nothing here is real, and nothing gets sent, posted or charged.</span><span className="sm:hidden">Nothing real gets sent.</span>{" "}
+          <Link href="/setup" className="hidden underline underline-offset-2 sm:inline">Go live when you are ready</Link>
         </div>
-        <nav className="mt-2 space-y-5 px-3 pb-6">
-          {NAV.map((group, gi) => (
-            <div key={gi}>
-              {group.label ? <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-white/35">{group.label}</p> : null}
-              <div className="space-y-0.5">
-                {group.items.map((item) => {
-                  const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                        active ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
-                      }`}
-                    >
-                      <Icon size={17} className={active ? "text-brand-50" : "text-white/50"} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-      </aside>
+      ) : null}
 
-      {/* pt-16 on mobile clears the fixed top bar; md: removes it since the
-          sidebar goes back to being a normal static flex sibling there. */}
-      <div className="flex w-full flex-1 flex-col pt-14 md:pt-0">
-        {/* Desktop top bar: search, alerts, account menu. */}
-        <header className="hidden items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3 md:flex">
-          <form onSubmit={goToFirstMatch} className="relative w-80">
-            <SearchIcon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search automations, content, integrations..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-14 text-sm outline-none focus:border-brand-500 focus:bg-white"
-            />
-            <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
-              Ctrl K
-            </kbd>
-            {matches.length > 0 ? (
-              <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                {matches.map((m) => (
-                  <Link
-                    key={m.href}
-                    href={m.href}
-                    onClick={() => setQuery("")}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <m.icon size={15} className="text-slate-400" />
-                    {m.name}
-                  </Link>
-                ))}
-              </div>
+      <header className="sticky top-0 z-20 bg-paper/90 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-6 px-4 sm:px-6">
+          <Link href="/" className="font-display text-3xl font-extrabold leading-none tracking-tight">
+            eki<span className="text-palm">.</span>
+          </Link>
+          <nav className="hidden flex-1 items-center gap-1 md:flex" aria-label="Main">
+            {NAV.map((n) => (
+              <Link
+                key={n.href} href={n.href} aria-current={isActive(pathname, n.href) ? "page" : undefined}
+                className={`relative rounded-full px-4 py-2 text-[15px] font-semibold transition ${isActive(pathname, n.href) ? "bg-ink text-paper" : "text-ink-soft hover:text-ink"}`}
+              >
+                {n.name}
+                {n.href === "/review" && review > 0 ? <span className="ml-1.5 rounded-full bg-palm px-1.5 py-0.5 text-[11px] font-bold text-white">{review}</span> : null}
+              </Link>
+            ))}
+          </nav>
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
+            {data?.practice ? (
+              <Link href="/setup" className="rounded-full border border-rule px-3 py-1.5 text-sm font-semibold text-ink-soft hover:border-ink hover:text-ink">
+                Go live <span className="text-ink-faint">{data.setup.done}/{data.setup.total}</span>
+              </Link>
+            ) : data ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-leaf-wash px-3 py-1.5 text-sm font-semibold text-leaf-deep">
+                <span className="pulse-dot h-2 w-2 rounded-full bg-leaf" /> Live
+              </span>
             ) : null}
-          </form>
-
-          <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100" aria-label="Alerts">
-              <BellIcon size={18} />
-              {alerts > 0 ? (
-                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-                  {alerts > 9 ? "9+" : alerts}
-                </span>
-              ) : null}
-            </Link>
             <div className="relative" ref={menuRef}>
-              <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-100">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
-                  {(me?.email ?? "?").slice(0, 1).toUpperCase()}
-                </span>
-                <span className="text-left">
-                  <span className="block text-sm font-semibold leading-tight text-slate-900">{me?.email?.split("@")[0] ?? "..."}</span>
-                  <span className="block text-[11px] leading-tight text-slate-400">{me?.role ?? ""}</span>
-                </span>
-                <ChevronDownIcon size={14} className="text-slate-400" />
+              <button
+                onClick={() => setMenu((v) => !v)} aria-label="Account menu" aria-expanded={menu}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-display text-sm font-bold uppercase text-paper"
+              >
+                {email ? email[0] : "e"}
               </button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-full z-20 mt-2 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                  <Link href="/settings" className="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                    Settings
-                  </Link>
-                  <button onClick={signOut} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
-                    <SignOutIcon size={14} />
+              {menu ? (
+                <div className="absolute right-0 top-11 w-56 rounded-2xl border border-rule bg-card p-2 shadow-lift">
+                  {email ? <p className="truncate px-3 py-1.5 text-xs text-ink-faint">{email}</p> : null}
+                  {[["How Eki works", "/guide"], ["Connect accounts", "/setup"], ["Results", "/reports"], ["Back office", "/back-office"], ["Settings", "/settings"]].map(([label, href]) => (
+                    <Link key={href} href={href!} className="block rounded-xl px-3 py-2 text-sm font-medium hover:bg-paper">{label}</Link>
+                  ))}
+                  <button onClick={() => { clearToken(); router.push("/login"); }} className="block w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-berry hover:bg-berry-wash">
                     Sign out
                   </button>
                 </div>
               ) : null}
             </div>
           </div>
-        </header>
+        </div>
+        <div className="weave" aria-hidden />
+      </header>
 
-        {stop?.active ? (
-          <div role="alert" className="border-b border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white md:px-8">
-            Emergency stop is ON since {stop.changedAt ? new Date(stop.changedAt).toLocaleString() : "an unknown time"}
-            {stop.changedBy ? ` by ${stop.changedBy}` : ""}. Customer-facing publishing, WhatsApp and email are refused and queued sends are cancelled.
-            Internal team alerts still work. Only an Owner can resume, in Settings → Automation safety.
-          </div>
-        ) : null}
-        <main className="w-full flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
-      </div>
+      <main className="mx-auto max-w-[1240px] px-4 py-8 sm:px-6 sm:py-10">{children}</main>
+
+      <nav className="fixed inset-x-3 bottom-3 z-20 flex justify-between rounded-full bg-ink px-2 py-1.5 shadow-lift md:hidden" aria-label="Main">
+        {NAV.map((n) => {
+          const active = isActive(pathname, n.href);
+          return (
+            <Link key={n.href} href={n.href} aria-label={n.name} aria-current={active ? "page" : undefined} className={`relative flex flex-1 flex-col items-center rounded-full py-1.5 text-[10px] font-semibold ${active ? "bg-paper text-ink" : "text-paper/70"}`}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={n.icon} /></svg>
+              {n.name}
+              {n.href === "/review" && review > 0 ? <span className="absolute right-2 top-0.5 h-2 w-2 rounded-full bg-palm" /> : null}
+            </Link>
+          );
+        })}
+      </nav>
+      <Coach />
     </div>
+  );
+}
+
+/** The app frame every signed-in screen sits in. */
+export default function ControlCenterLayout({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    if (!hasToken()) router.replace("/login");
+    else setChecked(true);
+  }, [router]);
+
+  if (!checked) return null;
+  return (
+    <HomeProvider>
+      <Frame>{children}</Frame>
+    </HomeProvider>
   );
 }

@@ -1,3 +1,4 @@
+import { isPracticeMode, practiceMessageId } from "../../lib/practice";
 import { outboundStopResult } from "../../lib/outbound-guard";
 import { prisma } from "../../lib/prisma";
 import { getProviderValues } from "../integrations/vault";
@@ -13,6 +14,7 @@ export type SendEmailResult = { ok: true; id: string } | { ok: false; reason: "n
 export async function sendEmail(input: { to: string; subject: string; html: string }): Promise<SendEmailResult> {
   const stopped = await outboundStopResult("email_send");
   if (stopped) return stopped;
+  if (await isPracticeMode()) return { ok: true, id: practiceMessageId("email") };
   const integration = await prisma.integration.findUnique({ where: { provider: "resend" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "Resend is not connected — configure it in Integrations." };
   const v = await getProviderValues("resend");

@@ -1,3 +1,4 @@
+import { isPracticeMode, practiceMessageId } from "../../lib/practice";
 import { outboundStopResult } from "../../lib/outbound-guard";
 import { prisma } from "../../lib/prisma";
 import { getProviderValues } from "../integrations/vault";
@@ -14,6 +15,7 @@ export type SendSocialResult = { ok: true; providerId: string } | { ok: false; r
 export async function postTweet(text: string): Promise<SendSocialResult> {
   const stopped = await outboundStopResult("social_publish");
   if (stopped) return stopped;
+  if (await isPracticeMode()) return { ok: true, providerId: practiceMessageId("x") };
   const integration = await prisma.integration.findUnique({ where: { provider: "x" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "X is not connected." };
   const v = await getProviderValues("x");
@@ -47,6 +49,7 @@ export async function postTweet(text: string): Promise<SendSocialResult> {
 export async function postToBuffer(text: string, profileId: string): Promise<SendSocialResult> {
   const stopped = await outboundStopResult("social_publish");
   if (stopped) return stopped;
+  if (await isPracticeMode()) return { ok: true, providerId: practiceMessageId("buffer") };
   const integration = await prisma.integration.findUnique({ where: { provider: "buffer" } });
   if (integration?.status !== "CONNECTED") return { ok: false, reason: "not_configured", message: "Buffer is not connected." };
   const v = await getProviderValues("buffer");
